@@ -42,11 +42,11 @@ const enumOf = (keys: string[]) => z.enum(keys as [string, ...string[]]);
 
 const gradeDesc = '0없음 1레어 2에픽 3유니크 4레전드리';
 
-function optionRows(keys: string[], labels: Record<string, string>, what: string) {
+function optionRows(keys: string[], what: string, keyDesc: string) {
   return z
     .array(
       z.object({
-        option: enumOf(keys).describe(`${what} 옵션 키. ${labelList(labels)}`),
+        option: enumOf(keys).describe(`${what} 옵션 키. ${keyDesc}`),
         minValue: z.number().describe('최소값'),
       })
     )
@@ -70,12 +70,16 @@ const detailFilterSchema = {
   starforceMax: z.number().int().optional().describe('스타포스 최대'),
   potentialGrade: z.number().int().min(0).max(4).optional().describe(`잠재등급: ${gradeDesc}`),
   additionalPotentialGrade: z.number().int().min(0).max(4).optional().describe(`에디셔널 등급: ${gradeDesc}`),
-  potentialOptions: optionRows(POTENTIAL_OPTION_KEYS, POTENTIAL_OPTION_LABELS, '잠재'),
+  potentialOptions: optionRows(POTENTIAL_OPTION_KEYS, '잠재', labelList(POTENTIAL_OPTION_LABELS)),
   potentialSum: z.boolean().optional().describe('잠재 옵션 여러 줄 합산 여부 (기본 true). 예: 공9%+공12%를 합쳐 공21% 이상'),
-  additionalPotentialOptions: optionRows(POTENTIAL_OPTION_KEYS, POTENTIAL_OPTION_LABELS, '에디셔널 잠재'),
+  additionalPotentialOptions: optionRows(
+    POTENTIAL_OPTION_KEYS,
+    '에디셔널 잠재',
+    'potentialOptions와 동일한 옵션 키 (*PerLevel 4종은 에디셔널 전용)'
+  ),
   additionalPotentialSum: z.boolean().optional().describe('에디셔널 옵션 합산 여부 (기본 true)'),
-  extraOptions: optionRows(EX_OPTION_KEYS, EX_OPTION_LABELS, '추가 옵션(추옵)'),
-  scrollOptions: optionRows(SCROLL_OPTION_KEYS, SCROLL_OPTION_LABELS, '주문서 강화 누적'),
+  extraOptions: optionRows(EX_OPTION_KEYS, '추가 옵션(추옵)', labelList(EX_OPTION_LABELS)),
+  scrollOptions: optionRows(SCROLL_OPTION_KEYS, '주문서 강화 누적', labelList(SCROLL_OPTION_LABELS)),
   remainUpgradeCountMin: z.number().int().optional().describe('주문서 강화 잔여 횟수 최소'),
   remainUpgradeCountMax: z.number().int().optional().describe('주문서 강화 잔여 횟수 최대'),
   cuttableCountMin: z.number().int().optional().describe('가위(재거래) 사용 가능 횟수 최소 — 많을수록 가치가 높다'),
@@ -261,6 +265,7 @@ export function createServer(bridge: BridgeLike): McpServer {
       description:
         '최근에 판매 완료된 매물(최근 시세)을 조회한다. 일일 검색 횟수를 소진하지 않는다. 현재 검색 기준 캐릭터의 월드(그룹) 기준이다.' + RESULT_NOTE,
       inputSchema: {},
+      annotations: { readOnlyHint: true },
     },
     async () => {
       const id = await ensureIdentity();
@@ -283,6 +288,7 @@ export function createServer(bridge: BridgeLike): McpServer {
       description:
         '넥슨 계정의 모든 메이플 캐릭터를 월드별로 조회한다 (검색 횟수 소진 없음). set_character로 검색 기준 캐릭터(=검색 대상 월드)를 바꿀 수 있다.',
       inputSchema: {},
+      annotations: { readOnlyHint: true },
     },
     async () => {
       const result = await listCharacters(bridge);
@@ -343,6 +349,7 @@ export function createServer(bridge: BridgeLike): McpServer {
       title: '연결 상태 확인',
       description: '크롬 확장 연결, 넥슨 계정, 현재 검색 기준 캐릭터(월드 이름 포함), 일일 검색 잔여 횟수를 확인한다.',
       inputSchema: {},
+      annotations: { readOnlyHint: true },
     },
     async () => {
       if (!bridge.connected) {
