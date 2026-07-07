@@ -150,13 +150,13 @@
 | `starforce` | `number` | 스타포스 강화 수치 |
 | `scroll` | `string \| null` | `"강화 N회 (남은 횟수 x / 복구가능 y / 총 z)"` |
 | `powerDiff` | `number \| null` | 전투력 증가량(현재 장비 대비, 음수 가능). 착용 불가 아이템이면 `null` |
-| `isMyWorld` | `boolean` | 내 월드 매물 여부 |
+| `isMyWorld` | `boolean` | 내 월드 매물 여부. `false`면 구매 시 **가격의 10% 메이플포인트 수수료** |
 | `finalStat` | `object \| null` | 최종 합산 스탯(고정 키, 0도 표기): `str/dex/int/luk/all/pad/mad/mhp/dam/bdr/imdr` |
 | `exOption` | `string \| null` | 추가옵션 항목 (`"마력 +33 / INT +40 / ..."`) |
 | `potential` | `string \| null` | 잠재능력 (`"레전드리: 옵션 / 옵션 / ..."`) |
 | `additional` | `string \| null` | 에디셔널 잠재능력 (동일 형식) |
 | `exceptional` | `string \| null` | 익셉셔널 강화 내역 |
 | `soul` | `string \| null` | 소울 `"이름 / 옵션"` |
-| `tradeDesc` | `string \| null` | 거래 설명 (`"1회 교환 가능 … · (가위: 7 / 10)"`) |
+| `tradeDesc` | `string \| null` | 거래 설명 (`"1회 교환 가능 … · (가위: 7 / 10)"`). 가위=플래티넘 카르마(5,900메포, 월 1회 마일리지 구매 가능) — 잔여 횟수 많을수록 가치↑ |
 | `endDate` | `string` | 판매 등록 만료 일시 (ISO 8601, UTC) |
 | `wishlist` | `number` | 찜한 사람 수 |

@@ -24,7 +24,7 @@ export interface ItemSummary {
   tradeDesc: string | null; // 거래 관련: "장착 시 교환 불가 · (가위: 7 / 10)"
   endDate: string;
   wishlist: number;
-  isMyWorld: boolean; // 내 월드 매물 여부 (원본 필드 그대로)
+  isMyWorld: boolean; // 내 월드 매물 여부. false면 구매 시 가격의 10% 메이플포인트 수수료
 }
 
 export interface SearchSummary {

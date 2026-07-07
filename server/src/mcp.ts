@@ -74,13 +74,13 @@ const detailFilterSchema = {
   scrollOptions: optionRows(SCROLL_OPTION_KEYS, SCROLL_OPTION_LABELS, '주문서 강화 누적'),
   remainUpgradeCountMin: z.number().int().optional().describe('주문서 강화 잔여 횟수 최소'),
   remainUpgradeCountMax: z.number().int().optional().describe('주문서 강화 잔여 횟수 최대'),
-  cuttableCountMin: z.number().int().optional().describe('가위 사용 가능 횟수 최소'),
+  cuttableCountMin: z.number().int().optional().describe('가위(재거래) 사용 가능 횟수 최소 — 많을수록 가치가 높다'),
   cuttableCountMax: z.number().int().optional().describe('가위 사용 가능 횟수 최대'),
   uncuttable: z.boolean().optional().describe('가위 사용 횟수 미부여만 (cuttableCount와 동시 사용 불가)'),
   isBindedWhenEquipped: z.boolean().optional().describe('장착 시 교환 불가 아이템만'),
   isExOptExtractable: z.boolean().optional().describe('추가 옵션 추출 가능만'),
   isPotentialExtractable: z.boolean().optional().describe('잠재능력 추출 가능만'),
-  myWorldOnly: z.boolean().optional().describe('현재 캐릭터 월드의 매물만'),
+  myWorldOnly: z.boolean().optional().describe('현재 캐릭터 월드의 매물만 (타 월드 매물은 구매 시 가격의 10% 메이플포인트 수수료)'),
 };
 
 // 반지 전용이지만 방어구 스키마에 포함
@@ -90,7 +90,17 @@ const seedRingSchema = {
 };
 
 export function createServer(bridge: BridgeLike): McpServer {
-  const server = new McpServer({ name: 'maple-auction', version: '0.2.0' });
+  // 클라이언트가 시스템 프롬프트에 주입하는 서버 사용 상식 (압축 유지)
+  const instructions = [
+    '메이플스토리(KMS) 거래소 검색 MCP. 사용 시 알아야 할 게임 상식:',
+    '- 거래소는 월드 그룹 단위로 묶인다 (1그룹: 스카니아~챌린저스3 / 2그룹: 에오스·헬리오스·챌린저스4).',
+    '- 매물의 isMyWorld가 false(타 월드)면 구매 시 아이템 가격의 10%만큼 메이플포인트가 추가 수수료로 든다. 가격 비교·추천 시 반드시 반영할 것.',
+    '- tradeDesc의 "가위: n/10"은 장착 후 재거래 가능 횟수. 가위(플래티넘 카르마)는 개당 5,900 메이플포인트이고 월 1회 마일리지로도 구매 가능 → 가위 잔여 횟수가 많을수록 가치가 높다.',
+    '- 메소↔메이플포인트는 수수료를 내고 공식 교환 가능하므로, 메포 수수료도 메소 가치로 환산해 비교할 수 있다.',
+    '- 검색 생성(POST)은 일 100회 제한. 같은 조건 재조회는 get_page(무료), 시세 파악은 recent_sold(무료)를 우선 사용.',
+  ].join('\n');
+
+  const server = new McpServer({ name: 'maple-auction', version: '0.2.0' }, { instructions });
 
   let identity: (Identity & { characterName?: string }) | null = null;
   let characters: CharacterInfo[] | null = null;
