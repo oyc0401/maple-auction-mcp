@@ -1,6 +1,7 @@
 {
   "name": "maple-auction-monorepo",
   "private": true,
+  "packageManager": "pnpm@10.33.2",
   "scripts": {
     "test": "vitest run",
     "typecheck": "tsc -b server extension shared || pnpm -r exec tsc --noEmit",

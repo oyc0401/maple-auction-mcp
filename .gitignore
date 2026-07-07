@@ -1,5 +1,6 @@
 node_modules/
 dist/
+*.tsbuildinfo
 *.zip
 .DS_Store
 .superpowers/
