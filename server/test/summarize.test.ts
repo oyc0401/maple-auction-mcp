@@ -65,6 +65,8 @@ describe('summarizeItem', () => {
       exceptional: 'STR +30 / 공격력 +15',
       soul: '위대한 데미안의 소울 / 공격력 +15',
       tradeDesc: '1회 교환 가능 (거래 후 교환 불가) · (가위: 7 / 10)',
+      status: 'ON_SALE',
+      tradeDate: null,
       endDate: '2026-07-09T12:24:11.920Z',
       wishlist: 3,
       isMyWorld: true,
