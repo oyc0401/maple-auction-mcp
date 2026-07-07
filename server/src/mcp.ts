@@ -1,13 +1,28 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
-import type { BridgeCommand, BridgeReply, Identity } from '@maple/shared';
-import { buildCreateBody, buildPageUrl, SEARCH_URL, DAILY_LIMIT_URL, SORTS, type SearchParams, type Sort, type GetLimit } from './mapping.js';
+import type { BridgeCommandInput, BridgeReply, Identity } from '@maple/shared';
+import { buildCreateBody, buildPageUrl, SEARCH_URL, RECENT_SOLD_URL, DAILY_LIMIT_URL, SORTS, type SearchParams, type Sort, type GetLimit } from './mapping.js';
 import { summarizeSearch } from './summarize.js';
-
+import { listCharacters, type CharacterInfo } from './characters.js';
+import {
+  worldName,
+  labelList,
+  POTENTIAL_OPTION_KEYS,
+  POTENTIAL_OPTION_LABELS,
+  EX_OPTION_KEYS,
+  EX_OPTION_LABELS,
+  SCROLL_OPTION_KEYS,
+  SCROLL_OPTION_LABELS,
+  ARMOR_CATEGORY_KEYS,
+  ARMOR_CATEGORY_LABELS,
+  WEAPON_CATEGORY_KEYS,
+  WEAPON_CATEGORY_LABELS,
+  JOB_CLASSES,
+} from './constants.js';
 
 export interface BridgeLike {
   readonly connected: boolean;
-  request(cmd: Omit<BridgeCommand, 'id'>, timeoutMs?: number): Promise<BridgeReply>;
+  request(cmd: BridgeCommandInput, timeoutMs?: number): Promise<BridgeReply>;
 }
 
 function text(value: unknown) {
@@ -21,17 +36,71 @@ function errorText(reply: Extract<BridgeReply, { ok: false }>): string {
   return `요청 실패 (${reply.code}): ${reply.error}`;
 }
 
-export function createServer(bridge: BridgeLike): McpServer {
-  const server = new McpServer({ name: 'maple-auction', version: '0.1.0' });
+// ── 공통 필터 zod 스키마 (실측 스펙: docs/API.md) ──────────────────────────────
 
-  let identity: Identity | null = null;
+const enumOf = (keys: string[]) => z.enum(keys as [string, ...string[]]);
+
+const gradeDesc = '0없음 1레어 2에픽 3유니크 4레전드리';
+
+function optionRows(keys: string[], labels: Record<string, string>, what: string) {
+  return z
+    .array(
+      z.object({
+        option: enumOf(keys).describe(`${what} 옵션 키. ${labelList(labels)}`),
+        minValue: z.number().describe('최소값'),
+      })
+    )
+    .optional();
+}
+
+// search_armor / search_weapon 이 공유하는 상세 필터
+const detailFilterSchema = {
+  keyword: z.string().optional().describe('아이템 이름 검색어 (필터만으로 검색하려면 생략)'),
+  exactMatch: z.boolean().optional().describe('이름 정확히 일치 (기본 false)'),
+  jobClass: z.enum(JOB_CLASSES).optional().describe('직업군: WARRIOR전사 MAGE마법사 ARCHER궁수 THIEF도적 PIRATE해적'),
+  priceMin: z.number().int().optional().describe('최소 가격 (메소)'),
+  priceMax: z.number().int().optional().describe('최대 가격 (메소)'),
+  levelMin: z.number().int().optional().describe('아이템 착용 레벨 최소'),
+  levelMax: z.number().int().optional().describe('아이템 착용 레벨 최대'),
+  starforceMin: z.number().int().optional().describe('스타포스 최소'),
+  starforceMax: z.number().int().optional().describe('스타포스 최대'),
+  potentialGrade: z.number().int().min(0).max(4).optional().describe(`잠재등급: ${gradeDesc}`),
+  additionalPotentialGrade: z.number().int().min(0).max(4).optional().describe(`에디셔널 등급: ${gradeDesc}`),
+  potentialOptions: optionRows(POTENTIAL_OPTION_KEYS, POTENTIAL_OPTION_LABELS, '잠재'),
+  potentialSum: z.boolean().optional().describe('잠재 옵션 여러 줄 합산 여부 (기본 true). 예: 공9%+공12%를 합쳐 공21% 이상'),
+  additionalPotentialOptions: optionRows(POTENTIAL_OPTION_KEYS, POTENTIAL_OPTION_LABELS, '에디셔널 잠재'),
+  additionalPotentialSum: z.boolean().optional().describe('에디셔널 옵션 합산 여부 (기본 true)'),
+  extraOptions: optionRows(EX_OPTION_KEYS, EX_OPTION_LABELS, '추가 옵션(추옵)'),
+  scrollOptions: optionRows(SCROLL_OPTION_KEYS, SCROLL_OPTION_LABELS, '주문서 강화 누적'),
+  remainUpgradeCountMin: z.number().int().optional().describe('주문서 강화 잔여 횟수 최소'),
+  remainUpgradeCountMax: z.number().int().optional().describe('주문서 강화 잔여 횟수 최대'),
+  cuttableCountMin: z.number().int().optional().describe('가위 사용 가능 횟수 최소'),
+  cuttableCountMax: z.number().int().optional().describe('가위 사용 가능 횟수 최대'),
+  uncuttable: z.boolean().optional().describe('가위 사용 횟수 미부여만 (cuttableCount와 동시 사용 불가)'),
+  isBindedWhenEquipped: z.boolean().optional().describe('장착 시 교환 불가 아이템만'),
+  isExOptExtractable: z.boolean().optional().describe('추가 옵션 추출 가능만'),
+  isPotentialExtractable: z.boolean().optional().describe('잠재능력 추출 가능만'),
+  myWorldOnly: z.boolean().optional().describe('현재 캐릭터 월드의 매물만'),
+};
+
+// 반지 전용이지만 방어구 스키마에 포함
+const seedRingSchema = {
+  seedRingLevelMin: z.number().int().optional().describe('특수 스킬 반지 레벨 최소 (반지 전용)'),
+  seedRingLevelMax: z.number().int().optional().describe('특수 스킬 반지 레벨 최대 (반지 전용)'),
+};
+
+export function createServer(bridge: BridgeLike): McpServer {
+  const server = new McpServer({ name: 'maple-auction', version: '0.2.0' });
+
+  let identity: (Identity & { characterName?: string }) | null = null;
+  let characters: CharacterInfo[] | null = null;
   const bodyCache = new Map<string, ReturnType<typeof buildCreateBody>>();
 
   async function ensureIdentity(): Promise<Identity | string> {
     if (identity) return identity;
     const reply = await bridge.request({ type: 'discover' });
     if (reply.ok && reply.data) {
-      identity = reply.data as Identity;
+      identity = reply.data as Identity & { characterName?: string };
       return identity;
     }
     const env = process.env.MAPLE_IDENTITY;
@@ -65,17 +134,51 @@ export function createServer(bridge: BridgeLike): McpServer {
   server.registerTool(
     'search_items',
     {
-      title: '거래소 아이템 검색 (세션 생성)',
+      title: '거래소 빠른 검색 (이름 위주)',
       description:
-        '메이플스토리 거래소에서 아이템을 검색한다. 가격 낮은순 10개(1페이지)와 searchKey를 반환한다. 더 많은 결과·다른 정렬·다음 페이지가 필요하면 이 searchKey로 get_page를 호출한다(get_page는 검색 횟수를 소진하지 않음). 이 검색 자체는 일일 검색 횟수를 1회 소진한다.',
+        '메이플스토리 거래소에서 아이템 이름으로 빠르게 검색한다. 가격 낮은순 10개(1페이지)와 searchKey를 반환하며, 더 많은 결과·다른 정렬·다음 페이지는 searchKey로 get_page를 호출한다(get_page는 검색 횟수를 소진하지 않음). 이 검색 자체는 일일 검색 횟수를 1회 소진한다. 잠재·에디셔널·추옵·가격 등 상세 필터가 필요하면 search_weapon / search_armor 를 사용하라.',
       inputSchema: {
         keyword: z.string().describe('아이템 이름 검색어'),
         exactMatch: z.boolean().optional().describe('정확히 일치 (기본 false)'),
-        category: z.string().optional().describe("카테고리. 검증된 값: 'WEAPON'"),
-        potentialGrade: z.number().int().min(0).max(4).optional().describe('잠재등급: 0없음 1레어 2에픽 3유니크 4레전드리'),
+        category: z.string().optional().describe("카테고리 코드 (예: 'WEAPON')"),
+        potentialGrade: z.number().int().min(0).max(4).optional().describe(`잠재등급: ${gradeDesc}`),
+        myWorldOnly: z.boolean().optional().describe('현재 캐릭터 월드의 매물만'),
       },
     },
     async (params) => runSearch(params as SearchParams)
+  );
+
+  server.registerTool(
+    'search_weapon',
+    {
+      title: '무기 상세 검색 (전체 필터)',
+      description:
+        '무기를 상세 필터로 검색한다 (검색 횟수 1회 소진, 추가 페이지는 get_page). 잠재/에디셔널 옵션은 [{option, minValue}] 형식이고 기본은 합산 모드다. 예: 에디셔널 공격력 합 21% 이상 체인 → subCategory=WEAPON_ONE_HANDED_CHAIN, additionalPotentialOptions=[{option:"physicalAttackPercent", minValue:21}]',
+      inputSchema: {
+        subCategory: enumOf(WEAPON_CATEGORY_KEYS)
+          .default('WEAPON')
+          .describe(`무기 분류. ${labelList(WEAPON_CATEGORY_LABELS)}`),
+        ...detailFilterSchema,
+      },
+    },
+    async ({ subCategory, ...rest }) => runSearch({ ...(rest as SearchParams), category: subCategory as string })
+  );
+
+  server.registerTool(
+    'search_armor',
+    {
+      title: '방어구·장신구 상세 검색 (전체 필터)',
+      description:
+        '방어구/장신구를 상세 필터로 검색한다 (검색 횟수 1회 소진, 추가 페이지는 get_page). 잠재/에디셔널 옵션은 [{option, minValue}] 형식이고 기본은 합산 모드다.',
+      inputSchema: {
+        subCategory: enumOf(ARMOR_CATEGORY_KEYS)
+          .default('ARMOR')
+          .describe(`방어구 분류. ${labelList(ARMOR_CATEGORY_LABELS)}`),
+        ...detailFilterSchema,
+        ...seedRingSchema,
+      },
+    },
+    async ({ subCategory, ...rest }) => runSearch({ ...(rest as SearchParams), category: subCategory as string })
   );
 
   server.registerTool(
@@ -83,9 +186,9 @@ export function createServer(bridge: BridgeLike): McpServer {
     {
       title: '검색 결과 페이지 조회 (정렬/페이지네이션)',
       description:
-        'search_items가 반환한 searchKey로 원하는 정렬·페이지·크기의 결과를 조회한다. GET만 사용하므로 일일 검색 횟수를 소진하지 않는다. 응답의 hasNext가 true면 page를 늘려 다음 페이지를 볼 수 있다. 키가 만료됐으면 같은 조건으로 자동 재검색(이때만 검색 1회 소진).',
+        'search_items/search_weapon/search_armor 가 반환한 searchKey로 원하는 정렬·페이지·크기의 결과를 조회한다. GET만 사용하므로 일일 검색 횟수를 소진하지 않는다. 응답의 hasNext가 true면 page를 늘려 다음 페이지를 볼 수 있다. 키가 만료됐으면 같은 조건으로 자동 재검색(이때만 검색 1회 소진).',
       inputSchema: {
-        searchKey: z.string().describe('search_items 응답의 searchKey'),
+        searchKey: z.string().describe('검색 응답의 searchKey'),
         page: z.number().int().min(1).default(1).describe('페이지 번호 (1부터)'),
         limit: z
           .union([z.literal(20), z.literal(40), z.literal(60)])
@@ -124,10 +227,93 @@ export function createServer(bridge: BridgeLike): McpServer {
   );
 
   server.registerTool(
+    'recent_sold',
+    {
+      title: '최근 시세 (판매 완료 매물)',
+      description:
+        '최근에 판매 완료된 매물(최근 시세)을 조회한다. 일일 검색 횟수를 소진하지 않는다. 현재 검색 기준 캐릭터의 월드(그룹) 기준이다.',
+      inputSchema: {},
+    },
+    async () => {
+      const id = await ensureIdentity();
+      if (typeof id === 'string') return text(id);
+      const body = { worldId: id.worldId, accountId: id.accountId, characterId: id.characterId };
+      const reply = await bridge.request({ type: 'fetch', url: RECENT_SOLD_URL, method: 'POST', body });
+      if (!reply.ok) return text(errorText(reply));
+      try {
+        return text(summarizeSearch(reply.data));
+      } catch {
+        return text(reply.data); // 응답 형태가 검색과 다르면 원본 반환
+      }
+    }
+  );
+
+  server.registerTool(
+    'list_characters',
+    {
+      title: '계정 캐릭터 목록',
+      description:
+        '넥슨 계정의 모든 메이플 캐릭터를 월드별로 조회한다 (검색 횟수 소진 없음). set_character로 검색 기준 캐릭터(=검색 대상 월드)를 바꿀 수 있다.',
+      inputSchema: {},
+    },
+    async () => {
+      const result = await listCharacters(bridge);
+      if (typeof result === 'string') return text(result);
+      characters = result;
+      const current = identity?.characterId;
+      return text(
+        result.map((c) => ({
+          world: c.worldName,
+          name: c.characterName,
+          level: c.level,
+          characterId: c.characterId,
+          current: c.characterId === current || undefined,
+        }))
+      );
+    }
+  );
+
+  server.registerTool(
+    'set_character',
+    {
+      title: '검색 기준 캐릭터 전환',
+      description:
+        '검색에 사용할 캐릭터를 전환한다. 거래소는 월드(그룹) 단위이므로 다른 월드 캐릭터로 바꾸면 그 월드의 매물이 검색된다. 이름 또는 characterId로 지정한다 (검색 횟수 소진 없음). 전환 후 이전 searchKey는 이전 캐릭터 기준이므로 새로 검색하는 것이 안전하다.',
+      inputSchema: {
+        characterName: z.string().optional().describe('캐릭터 이름 (정확히 일치)'),
+        characterId: z.number().int().optional().describe('characterId (이름이 여러 월드에 있을 때)'),
+      },
+    },
+    async ({ characterName, characterId }) => {
+      if (!characterName && !characterId) return text('characterName 또는 characterId를 지정하세요.');
+      if (!characters) {
+        const result = await listCharacters(bridge);
+        if (typeof result === 'string') return text(result);
+        characters = result;
+      }
+      const matches = characters.filter(
+        (c) => (characterId ? c.characterId === characterId : true) && (characterName ? c.characterName === characterName : true)
+      );
+      if (!matches.length) {
+        return text(`일치하는 캐릭터가 없습니다. list_characters로 목록을 확인하세요.`);
+      }
+      if (matches.length > 1) {
+        return text({
+          note: '이름이 여러 캐릭터와 일치합니다. characterId로 지정하세요.',
+          candidates: matches.map((c) => ({ world: c.worldName, name: c.characterName, level: c.level, characterId: c.characterId })),
+        });
+      }
+      const c = matches[0];
+      identity = { worldId: c.worldId, accountId: c.accountId, characterId: c.characterId, characterName: c.characterName };
+      return text({ switched: { world: c.worldName, name: c.characterName, level: c.level, characterId: c.characterId } });
+    }
+  );
+
+  server.registerTool(
     'get_status',
     {
       title: '연결 상태 확인',
-      description: '크롬 확장 연결 및 넥슨 계정 상태를 확인한다.',
+      description: '크롬 확장 연결, 넥슨 계정, 현재 검색 기준 캐릭터(월드 이름 포함), 일일 검색 잔여 횟수를 확인한다.',
       inputSchema: {},
     },
     async () => {
@@ -137,7 +323,11 @@ export function createServer(bridge: BridgeLike): McpServer {
       const id = await ensureIdentity();
       if (typeof id === 'string') return text({ connected: true, identity: null, note: id });
       const dl = await bridge.request({ type: 'fetch', url: DAILY_LIMIT_URL, method: 'GET' });
-      return text({ connected: true, identity: id, dailyLimit: dl.ok ? dl.data : undefined });
+      return text({
+        connected: true,
+        identity: { ...id, worldName: worldName(id.worldId) },
+        dailyLimit: dl.ok ? dl.data : undefined,
+      });
     }
   );
 

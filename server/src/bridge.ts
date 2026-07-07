@@ -1,6 +1,6 @@
 import { WebSocketServer, WebSocket } from 'ws';
 import { randomUUID } from 'node:crypto';
-import { BRIDGE_PORT, type BridgeCommand, type BridgeReply } from '@maple/shared';
+import { BRIDGE_PORT, type BridgeCommandInput, type BridgeReply } from '@maple/shared';
 
 export class Bridge {
   private wss: WebSocketServer;
@@ -13,7 +13,7 @@ export class Bridge {
       host: '127.0.0.1',
       // CSWSH 방지: 브라우저 웹페이지(http/https origin)의 접속을 거부한다.
       // 확장 SW는 chrome-extension:// origin, node 클라이언트(테스트/e2e)는 origin 없음.
-      verifyClient: ({ origin }) => !origin || origin.startsWith('chrome-extension://'),
+      verifyClient: ({ origin }: { origin?: string }) => !origin || origin.startsWith('chrome-extension://'),
     });
     // 포트 충돌(EADDRINUSE) 등이 uncaught로 프로세스를 죽이지 않게 한다.
     this.wss.on('error', (err) => {
@@ -49,7 +49,7 @@ export class Bridge {
     p.resolve(msg);
   }
 
-  request(cmd: Omit<BridgeCommand, 'id'>, timeoutMs = 15000): Promise<BridgeReply> {
+  request(cmd: BridgeCommandInput, timeoutMs = 15000): Promise<BridgeReply> {
     if (!this.connected) {
       return Promise.resolve({
         id: '',

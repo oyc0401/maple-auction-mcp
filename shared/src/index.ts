@@ -22,6 +22,9 @@ export interface DiscoverCommand {
 
 export type BridgeCommand = FetchCommand | DiscoverCommand;
 
+// Omit은 유니온에 분배되지 않으므로(id 제거 시 url 등이 사라짐) 명시적으로 분배한 입력 타입
+export type BridgeCommandInput = Omit<FetchCommand, 'id'> | Omit<DiscoverCommand, 'id'>;
+
 export type BridgeErrorCode =
   | 'DISCONNECTED' // 확장 미연결 (서버가 생성)
   | 'TIMEOUT'      // 확장 응답 없음 (서버가 생성)

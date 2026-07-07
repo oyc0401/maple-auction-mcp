@@ -31,14 +31,39 @@ POST /v1/market/web/items/searches/tool-tip
 
 ### 필터 (`filters`)
 
+2026-07-08, 웹 거래소의 실제 POST 바디를 fetch 인터셉트로 캡처해 확인한 전체 스키마.
+
 | 필드 | 타입 | 설명 |
 | --- | --- | --- |
-| `keyword` | `string` | 검색어. 예: `"아케인셰이드 가즈"` |
+| `keyword` | `string` | 검색어. **빈 문자열이면 400** — 없으면 필드 자체를 생략 |
 | `exactMatch` | `boolean` | 정확히 일치 검색 여부 |
-| `itemCategory` | `object` | 아이템 카테고리 필터 |
-| `itemCategory.itemDetailCategory` | `string` | 세부 카테고리. 예: `"WEAPON"` |
-| `enhancementOption` | `object` | 강화 옵션 필터 |
-| `enhancementOption.potentialGrade` | `number` | 잠재능력 등급 필터 (아래 [등급 코드](#등급-코드-grade) 참고) |
+| `itemCategory.itemDetailCategory` | `string` | 세부 카테고리. 예: `"WEAPON"`, `"ARMOR_ARMOR"`, `"WEAPON_ONE_HANDED_CHAIN"` (계층 코드 전부 유효) |
+| `itemCategory.itemJobCategory` | `string` | 직업군: `WARRIOR` `MAGE` `ARCHER` `THIEF` `PIRATE` |
+| `price.min` / `price.max` | `string` | 가격 범위 (메소, **문자열**) |
+| `basicOption.levelMin/Max` | `number` | 착용 레벨 범위 |
+| `enhancementOption.starforceMin/Max` | `number` | 스타포스 범위 |
+| `enhancementOption.potentialGrade` | `number` | 잠재 등급 ([등급 코드](#등급-코드-grade)) |
+| `enhancementOption.additionalPotentialGrade` | `number` | 에디셔널 등급 (동일 코드) |
+| `enhancementOption.potentialOptionSum` | `object` | 잠재 옵션 **합산** 필터: `{ physicalAttackPercent: 21 }` |
+| `enhancementOption.potentialOptions` | `object[]` | 잠재 옵션 **개별** 필터: `[{ physicalAttackPercent: 9 }, ...]` (줄마다 단일 키) |
+| `enhancementOption.additionalPotentialOptionSum` / `additionalPotentialOptions` | 〃 | 에디셔널 잠재, 형태 동일 |
+| `enhancementOption.ex*` | `number` | 추가 옵션 최소값을 바로 키로: `exMaxHp`, `exPhysicalAttack`, `exBossDamagePercent`, `exAllStatsPercent`, `exReducedLevelReq` 등 |
+| `enhancementOption.scroll*` | `number` | 주문서 누적 강화치: `scrollPhysicalAttack`, `scrollStr`, `scrollMaxHp` 등 8종 |
+| `enhancementOption.remainUpgradeCountMin/Max` | `number` | 주문서 강화 잔여 횟수 |
+| `etcOption.seedRingLevelMin/Max` | `number` | 특수 스킬 반지 레벨 |
+| `etcOption.cuttableCountMin/Max` | `number` | 가위 사용 가능 횟수 |
+| `etcOption.uncuttable` | `boolean` | 가위 횟수 미부여만 (cuttableCount와 동시 사용 불가) |
+| `etcOption.isBindedWhenEquipped` | `boolean` | 장착 시 교환 불가만 |
+| `etcOption.isExOptExtractable` | `boolean` | 추가 옵션 추출 가능만 |
+| `etcOption.isPotentialExtractable` | `boolean` | 잠재 추출 가능만 |
+| `myWorldOnly` | `boolean` | 현재 월드 아이템만 |
+
+잠재/에디셔널 옵션 키 전체 목록과 카테고리 코드는 `server/src/constants.ts` 참고.
+
+#### 최근 시세 (판매 완료 매물)
+
+`POST /v1/market/web/items/searches/sold/recent` — body는 `{worldId, accountId, characterId}`만.
+**일일 검색 횟수를 소진하지 않는다** (실측 2026-07-08).
 
 ### 정렬 타입 (`sortType`)
 

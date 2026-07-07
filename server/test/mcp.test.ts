@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
-import type { BridgeCommand, BridgeReply } from '@maple/shared';
+import type { BridgeCommandInput, BridgeReply } from '@maple/shared';
 import { createServer, type BridgeLike } from '../src/mcp.js';
 
 const ID = { worldId: 5, accountId: 1, characterId: 2 };
@@ -19,7 +19,7 @@ const pageResp = (searchKey: string, page: number, count: number, total: number,
   page, limit: 20, total, totalPages: Math.ceil(total / 20), hasNext, searchKey,
 });
 
-function fakeBridge(handler: (cmd: Omit<BridgeCommand, 'id'>) => BridgeReply): BridgeLike {
+function fakeBridge(handler: (cmd: BridgeCommandInput) => BridgeReply): BridgeLike {
   return {
     connected: true,
     request: async (cmd) => handler(cmd),
@@ -132,6 +132,115 @@ describe('get_page (GET 정렬/페이지네이션)', () => {
     expect(parsed.page).toBe(3);
     expect(parsed.searchKey).toBe('key-B');
     expect(postCount).toBe(2); // 최초 검색 + 만료 복구 재검색
+  });
+});
+
+describe('search_weapon / search_armor (상세 필터 검색)', () => {
+  it('subCategory 기본값(WEAPON)과 상세 필터로 POST 바디를 만든다', async () => {
+    const calls: any[] = [];
+    const c = await client(fakeBridge((cmd) => {
+      calls.push(cmd);
+      if (cmd.type === 'discover') return { id: '1', ok: true, data: ID };
+      if (cmd.method === 'GET') return { id: '3', ok: true, status: 200, data: { search: { limit: 100, remaining: 97 } } };
+      return { id: '2', ok: true, status: 201, data: pageResp('key-w', 1, 10, 5, false) };
+    }));
+    const r = await c.callTool({
+      name: 'search_weapon',
+      arguments: {
+        subCategory: 'WEAPON_ONE_HANDED_CHAIN',
+        additionalPotentialOptions: [{ option: 'physicalAttackPercent', minValue: 21 }],
+        myWorldOnly: true,
+      },
+    });
+    const parsed = JSON.parse(textOf(r));
+    expect(parsed.searchKey).toBe('key-w');
+    const post = calls.find((c) => c.type === 'fetch' && c.method === 'POST');
+    expect(post.body.filters.itemCategory).toEqual({ itemDetailCategory: 'WEAPON_ONE_HANDED_CHAIN' });
+    expect(post.body.filters.enhancementOption.additionalPotentialOptionSum).toEqual({ physicalAttackPercent: 21 });
+    expect(post.body.filters.myWorldOnly).toBe(true);
+  });
+
+  it('잘못된 옵션 키는 MCP단에서 막는다', async () => {
+    const calls: any[] = [];
+    const c = await client(fakeBridge((cmd) => (calls.push(cmd), { id: '1', ok: true, data: ID })));
+    const r: any = await c.callTool({
+      name: 'search_weapon',
+      arguments: { potentialOptions: [{ option: 'notAnOption', minValue: 1 }] },
+    });
+    expect(r.isError).toBe(true);
+    expect(calls.filter((c) => c.type === 'fetch')).toHaveLength(0);
+  });
+});
+
+// 인증 API를 흉내내는 브리지: accounts / gameWorlds/{5,45}에 캐릭터가 있다
+function authBridge(extra?: (cmd: any) => BridgeReply | null): BridgeLike {
+  return fakeBridge((cmd: any) => {
+    const hit = extra?.(cmd);
+    if (hit) return hit;
+    if (cmd.type === 'discover') return { id: '1', ok: true, data: ID };
+    if (/\/accounts$/.test(cmd.url)) return { id: '2', ok: true, data: { accounts: [{ accountId: 1 }] } };
+    const m = cmd.url?.match(/gameWorlds\/(\d+)\/characters/);
+    if (m) {
+      const w = Number(m[1]);
+      if (w === 5) return { id: '3', ok: true, data: { characters: [{ characterId: 2, characterName: '오유찬', level: 270 }] } };
+      if (w === 45) return { id: '4', ok: true, data: { characters: [{ characterId: 9, characterName: '에오스캐릭', level: 200 }] } };
+      return { id: '5', ok: false, code: 'HTTP_ERROR', status: 500, error: 'HTTP 500' };
+    }
+    return { id: '9', ok: true };
+  });
+}
+
+describe('list_characters / set_character', () => {
+  it('월드 이름을 붙여 캐릭터 목록을 반환한다', async () => {
+    const c = await client(authBridge());
+    const r = await c.callTool({ name: 'list_characters', arguments: {} });
+    const parsed = JSON.parse(textOf(r));
+    expect(parsed).toEqual([
+      { world: '크로아', name: '오유찬', level: 270, characterId: 2 },
+      { world: '에오스', name: '에오스캐릭', level: 200, characterId: 9 },
+    ]);
+  });
+
+  it('set_character로 다른 월드 캐릭터로 전환하면 이후 검색이 그 월드로 나간다', async () => {
+    const posts: any[] = [];
+    const c = await client(authBridge((cmd: any) => {
+      if (cmd.type === 'fetch' && cmd.method === 'POST' && /tool-tip/.test(cmd.url)) {
+        posts.push(cmd.body);
+        return { id: '6', ok: true, status: 201, data: pageResp('k', 1, 10, 1, false) };
+      }
+      if (cmd.type === 'fetch' && /daily-limit/.test(cmd.url)) return { id: '7', ok: true, data: { search: { remaining: 1 } } };
+      return null;
+    }));
+    const r = await c.callTool({ name: 'set_character', arguments: { characterName: '에오스캐릭' } });
+    expect(JSON.parse(textOf(r)).switched.world).toBe('에오스');
+    await c.callTool({ name: 'search_items', arguments: { keyword: 'x' } });
+    expect(posts[0].worldId).toBe(45);
+    expect(posts[0].characterId).toBe(9);
+  });
+
+  it('없는 이름이면 안내를 반환한다', async () => {
+    const c = await client(authBridge());
+    const r = await c.callTool({ name: 'set_character', arguments: { characterName: '없는캐릭' } });
+    expect(textOf(r)).toContain('일치하는 캐릭터가 없습니다');
+  });
+});
+
+describe('recent_sold (최근 시세, 검색 횟수 무료)', () => {
+  it('identity만 담아 POST하고 결과를 요약한다', async () => {
+    const calls: any[] = [];
+    const c = await client(fakeBridge((cmd: any) => {
+      calls.push(cmd);
+      if (cmd.type === 'discover') return { id: '1', ok: true, data: ID };
+      return { id: '2', ok: true, status: 201, data: pageResp('sold', 1, 10, 10, false) };
+    }));
+    const r = await c.callTool({ name: 'recent_sold', arguments: {} });
+    const parsed = JSON.parse(textOf(r));
+    expect(parsed.items).toHaveLength(10);
+    const post = calls.find((c) => c.type === 'fetch');
+    expect(post.url).toContain('/searches/sold/recent');
+    expect(post.body).toEqual({ worldId: 5, accountId: 1, characterId: 2 });
+    // daily-limit 조회도 하지 않는다 (무료 API)
+    expect(calls.filter((c) => c.type === 'fetch')).toHaveLength(1);
   });
 });
 

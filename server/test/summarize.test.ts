@@ -67,6 +67,7 @@ describe('summarizeItem', () => {
       tradeDesc: '1회 교환 가능 (거래 후 교환 불가) · (가위: 7 / 10)',
       endDate: '2026-07-09T12:24:11.920Z',
       wishlist: 3,
+      isMyWorld: true,
     });
   });
 
@@ -81,6 +82,12 @@ describe('summarizeItem', () => {
     expect(s.scroll).toBeNull();
     expect(s.powerDiff).toBeNull();
     expect(s.tradeDesc).toBeNull();
+  });
+
+  it('isMyWorld를 그대로 전달한다 (필드 없으면 true)', () => {
+    expect(summarizeItem({ ...item, isMyWorld: false }).isMyWorld).toBe(false);
+    expect(summarizeItem({ ...item, isMyWorld: true }).isMyWorld).toBe(true);
+    expect(summarizeItem(item).isMyWorld).toBe(true);
   });
 
   it('소울 미장착이면 soul은 null', () => {

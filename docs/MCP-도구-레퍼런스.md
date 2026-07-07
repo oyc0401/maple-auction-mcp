@@ -1,8 +1,33 @@
 # MCP 도구 레퍼런스 (AI가 보는 도구)
 
-`maple-auction` MCP 서버가 노출하는 도구는 **3개**다. 모든 매물(`items[]`)은 압축 요약 형태이며, 필드 의미는 [응답 예시 문서](./응답-예시-풀옵션-아이템.md)를 참고한다.
+`maple-auction` MCP 서버가 노출하는 도구는 **8개**다. 모든 매물(`items[]`)은 압축 요약 형태이며, 필드 의미는 [응답 예시 문서](./응답-예시-풀옵션-아이템.md)를 참고한다.
 
-**기본 흐름**: `search_items`로 검색(일일 검색 1회 소진) → 응답의 `searchKey`로 `get_page`를 정렬·페이지 바꿔가며 자유롭게 조회(무료).
+| 도구 | 용도 | 검색 횟수 |
+| --- | --- | :---: |
+| `search_items` | 이름 위주 빠른 검색 | 1회 소진 |
+| `search_weapon` | 무기 상세 검색 (전체 필터) | 1회 소진 |
+| `search_armor` | 방어구·장신구 상세 검색 (전체 필터) | 1회 소진 |
+| `get_page` | 검색 결과 정렬·페이지 조회 | 무료 |
+| `recent_sold` | 최근 시세 (판매 완료 매물) | 무료 |
+| `list_characters` | 계정 캐릭터 목록 (월드 이름 포함) | 무료 |
+| `set_character` | 검색 기준 캐릭터(월드) 전환 | 무료 |
+| `get_status` | 연결·계정·잔여 횟수 확인 | 무료 |
+
+**기본 흐름**: `search_items`(또는 `search_weapon`/`search_armor`)로 검색(일일 검색 1회 소진) → 응답의 `searchKey`로 `get_page`를 정렬·페이지 바꿔가며 자유롭게 조회(무료).
+
+**상세 필터 검색** (`search_weapon` / `search_armor`): 웹 거래소의 검색 필터 전체를 지원한다 — `subCategory`(하위 분류), `jobClass`(직업군), `priceMin/Max`, `levelMin/Max`, `starforceMin/Max`, `potentialGrade`/`additionalPotentialGrade`(0없음~4레전드리), `potentialOptions`/`additionalPotentialOptions`(`[{option, minValue}]`, 기본 합산 모드 — `potentialSum: false`로 줄별 개별 충족), `extraOptions`(추옵), `scrollOptions`(주문서 누적), `remainUpgradeCountMin/Max`, `cuttableCountMin/Max`/`uncuttable`, `isBindedWhenEquipped`, `isExOptExtractable`/`isPotentialExtractable`, `myWorldOnly`(현재 월드만), 방어구는 `seedRingLevelMin/Max`(특수 스킬 반지). 옵션 키·카테고리 코드 목록은 `server/src/constants.ts` 참고.
+
+예 — 에디셔널 공격력 합 21% 이상인 체인(현재 월드만):
+
+```json
+{ "subCategory": "WEAPON_ONE_HANDED_CHAIN",
+  "additionalPotentialOptions": [{ "option": "physicalAttackPercent", "minValue": 21 }],
+  "myWorldOnly": true }
+```
+
+**최근 시세** (`recent_sold`): 판매 완료된 매물 목록. 검색 횟수를 소진하지 않아 시세 파악에 우선 사용.
+
+**캐릭터 전환** (`list_characters` → `set_character`): 거래소는 월드(그룹) 단위이므로 다른 월드 캐릭터로 전환하면 그 월드 매물이 검색된다. `get_status`의 `identity.worldName`으로 현재 기준 월드를 확인할 수 있다.
 
 ---
 
@@ -102,7 +127,7 @@
 ```json
 {
   "connected": true,
-  "identity": { "worldId": 5, "accountId": 12345678, "characterId": 87654321, "characterName": "홍길동" },
+  "identity": { "worldId": 5, "accountId": 12345678, "characterId": 87654321, "characterName": "홍길동", "worldName": "크로아" },
   "dailyLimit": { "search": { "limit": 100, "remaining": 97 }, "register": { "limit": 20, "remaining": 20 } }
 }
 ```
@@ -125,6 +150,7 @@
 | `starforce` | `number` | 스타포스 강화 수치 |
 | `scroll` | `string \| null` | `"강화 N회 (남은 횟수 x / 복구가능 y / 총 z)"` |
 | `powerDiff` | `number \| null` | 전투력 증가량(현재 장비 대비, 음수 가능). 착용 불가 아이템이면 `null` |
+| `isMyWorld` | `boolean` | 내 월드 매물 여부 |
 | `finalStat` | `object \| null` | 최종 합산 스탯(고정 키, 0도 표기): `str/dex/int/luk/all/pad/mad/mhp/dam/bdr/imdr` |
 | `exOption` | `string \| null` | 추가옵션 항목 (`"마력 +33 / INT +40 / ..."`) |
 | `potential` | `string \| null` | 잠재능력 (`"레전드리: 옵션 / 옵션 / ..."`) |
