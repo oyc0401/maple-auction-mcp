@@ -35,6 +35,10 @@ codex mcp add maple-auction -- npx -y maple-auction-mcp
 
 > 앱솔랩스 스피어 에디공 21% 이상 매물 찾아줘
 
+## 개인정보 처리방침
+
+크롬 확장은 어떠한 데이터도 외부로 수집·전송하지 않습니다. 자세한 내용은 [개인정보 처리방침](docs/privacy-policy.md)을 참고하세요.
+
 ## 라이선스
 
 [MIT](LICENSE)
