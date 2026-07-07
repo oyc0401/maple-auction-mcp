@@ -22,7 +22,10 @@ export interface ItemSummary {
   exceptional: string | null; // 익셉셔널 강화 내역
   soul: string | null; // 소울: "이름 / 옵션"
   tradeDesc: string | null; // 거래 관련: "장착 시 교환 불가 · (가위: 7 / 10)"
-  endDate: string;
+  seedRingLevel?: number; // 특수 스킬 반지 레벨 (반지 전용, 가격 결정 요소). 반지 아니거나 0이면 생략
+  status: string; // 매물 상태: ON_SALE 판매중 / SOLD 판매완료 등
+  tradeDate: string | null; // 판매 완료 시각(시세·찜의 팔린 매물). 판매중이면 null
+  endDate: string; // 판매 등록 만료 시각(판매중 기준). 시세(SOLD)에선 판매시각은 tradeDate를 볼 것
   wishlist: number;
   isMyWorld: boolean; // 내 월드 매물 여부. false면 구매 시 가격의 10% 메이플포인트 수수료
   isAmazingHyperUpgradeUsed: boolean; // 놀라운 장비강화 주문서(놀장) 사용 여부
@@ -102,6 +105,9 @@ export function summarizeItem(item: any): ItemSummary {
     exceptional: exceptionalLine(tt.exceptionalUpgrade),
     soul: soulLine(tt.soulWeapon),
     tradeDesc: tradeLine(tt.tradeDesc),
+    ...(item.seedRingLevel ? { seedRingLevel: item.seedRingLevel } : {}),
+    status: item.status,
+    tradeDate: item.tradeDate ?? null,
     endDate: item.endDate,
     wishlist: item.wishlistCount,
     isMyWorld: item.isMyWorld !== false,

@@ -145,7 +145,7 @@ export function createServer(bridge: BridgeLike): McpServer {
   // '[시세 판단]',
   // '- 같은 이름 아이템도 잠재(보공·방무·공%)·에디셔널(공%)·추옵·스타포스·가위 잔여·놀장 여부에 따라 가격이 수십~수백 배 차이. 깡통 최저가를 옵션 매물 시세로 착각 금지.',
 
-  const server = new McpServer({ name: 'maple-auction', version: '0.2.0' }, { instructions });
+  const server = new McpServer({ name: 'maple-auction', version: '0.3.0' }, { instructions });
 
   let identity: (Identity & { characterName?: string }) | null = null;
   let characters: CharacterInfo[] | null = null;

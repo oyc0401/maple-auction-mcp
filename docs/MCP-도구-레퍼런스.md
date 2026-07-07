@@ -1,21 +1,24 @@
 # MCP 도구 레퍼런스 (AI가 보는 도구)
 
-`maple-auction` MCP 서버가 노출하는 도구는 **8개**다. 모든 매물(`items[]`)은 압축 요약 형태이며, 필드 의미는 [응답 예시 문서](./응답-예시-풀옵션-아이템.md)를 참고한다.
+`maple-auction` MCP 서버가 노출하는 도구는 **11개**다. 모든 매물(`items[]`)은 압축 요약 형태이며, 필드 의미는 [응답 예시 문서](./응답-예시-풀옵션-아이템.md)를 참고한다.
 
 | 도구 | 용도 | 검색 횟수 |
 | --- | --- | :---: |
 | `search_items` | 이름 위주 빠른 검색 | 1회 소진 |
-| `search_weapon` | 무기 상세 검색 (전체 필터) | 1회 소진 |
-| `search_armor` | 방어구·장신구 상세 검색 (전체 필터) | 1회 소진 |
-| `get_page` | 검색 결과 정렬·페이지 조회 | 무료 |
-| `recent_sold` | 최근 시세 (판매 완료 매물) | 무료 |
+| `search_weapon` | 무기 상세 검색 (전체 필터, `sold`로 시세) | 1회 소진 |
+| `search_armor` | 방어구·장신구 상세 검색 (전체 필터, `sold`로 시세) | 1회 소진 |
+| `get_page` | 검색 결과 정렬·페이지 조회 (라이브/시세) | 무료 |
+| `recent_sold` | 최근 시세 (필터 없는 판매 완료 매물) | 무료 |
+| `add_wishlist` | 찜 목록에 추가 (남은 슬롯 반환) | 무료 |
+| `remove_wishlist` | 찜 목록에서 제거 (남은 슬롯 반환) | 무료 |
+| `get_wishlist` | 찜 목록·남은 슬롯 조회 | 무료 |
 | `list_characters` | 계정 캐릭터 목록 (월드 이름 포함) | 무료 |
 | `set_character` | 검색 기준 캐릭터(월드) 전환 | 무료 |
 | `get_status` | 연결·계정·잔여 횟수 확인 | 무료 |
 
 **기본 흐름**: `search_items`(또는 `search_weapon`/`search_armor`)로 검색(일일 검색 1회 소진) → 응답의 `searchKey`로 `get_page`를 정렬·페이지 바꿔가며 자유롭게 조회(무료).
 
-**상세 필터 검색** (`search_weapon` / `search_armor`): 웹 거래소의 검색 필터 전체를 지원한다 — `subCategory`(하위 분류), `jobClass`(직업군), `priceMin/Max`, `levelMin/Max`, `starforceMin/Max`, `potentialGrade`/`additionalPotentialGrade`(0없음~4레전드리), `potentialOptions`/`additionalPotentialOptions`(`[{option, minValue}]`, 기본 합산 모드 — `potentialSum: false`로 줄별 개별 충족), `extraOptions`(추옵), `scrollOptions`(주문서 누적), `remainUpgradeCountMin/Max`, `cuttableCountMin/Max`/`uncuttable`, `isBindedWhenEquipped`, `isExOptExtractable`/`isPotentialExtractable`, `myWorldOnly`(현재 월드만), 방어구는 `seedRingLevelMin/Max`(특수 스킬 반지). 옵션 키·카테고리 코드 목록은 `server/src/constants.ts` 참고.
+**상세 필터 검색** (`search_weapon` / `search_armor`): 웹 거래소의 검색 필터 전체를 지원한다 — `subCategory`(하위 분류), `jobClass`(직업군), `priceMin/Max`, `levelMin/Max`, `starforceMin/Max`, `potentialGrade`/`additionalPotentialGrade`(0없음~4레전드리), `potentialOptions`/`additionalPotentialOptions`(`[{option, minValue}]`, 기본 합산 모드 — `potentialSum: false`로 줄별 개별 충족), `extraOptions`(추옵), `scrollOptions`(주문서 누적), `remainUpgradeCountMin/Max`, `cuttableCountMin/Max`/`uncuttable`, `isBindedWhenEquipped`, `isExOptExtractable`/`isPotentialExtractable`, `myWorldOnly`(현재 월드만), `sold`(판매 완료가=시세), 방어구는 `seedRingLevelMin/Max`(특수 스킬 반지). 옵션 키·카테고리 코드 목록은 `server/src/constants.ts` 참고.
 
 예 — 에디셔널 공격력 합 21% 이상인 체인(현재 월드만):
 
@@ -25,7 +28,11 @@
   "myWorldOnly": true }
 ```
 
-**최근 시세** (`recent_sold`): 판매 완료된 매물 목록. 검색 횟수를 소진하지 않아 시세 파악에 우선 사용.
+**시세(판매 완료가) 검색** (`sold: true`): `search_weapon`/`search_armor`에 `sold: true`를 주면 **같은 필터로 판매 완료 매물**을 검색한다(무기 시세/방어구 시세). 라이브 검색과 동일하게 POST가 검색 1회를 소진하고, `searchKey`로 `get_page`를 무료로 넘긴다(내부적으로 시세 전용 GET URL을 자동 선택). 필터 없이 최근 판매만 훑을 땐 `recent_sold`(무료)를 쓴다.
+
+**찜** (`add_wishlist` / `remove_wishlist` / `get_wishlist`): 매물의 `id`(`"{tradeSn}:{subIdx}"`)로 찜을 추가·제거한다. 검색 횟수를 소진하지 않으며, 조작 후 **남은 슬롯 수(`remainingSlots`)** 를 반환한다. 찜은 **최대 50개**. 이미 찜한 매물을 다시 추가하면 실패한다(HTTP 409). 거래소는 월드 그룹 단위라 다른 월드 그룹 매물은 찜할 수 없다.
+
+**최근 시세** (`recent_sold`): 필터 없는 판매 완료 매물 목록. 검색 횟수를 소진하지 않아 빠른 시세 파악에 쓴다.
 
 **캐릭터 전환** (`list_characters` → `set_character`): 거래소는 월드(그룹) 단위이므로 다른 월드 캐릭터로 전환하면 그 월드 매물이 검색된다. `get_status`의 `identity.worldName`으로 현재 기준 월드를 확인할 수 있다.
 
@@ -137,6 +144,33 @@
 
 ---
 
+## 4. 찜 — `add_wishlist` / `remove_wishlist` / `get_wishlist`
+
+찜 목록을 관리한다. 모두 **검색 횟수를 소진하지 않는다.** 찜은 **최대 50개**.
+
+`add_wishlist` / `remove_wishlist`는 매물의 `id`(`"{tradeSn}:{subIdx}"`, 검색 결과·`get_wishlist` 응답의 `id` 필드)만 넘기면 된다. 조작 후 남은 슬롯 수를 반환한다.
+
+### 파라미터 (add/remove)
+
+| 이름 | 타입 | 필수 | 설명 |
+| --- | --- | :---: | --- |
+| `itemId` | `string` | ✅ | 매물 `id` (예 `"6Q6Fp1l…:0"`). 마지막 `:` 뒤가 `subIdx` |
+
+### 응답
+
+```json
+// add_wishlist / remove_wishlist
+{ "added": true, "tradeSn": "6Q6Fp1l…", "subIdx": 0, "remainingSlots": 47, "max": 50 }
+
+// get_wishlist (파라미터 없음)
+{ "count": 3, "remainingSlots": 47, "max": 50, "items": [ /* 요약 매물 */ ] }
+```
+
+- 이미 찜한 매물을 다시 추가하면 `요청 실패 (HTTP_ERROR): HTTP 409 (API code 9)`.
+- 다른 월드 그룹 매물, 존재하지 않는 `tradeSn` 등은 4xx로 실패한다(에러 문자열에 API code 포함).
+
+---
+
 ## 매물 요약 필드 (`items[]`)
 
 두 검색 도구가 반환하는 각 매물의 요약 구조. 전체 예시·상세는 [응답 예시 문서](./응답-예시-풀옵션-아이템.md).
@@ -159,5 +193,8 @@
 | `exceptional` | `string \| null` | 익셉셔널 강화 내역 |
 | `soul` | `string \| null` | 소울 `"이름 / 옵션"` |
 | `tradeDesc` | `string \| null` | 거래 설명 (`"1회 교환 가능 … · (가위: 7 / 10)"`). 가위=플래티넘 카르마(5,900메포, 월 1회 마일리지 구매 가능) — 잔여 횟수 많을수록 가치↑ |
-| `endDate` | `string` | 판매 등록 만료 일시 (ISO 8601, UTC) |
+| `seedRingLevel` | `number?` | 특수 스킬 반지 레벨(반지 전용, 가격 결정 요소). 반지가 아니거나 0이면 필드 생략 |
+| `status` | `string` | 매물 상태: `ON_SALE`(판매 중) / `SOLD`(판매 완료) 등 |
+| `tradeDate` | `string \| null` | **판매 완료 시각** (ISO 8601, UTC). 시세(`sold`)·찜의 팔린 매물에 존재. 판매 중이면 `null` |
+| `endDate` | `string` | 판매 등록 만료 일시 (ISO 8601, UTC). 시세(`SOLD`)의 실제 판매 시각은 `tradeDate`를 볼 것 |
 | `wishlist` | `number` | 찜한 사람 수 |
