@@ -19,8 +19,9 @@ import {
   type Sort,
   type GetLimit,
 } from './mapping.js';
-import { summarizeSearch, summarizeItem } from './summarize.js';
+import { summarizeSearch, summarizeItem, type SearchSummary } from './summarize.js';
 import { listCharacters, type CharacterInfo } from './characters.js';
+import { fetchCharacterSpec, nexonApiKey, contributionFromAuction, hwansanDiff, type SpecTotals } from './hwansan/index.js';
 import {
   worldName,
   labelList,
@@ -74,7 +75,7 @@ function optionRows(keys: string[], what: string, keyDesc: string) {
 
 // 매물을 반환하는 도구 설명에 공통으로 붙는 응답 해석 안내
 const RESULT_NOTE =
-  ' 응답 매물의 isAmazingHyperUpgradeUsed=true는 놀장(놀라운 장비강화 주문서) 사용 장비: 성 수 대비 스탯이 높아 보이지만 스타포스 최대 15성 제한이 있어 보통 저평가되니 가격 비교 시 주의. powerDiff(전투력 증가량)는 캐릭터 마지막 로그아웃 시점 기준.';
+  ' 응답 매물의 isAmazingHyperUpgradeUsed=true는 놀장(놀라운 장비강화 주문서) 사용 장비: 성 수 대비 스탯이 높아 보이지만 스타포스 최대 15성 제한이 있어 보통 저평가되니 가격 비교 시 주의. powerDiff(전투력 증가량)는 캐릭터 마지막 로그아웃 시점 기준이며 보공/방무가 반영되지 않으니 신뢰하지 말 것. hwansanDiff(있을 때)는 이 무기를 현재 착용 무기 대신 낄 때 오르는 환산 주스탯(음수면 하락)으로 보공·방무·데미지 비선형까지 반영한 값이라 무기 우열 판단은 이걸 우선한다. 무기 검색 + 넥슨 오픈 API 키가 있을 때만 채워지며, 착용 불가 매물은 생략된다.';
 
 // search_armor / search_weapon 이 공유하는 상세 필터
 const detailFilterSchema = {
@@ -143,7 +144,31 @@ export function createServer(bridge: BridgeLike): McpServer {
 
   let identity: (Identity & { characterName?: string }) | null = null;
   let characters: CharacterInfo[] | null = null;
-  const bodyCache = new Map<string, { body: ReturnType<typeof buildCreateBody>; sold: boolean }>();
+  const bodyCache = new Map<string, { body: ReturnType<typeof buildCreateBody>; sold: boolean; weapon: boolean }>();
+
+  // 무기 검색이면 각 매물에 환산 주스탯 증가량(hwansanDiff)을 채운다. 넥슨 키·캐릭명이 있고
+  // 착용 가능한(powerDiff!=null) 매물에만. 실패는 조용히 생략(검색 기능은 그대로 동작).
+  async function enrichHwansan(summary: SearchSummary): Promise<SearchSummary> {
+    if (!nexonApiKey()) return summary;
+    const name = identity?.characterName;
+    if (!name) return summary;
+    const spec = await fetchCharacterSpec(name);
+    if (typeof spec === 'string' || !spec.currentWeapon) return summary;
+    const base: SpecTotals = {
+      main: spec.main, sub: spec.sub, attack: spec.attack, damageBossSum: spec.damageBossSum,
+      ignoreDef: spec.ignoreDef, critRate: spec.critRate, critDamage: spec.critDamage, finalDamage: spec.finalDamage,
+    };
+    for (const it of summary.items) {
+      if (it.powerDiff == null || !it.finalStat) continue; // 착용 불가 → 생략
+      const cand = contributionFromAuction(it, spec.mainStat, spec.isMagic);
+      it.hwansanDiff = Math.round(hwansanDiff(base, spec.currentWeapon, cand));
+    }
+    return summary;
+  }
+
+  // 검색 카테고리가 무기(보조무기 제외)면 환산 비교 대상. 현재 착용 "무기"가 기준이라 보조/방어구는 제외.
+  const isWeaponCategory = (category?: string) =>
+    !!category && category.startsWith('WEAPON') && category !== 'WEAPON_SUB';
 
   async function ensureIdentity(): Promise<Identity | string> {
     if (identity) return identity;
@@ -177,8 +202,11 @@ export function createServer(bridge: BridgeLike): McpServer {
     const created = await bridge.request({ type: 'fetch', url: sold ? SOLD_SEARCH_URL : SEARCH_URL, method: 'POST', body });
     if (!created.ok) return text(errorText(created));
     const data = created.data as any;
-    if (data?.searchKey) bodyCache.set(data.searchKey, { body, sold });
-    return text({ ...summarizeSearch(data), searchRemaining: await searchRemaining() });
+    const weapon = isWeaponCategory(params.category);
+    if (data?.searchKey) bodyCache.set(data.searchKey, { body, sold, weapon });
+    let summary = summarizeSearch(data);
+    if (weapon && !sold) summary = await enrichHwansan(summary);
+    return text({ ...summary, searchRemaining: await searchRemaining() });
   }
 
   // 찜 목록 개수·남은 슬롯을 조회한다(무료 GET). 실패 시 에러 문자열.
@@ -264,9 +292,14 @@ export function createServer(bridge: BridgeLike): McpServer {
       const id = await ensureIdentity();
       if (typeof id === 'string') return text(id);
       const q = { page, limit: limit as GetLimit, sort: sort as Sort };
-      const sold = bodyCache.get(searchKey)?.sold ?? false;
+      const cachedEntry = bodyCache.get(searchKey);
+      const sold = cachedEntry?.sold ?? false;
+      const enrich = async (data: unknown) => {
+        const s = summarizeSearch(data);
+        return cachedEntry?.weapon && !sold ? await enrichHwansan(s) : s;
+      };
       const reply = await bridge.request({ type: 'fetch', url: buildPageUrl(searchKey, q, id, sold), method: 'GET' });
-      if (reply.ok) return text(summarizeSearch(reply.data));
+      if (reply.ok) return text(await enrich(reply.data));
 
       // searchKey 만료 추정 → 캐시된 조건으로 재검색(POST) 후 해당 페이지 재조회 (라이브/시세 각각의 URL로)
       if (reply.code === 'HTTP_ERROR' && reply.status !== 403) {
@@ -278,7 +311,7 @@ export function createServer(bridge: BridgeLike): McpServer {
           if (newKey) {
             bodyCache.set(newKey, cached);
             const retry = await bridge.request({ type: 'fetch', url: buildPageUrl(newKey, q, id, cached.sold), method: 'GET' });
-            if (retry.ok) return text(summarizeSearch(retry.data));
+            if (retry.ok) return text(await enrich(retry.data));
           }
         }
       }

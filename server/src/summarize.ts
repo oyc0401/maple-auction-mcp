@@ -15,6 +15,7 @@ export interface ItemSummary {
   starforce: number;
   scroll: string | null; // 주문서 강화: "강화 8회 (남은 횟수 0 / 복구가능 1 / 총 9)"
   powerDiff: number | null; // 전투력 증가량 (착용 시). 착용 불가 시 null
+  hwansanDiff?: number; // 환산 주스탯 증가량(현재 무기 대비 착용 시). 무기 검색 + 넥슨 키 있을 때만 채워짐
   finalStat: Record<string, number> | null; // 최종 합산 스탯 (고정 키, 0도 표기)
   exOption: string | null; // 추가옵션 항목 (예: "마력 +33 / INT +40 / ...")
   potential: string | null;

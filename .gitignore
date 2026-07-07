@@ -4,6 +4,8 @@ dist/
 *.zip
 .DS_Store
 .superpowers/
+.env
+
 # 내부 작업 노트 (커밋 제외)
 maple_auction.md
 docs/superpowers/
