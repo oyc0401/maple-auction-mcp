@@ -11,7 +11,7 @@ export interface FetchCommand {
   id: string;
   type: 'fetch';
   url: string;
-  method: 'GET' | 'POST';
+  method: 'GET' | 'POST' | 'DELETE';
   body?: unknown;
 }
 

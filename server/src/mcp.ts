@@ -1,8 +1,25 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import type { BridgeCommandInput, BridgeReply, Identity } from '@maple/shared';
-import { buildCreateBody, buildPageUrl, SEARCH_URL, RECENT_SOLD_URL, DAILY_LIMIT_URL, SORTS, type SearchParams, type Sort, type GetLimit } from './mapping.js';
-import { summarizeSearch } from './summarize.js';
+import {
+  buildCreateBody,
+  buildPageUrl,
+  parseItemId,
+  buildWishlistGetUrl,
+  buildWishlistBody,
+  buildWishlistDeleteUrl,
+  SEARCH_URL,
+  SOLD_SEARCH_URL,
+  RECENT_SOLD_URL,
+  DAILY_LIMIT_URL,
+  WISHLIST_URL,
+  WISHLIST_MAX,
+  SORTS,
+  type SearchParams,
+  type Sort,
+  type GetLimit,
+} from './mapping.js';
+import { summarizeSearch, summarizeItem } from './summarize.js';
 import { listCharacters, type CharacterInfo } from './characters.js';
 import {
   worldName,
@@ -33,7 +50,9 @@ function errorText(reply: Extract<BridgeReply, { ok: false }>): string {
   if (reply.status === 403) {
     return '넥슨 로그인이 필요합니다. 크롬에서 https://nxlogin.nexon.com/auth/login 에 접속해 로그인한 뒤 다시 시도하세요.';
   }
-  return `요청 실패 (${reply.code}): ${reply.error}`;
+  const apiCode = (reply.data as { code?: number } | null)?.code;
+  const suffix = apiCode != null ? ` (API code ${apiCode})` : '';
+  return `요청 실패 (${reply.code}): ${reply.error}${suffix}`;
 }
 
 // ── 공통 필터 zod 스키마 (실측 스펙: docs/API.md) ──────────────────────────────
@@ -89,6 +108,10 @@ const detailFilterSchema = {
   isExOptExtractable: z.boolean().optional().describe('추가 옵션 추출 가능만'),
   isPotentialExtractable: z.boolean().optional().describe('잠재능력 추출 가능만'),
   myWorldOnly: z.boolean().optional().describe('현재 캐릭터 월드의 매물만 (타 월드 매물은 구매 시 가격의 10% 메이플포인트 수수료)'),
+  sold: z
+    .boolean()
+    .optional()
+    .describe('true면 판매 완료된 매물(시세)을 같은 필터로 검색한다. 기본 false(현재 판매 중). 시세도 검색 1회 소진, 다음 페이지는 get_page로 무료 조회.'),
 };
 
 // 반지 전용이지만 방어구 스키마에 포함
@@ -126,7 +149,7 @@ export function createServer(bridge: BridgeLike): McpServer {
 
   let identity: (Identity & { characterName?: string }) | null = null;
   let characters: CharacterInfo[] | null = null;
-  const bodyCache = new Map<string, ReturnType<typeof buildCreateBody>>();
+  const bodyCache = new Map<string, { body: ReturnType<typeof buildCreateBody>; sold: boolean }>();
 
   async function ensureIdentity(): Promise<Identity | string> {
     if (identity) return identity;
@@ -152,15 +175,24 @@ export function createServer(bridge: BridgeLike): McpServer {
   }
 
   // POST: 세션 생성. 정렬·페이지 선택 없이 가격낮은순 10개만 반환한다. 더 보려면 get_page(GET).
-  async function runSearch(params: SearchParams) {
+  // sold=true면 판매 완료(시세) 검색. body는 동일하고 URL만 다르다.
+  async function runSearch(params: SearchParams, sold = false) {
     const id = await ensureIdentity();
     if (typeof id === 'string') return text(id);
     const body = buildCreateBody(params, id);
-    const created = await bridge.request({ type: 'fetch', url: SEARCH_URL, method: 'POST', body });
+    const created = await bridge.request({ type: 'fetch', url: sold ? SOLD_SEARCH_URL : SEARCH_URL, method: 'POST', body });
     if (!created.ok) return text(errorText(created));
     const data = created.data as any;
-    if (data?.searchKey) bodyCache.set(data.searchKey, body);
+    if (data?.searchKey) bodyCache.set(data.searchKey, { body, sold });
     return text({ ...summarizeSearch(data), searchRemaining: await searchRemaining() });
+  }
+
+  // 찜 목록 개수·남은 슬롯을 조회한다(무료 GET). 실패 시 에러 문자열.
+  async function wishlistState(id: Identity): Promise<{ count: number; remaining: number; items: unknown[] } | string> {
+    const reply = await bridge.request({ type: 'fetch', url: buildWishlistGetUrl(id), method: 'GET' });
+    if (!reply.ok) return errorText(reply);
+    const items = ((reply.data as any)?.items ?? []) as unknown[];
+    return { count: items.length, remaining: Math.max(0, WISHLIST_MAX - items.length), items };
   }
 
   server.registerTool(
@@ -185,7 +217,7 @@ export function createServer(bridge: BridgeLike): McpServer {
     {
       title: '무기 상세 검색 (전체 필터)',
       description:
-        '무기를 상세 필터로 검색한다 (검색 횟수 1회 소진, 추가 페이지는 get_page). 잠재/에디셔널 옵션은 [{option, minValue}] 형식이고 기본은 합산 모드다. 예: 에디셔널 공격력 합 21% 이상 체인 → subCategory=WEAPON_ONE_HANDED_CHAIN, additionalPotentialOptions=[{option:"physicalAttackPercent", minValue:21}]' + RESULT_NOTE,
+        '무기를 상세 필터로 검색한다 (검색 횟수 1회 소진, 추가 페이지는 get_page). 잠재/에디셔널 옵션은 [{option, minValue}] 형식이고 기본은 합산 모드다. 예: 에디셔널 공격력 합 21% 이상 체인 → subCategory=WEAPON_ONE_HANDED_CHAIN, additionalPotentialOptions=[{option:"physicalAttackPercent", minValue:21}]. 무기 시세(판매 완료가)를 보려면 같은 필터에 sold=true.' + RESULT_NOTE,
       inputSchema: {
         subCategory: enumOf(WEAPON_CATEGORY_KEYS)
           .default('WEAPON')
@@ -193,7 +225,7 @@ export function createServer(bridge: BridgeLike): McpServer {
         ...detailFilterSchema,
       },
     },
-    async ({ subCategory, ...rest }) => runSearch({ ...(rest as SearchParams), category: subCategory as string })
+    async ({ subCategory, sold, ...rest }) => runSearch({ ...(rest as SearchParams), category: subCategory as string }, sold)
   );
 
   server.registerTool(
@@ -201,7 +233,7 @@ export function createServer(bridge: BridgeLike): McpServer {
     {
       title: '방어구·장신구 상세 검색 (전체 필터)',
       description:
-        '방어구/장신구를 상세 필터로 검색한다 (검색 횟수 1회 소진, 추가 페이지는 get_page). 잠재/에디셔널 옵션은 [{option, minValue}] 형식이고 기본은 합산 모드다.' + RESULT_NOTE,
+        '방어구/장신구를 상세 필터로 검색한다 (검색 횟수 1회 소진, 추가 페이지는 get_page). 잠재/에디셔널 옵션은 [{option, minValue}] 형식이고 기본은 합산 모드다. 방어구 시세(판매 완료가)를 보려면 같은 필터에 sold=true.' + RESULT_NOTE,
       inputSchema: {
         subCategory: enumOf(ARMOR_CATEGORY_KEYS)
           .default('ARMOR')
@@ -210,7 +242,7 @@ export function createServer(bridge: BridgeLike): McpServer {
         ...seedRingSchema,
       },
     },
-    async ({ subCategory, ...rest }) => runSearch({ ...(rest as SearchParams), category: subCategory as string })
+    async ({ subCategory, sold, ...rest }) => runSearch({ ...(rest as SearchParams), category: subCategory as string }, sold)
   );
 
   server.registerTool(
@@ -218,7 +250,7 @@ export function createServer(bridge: BridgeLike): McpServer {
     {
       title: '검색 결과 페이지 조회 (정렬/페이지네이션)',
       description:
-        'search_items/search_weapon/search_armor 가 반환한 searchKey로 원하는 정렬·페이지·크기의 결과를 조회한다. GET만 사용하므로 일일 검색 횟수를 소진하지 않는다. 응답의 hasNext가 true면 page를 늘려 다음 페이지를 볼 수 있다. 키가 만료됐으면 같은 조건으로 자동 재검색(이때만 검색 1회 소진).' + RESULT_NOTE,
+        'search_items/search_weapon/search_armor 가 반환한 searchKey로 원하는 정렬·페이지·크기의 결과를 조회한다(시세 sold=true 검색의 searchKey도 동일하게 처리). GET만 사용하므로 일일 검색 횟수를 소진하지 않는다. 응답의 hasNext가 true면 page를 늘려 다음 페이지를 볼 수 있다. 키가 만료됐으면 같은 조건으로 자동 재검색(이때만 검색 1회 소진).' + RESULT_NOTE,
       inputSchema: {
         searchKey: z.string().describe('검색 응답의 searchKey'),
         page: z.number().int().min(1).default(1).describe('페이지 번호 (1부터)'),
@@ -238,18 +270,20 @@ export function createServer(bridge: BridgeLike): McpServer {
       const id = await ensureIdentity();
       if (typeof id === 'string') return text(id);
       const q = { page, limit: limit as GetLimit, sort: sort as Sort };
-      const reply = await bridge.request({ type: 'fetch', url: buildPageUrl(searchKey, q, id), method: 'GET' });
+      const sold = bodyCache.get(searchKey)?.sold ?? false;
+      const reply = await bridge.request({ type: 'fetch', url: buildPageUrl(searchKey, q, id, sold), method: 'GET' });
       if (reply.ok) return text(summarizeSearch(reply.data));
 
-      // searchKey 만료 추정 → 캐시된 조건으로 재검색(POST) 후 해당 페이지 재조회
+      // searchKey 만료 추정 → 캐시된 조건으로 재검색(POST) 후 해당 페이지 재조회 (라이브/시세 각각의 URL로)
       if (reply.code === 'HTTP_ERROR' && reply.status !== 403) {
         const cached = bodyCache.get(searchKey);
         if (cached) {
-          const recreated = await bridge.request({ type: 'fetch', url: SEARCH_URL, method: 'POST', body: cached });
+          const searchUrl = cached.sold ? SOLD_SEARCH_URL : SEARCH_URL;
+          const recreated = await bridge.request({ type: 'fetch', url: searchUrl, method: 'POST', body: cached.body });
           const newKey: string | undefined = recreated.ok ? (recreated.data as any)?.searchKey : undefined;
           if (newKey) {
             bodyCache.set(newKey, cached);
-            const retry = await bridge.request({ type: 'fetch', url: buildPageUrl(newKey, q, id), method: 'GET' });
+            const retry = await bridge.request({ type: 'fetch', url: buildPageUrl(newKey, q, id, cached.sold), method: 'GET' });
             if (retry.ok) return text(summarizeSearch(retry.data));
           }
         }
@@ -278,6 +312,87 @@ export function createServer(bridge: BridgeLike): McpServer {
       } catch {
         return text(reply.data); // 응답 형태가 검색과 다르면 원본 반환
       }
+    }
+  );
+
+  server.registerTool(
+    'get_wishlist',
+    {
+      title: '찜 목록 조회',
+      description:
+        `찜한 매물 목록과 남은 슬롯을 조회한다 (검색 횟수 소진 없음). 찜은 최대 ${WISHLIST_MAX}개.` + RESULT_NOTE,
+      inputSchema: {},
+      annotations: { readOnlyHint: true },
+    },
+    async () => {
+      const id = await ensureIdentity();
+      if (typeof id === 'string') return text(id);
+      const st = await wishlistState(id);
+      if (typeof st === 'string') return text(st);
+      return text({ count: st.count, remainingSlots: st.remaining, max: WISHLIST_MAX, items: st.items.map(summarizeItem) });
+    }
+  );
+
+  server.registerTool(
+    'add_wishlist',
+    {
+      title: '찜 목록에 추가',
+      description:
+        `매물을 찜 목록에 추가한다 (검색 횟수 소진 없음). itemId는 검색 결과 매물의 id 필드("TRADESN:SUBIDX" 형식). 찜은 최대 ${WISHLIST_MAX}개이며, 추가 후 남은 슬롯 수(remainingSlots)를 반환한다. 이미 찜한 매물이면 409, 다른 월드 그룹이면 실패한다.`,
+      inputSchema: {
+        itemId: z.string().describe('매물 id (검색 결과의 id 필드, 예 "6Q6Fp1l...:0")'),
+      },
+    },
+    async ({ itemId }) => {
+      const id = await ensureIdentity();
+      if (typeof id === 'string') return text(id);
+      const { tradeSn, subIdx } = parseItemId(itemId);
+      const reply = await bridge.request({
+        type: 'fetch',
+        url: WISHLIST_URL,
+        method: 'POST',
+        body: buildWishlistBody(id, tradeSn, subIdx),
+      });
+      if (!reply.ok) return text(errorText(reply));
+      const st = await wishlistState(id);
+      return text({
+        added: true,
+        tradeSn,
+        subIdx,
+        remainingSlots: typeof st === 'string' ? undefined : st.remaining,
+        max: WISHLIST_MAX,
+      });
+    }
+  );
+
+  server.registerTool(
+    'remove_wishlist',
+    {
+      title: '찜 목록에서 제거',
+      description:
+        '매물을 찜 목록에서 제거한다 (검색 횟수 소진 없음). itemId는 매물의 id 필드("TRADESN:SUBIDX" 형식). 제거 후 남은 슬롯 수(remainingSlots)를 반환한다.',
+      inputSchema: {
+        itemId: z.string().describe('매물 id (검색 결과 또는 get_wishlist의 id 필드)'),
+      },
+    },
+    async ({ itemId }) => {
+      const id = await ensureIdentity();
+      if (typeof id === 'string') return text(id);
+      const { tradeSn, subIdx } = parseItemId(itemId);
+      const reply = await bridge.request({
+        type: 'fetch',
+        url: buildWishlistDeleteUrl(id, tradeSn, subIdx),
+        method: 'DELETE',
+      });
+      if (!reply.ok) return text(errorText(reply));
+      const st = await wishlistState(id);
+      return text({
+        removed: true,
+        tradeSn,
+        subIdx,
+        remainingSlots: typeof st === 'string' ? undefined : st.remaining,
+        max: WISHLIST_MAX,
+      });
     }
   );
 
