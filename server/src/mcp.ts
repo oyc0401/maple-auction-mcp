@@ -121,31 +121,24 @@ const seedRingSchema = {
 };
 
 export function createServer(bridge: BridgeLike): McpServer {
-  // 클라이언트가 시스템 프롬프트에 주입하는 서버 사용 상식 (영문 본문 + 아래 한국어 번역 주석, 압축 유지)
+  // 클라이언트가 시스템 프롬프트에 주입하는 서버 사용 상식. 한국어 유지 — 응답·필터가 전부 한국어라 톤을 맞추고,
+  // 방무·공퍼·보공·메획·아획 같은 단축어를 모델에 학습시키는 의미도 있음. (압축 유지)
   const instructions = [
-    'MapleStory (KMS) auction house MCP. Game knowledge required to use it well:',
-    '[Trading rules]',
-    '- The auction is world-group scoped (Group 2: Eos, Helios, Challengers4; every other world is Group 1).',
-    '- Buying an item with isMyWorld=false costs an extra fee of 10% of its price in Maple Points. Always factor this into price comparisons.',
-    '- Selling fee is 3-5% (3% with MVP Silver or higher).',
-    '- tradeDesc scissors count = remaining re-trades after equipping. Scissors (Platinum Karma) cost 5,900 Maple Points each; value drops non-linearly and steeply as the remaining count approaches 0.',
-    '- Meso and Maple Points are officially exchangeable (Meso Market), so MP fees can be valued in meso.',
-    '[Price judgment]',
-    '- Same-name items differ 10-100x in price by potential (boss dmg/IED/ATT%), additional potential (ATT%), flame stats, starforce, scissors count, and 놀장 - never quote a bare item\'s lowest price as the market price of an optioned one.',
+    '메이플스토리(KMS) 거래소 검색 MCP. 사용 시 알아야 할 게임 상식:',
+    '[거래 규칙]',
+    '- 거래소는 월드 그룹 단위 (2그룹: 에오스·헬리오스·챌린저스4, 나머지 월드는 전부 1그룹).',
+    '- isMyWorld=false(타 월드) 매물은 구매 시 가격의 10%만큼 메이플포인트 추가 수수료. 가격 비교 시 반드시 반영.',
+    '- 판매 수수료 3~5%(MVP등급 실버 이상 3%).',
+    '- tradeDesc의 가위는 장착 후 재거래 가능 횟수. 가위(플래티넘 카르마)는 개당 5,900메포, 잔여 횟수 0에 가까울수록 가치가 비선형적으로 급락.',
+    '- 메소↔메이플포인트는 메소마켓에서 공식 교환 가능 → 메포 수수료도 메소로 환산해 비교 가능.',
+    '[아이템 판단]',
+    '- 공퍼·데미지·방무는 무기·보조·엠블렘에만, 보공(보스뎀%)은 무기·보조에만(엠블렘 X).',
+    '- 메획·아획은 (귀고리·반지·얼장·눈장·펜던트)에만 뜸.',
+    '- 반지 4개·펜던트 2개 착용가능.',
+    '- 같은 이름 아이템도 잠재·추옵·스타포스·가위 잔여·놀장 여부에 따라 가격이 수백 배 차이.',
   ].join('\n');
 
-  // instructions 한국어 번역
-  // '메이플스토리(KMS) 거래소 검색 MCP. 사용 시 알아야 할 게임 상식:',
-  // '[거래 규칙]',
-  // '- 거래소는 월드 그룹 단위 (2그룹: 에오스·헬리오스·챌린저스4, 나머지 월드는 전부 1그룹).',
-  // '- isMyWorld=false(타 월드) 매물은 구매 시 가격의 10%만큼 메이플포인트 추가 수수료. 가격 비교 시 반드시 반영.',
-  // '- 판매 수수료 3~5%(MVP등급 실버 이상 3%)',
-  // '- tradeDesc의 가위는 장착 후 재거래 가능 횟수. 가위(플래티넘 카르마)는 개당 5,900메포, 잔여 횟수 0에 가까울수록 가치가 비선형적으로 급락',
-  // '- 메소↔메이플포인트는 메소마켓에서 공식 교환 가능 → 메포 수수료도 메소로 환산해 비교 가능.',
-  // '[시세 판단]',
-  // '- 같은 이름 아이템도 잠재(보공·방무·공%)·에디셔널(공%)·추옵·스타포스·가위 잔여·놀장 여부에 따라 가격이 수십~수백 배 차이. 깡통 최저가를 옵션 매물 시세로 착각 금지.',
-
-  const server = new McpServer({ name: 'maple-auction', version: '0.3.0' }, { instructions });
+  const server = new McpServer({ name: 'maple-auction', version: '0.3.3' }, { instructions });
 
   let identity: (Identity & { characterName?: string }) | null = null;
   let characters: CharacterInfo[] | null = null;
