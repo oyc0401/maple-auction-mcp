@@ -117,3 +117,89 @@ describe('Broker — 확장 라우팅', () => {
     b.close();
   });
 });
+
+function connectClient(): Promise<WebSocket> {
+  return new Promise((resolve, reject) => {
+    const ws = new WebSocket(`ws://127.0.0.1:${TEST_PORT}`); // origin 없음
+    ws.on('open', () => resolve(ws));
+    ws.on('error', reject);
+  });
+}
+
+let clientReqSeq = 0;
+// 클라이언트로 명령을 보내고 같은 id의 응답 1건을 받는다 (bridgeStatus는 건너뜀).
+function clientRequest(ws: WebSocket, cmd: Record<string, unknown>): Promise<any> {
+  const id = `c-${++clientReqSeq}`;
+  return new Promise((resolve) => {
+    const onMsg = (raw: WebSocket.RawData) => {
+      const m = JSON.parse(raw.toString());
+      if (m.type === 'bridgeStatus') return; // 상태 통지 무시
+      if (m.id !== id) return;
+      ws.off('message', onMsg);
+      resolve(m);
+    };
+    ws.on('message', onMsg);
+    ws.send(JSON.stringify({ ...cmd, id }));
+  });
+}
+
+describe('Broker — 멀티 클라이언트', () => {
+  it('두 클라이언트가 동시 요청해도 각자 자기 응답만 받는다', async () => {
+    broker = new Broker(TEST_PORT);
+    const ext = await connectExtension();
+    // 확장은 명령의 url을 그대로 data로 되돌려줌 → 응답 격리 확인
+    ext.on('message', (raw) => {
+      const cmd = JSON.parse(raw.toString());
+      if (cmd.keepalive) return;
+      ext.send(JSON.stringify({ id: cmd.id, ok: true, data: cmd.url }));
+    });
+    const c1 = await connectClient();
+    const c2 = await connectClient();
+    const [r1, r2] = await Promise.all([
+      clientRequest(c1, { type: 'fetch', url: 'URL-1', method: 'GET' }),
+      clientRequest(c2, { type: 'fetch', url: 'URL-2', method: 'GET' }),
+    ]);
+    expect(r1.data).toBe('URL-1');
+    expect(r2.data).toBe('URL-2');
+    ext.close(); c1.close(); c2.close();
+  });
+
+  it('확장 접속/해제 시 클라이언트에 bridgeStatus를 브로드캐스트한다', async () => {
+    broker = new Broker(TEST_PORT);
+    const statuses: boolean[] = [];
+    // 실제 BridgeClient처럼 open 전에 message 리스너를 붙여 초기 상태를 놓치지 않는다.
+    const c = new WebSocket(`ws://127.0.0.1:${TEST_PORT}`);
+    c.on('message', (raw) => {
+      const m = JSON.parse(raw.toString());
+      if (m.type === 'bridgeStatus') statuses.push(m.extension);
+    });
+    await new Promise((r) => c.on('open', r));
+    // 접속 즉시 초기 상태(false) 1건이 온다
+    await new Promise((r) => setTimeout(r, 50));
+    const ext = await connectExtension();
+    await new Promise((r) => setTimeout(r, 50));
+    ext.close();
+    await new Promise((r) => setTimeout(r, 50));
+    expect(statuses[0]).toBe(false);      // 초기
+    expect(statuses).toContain(true);     // 확장 연결
+    expect(statuses[statuses.length - 1]).toBe(false); // 확장 해제
+    c.close();
+  });
+
+  it('응답 전에 끊긴 클라이언트가 있어도 크래시하지 않는다', async () => {
+    broker = new Broker(TEST_PORT);
+    const ext = await connectExtension();
+    ext.on('message', (raw) => {
+      const cmd = JSON.parse(raw.toString());
+      if (cmd.keepalive) return;
+      setTimeout(() => ext.send(JSON.stringify({ id: cmd.id, ok: true, data: 'late' })), 80);
+    });
+    const c = await connectClient();
+    c.send(JSON.stringify({ id: 'x1', type: 'fetch', url: 'u', method: 'GET' }));
+    await new Promise((r) => setTimeout(r, 10));
+    c.close(); // 응답 오기 전에 끊음
+    await new Promise((r) => setTimeout(r, 120)); // 확장 응답이 도착해도 무사
+    expect(broker.extConnected).toBe(true);
+    ext.close();
+  });
+});

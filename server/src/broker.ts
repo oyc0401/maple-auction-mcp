@@ -1,6 +1,6 @@
 import { WebSocketServer, WebSocket } from 'ws';
 import { randomUUID } from 'node:crypto';
-import { BRIDGE_PORT, type BridgeCommandInput, type BridgeReply } from '@maple/shared';
+import { BRIDGE_PORT, type BridgeCommandInput, type BridgeReply, type BridgeStatus } from '@maple/shared';
 
 const DISCONNECTED_MSG =
   '크롬 확장이 연결되어 있지 않습니다. 크롬이 실행 중이고 Maple Auction Bridge 확장이 켜져 있는지 확인하세요.';
@@ -31,6 +31,8 @@ export class Broker {
   private extensions = new Set<WebSocket>();
   // discover가 고른 로그인된 확장. 일반 요청은 여기로만.
   private preferred: WebSocket | null = null;
+  // origin 없는 MCP 클라이언트 연결들(다중 세션).
+  private clients = new Set<WebSocket>();
   private pending = new Map<string, { resolve: (r: BridgeReply) => void; timer: NodeJS.Timeout }>();
 
   constructor(port: number = BRIDGE_PORT) {
@@ -48,19 +50,58 @@ export class Broker {
       const origin = req.headers.origin;
       if (origin && origin.startsWith('chrome-extension://')) {
         this.addExtension(ws);
+      } else {
+        this.addClient(ws);
       }
-      // origin 없는 클라이언트(MCP) 처리는 다음 태스크에서 추가한다.
     });
   }
 
   private addExtension(ws: WebSocket): void {
     this.extensions.add(ws);
+    this.broadcastStatus();
     ws.on('error', () => ws.close());
     ws.on('message', (raw) => this.onExtensionMessage(raw.toString()));
     ws.on('close', () => {
       this.extensions.delete(ws);
       if (this.preferred === ws) this.preferred = null;
+      this.broadcastStatus();
     });
+  }
+
+  private addClient(ws: WebSocket): void {
+    this.clients.add(ws);
+    this.sendStatus(ws); // 접속 즉시 현재 상태 통지
+    ws.on('error', () => ws.close());
+    ws.on('message', (raw) => void this.onClientMessage(ws, raw.toString()));
+    ws.on('close', () => this.clients.delete(ws));
+  }
+
+  // 클라이언트 메시지 = {...cmd, id: clientId}. request()로 감싸 응답에 clientId를 찍어 돌려준다.
+  private async onClientMessage(ws: WebSocket, raw: string): Promise<void> {
+    let msg: Record<string, unknown>;
+    try {
+      msg = JSON.parse(raw);
+    } catch {
+      return;
+    }
+    if (msg.keepalive) return; // id 없는 keepalive 무시
+    const clientId = msg.id;
+    if (typeof clientId !== 'string') return;
+    const { id: _omit, ...cmd } = msg;
+    const reply = await this.request(cmd as unknown as BridgeCommandInput);
+    if (ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ ...reply, id: clientId }));
+    }
+  }
+
+  private sendStatus(ws: WebSocket): void {
+    if (ws.readyState !== WebSocket.OPEN) return;
+    const status: BridgeStatus = { type: 'bridgeStatus', extension: this.extConnected };
+    ws.send(JSON.stringify(status));
+  }
+
+  private broadcastStatus(): void {
+    for (const ws of this.clients) this.sendStatus(ws);
   }
 
   get extConnected(): boolean {
@@ -135,6 +176,8 @@ export class Broker {
     this.pending.clear();
     for (const ws of this.extensions) ws.close();
     this.extensions.clear();
+    for (const ws of this.clients) ws.close();
+    this.clients.clear();
     this.preferred = null;
     return new Promise((resolve) => this.wss.close(() => resolve()));
   }
