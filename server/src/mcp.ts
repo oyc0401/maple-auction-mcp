@@ -53,6 +53,10 @@ function optionRows(keys: string[], labels: Record<string, string>, what: string
     .optional();
 }
 
+// 매물을 반환하는 도구 설명에 공통으로 붙는 응답 해석 안내
+const RESULT_NOTE =
+  ' 응답 매물의 isAmazingHyperUpgradeUsed=true는 놀장(놀라운 장비강화 주문서) 사용 장비: 성 수 대비 스탯이 높아 보이지만 스타포스 최대 15성 제한이 있어 보통 저평가되니 가격 비교 시 주의.';
+
 // search_armor / search_weapon 이 공유하는 상세 필터
 const detailFilterSchema = {
   keyword: z.string().optional().describe('아이템 이름 검색어 (필터만으로 검색하려면 생략)'),
@@ -146,7 +150,7 @@ export function createServer(bridge: BridgeLike): McpServer {
     {
       title: '거래소 빠른 검색 (이름 위주)',
       description:
-        '메이플스토리 거래소에서 아이템 이름으로 빠르게 검색한다. 가격 낮은순 10개(1페이지)와 searchKey를 반환하며, 더 많은 결과·다른 정렬·다음 페이지는 searchKey로 get_page를 호출한다(get_page는 검색 횟수를 소진하지 않음). 이 검색 자체는 일일 검색 횟수를 1회 소진한다. 잠재·에디셔널·추옵·가격 등 상세 필터가 필요하면 search_weapon / search_armor 를 사용하라.',
+        '메이플스토리 거래소에서 아이템 이름으로 빠르게 검색한다. 가격 낮은순 10개(1페이지)와 searchKey를 반환하며, 더 많은 결과·다른 정렬·다음 페이지는 searchKey로 get_page를 호출한다(get_page는 검색 횟수를 소진하지 않음). 이 검색 자체는 일일 검색 횟수를 1회 소진한다. 잠재·에디셔널·추옵·가격 등 상세 필터가 필요하면 search_weapon / search_armor 를 사용하라.' + RESULT_NOTE,
       inputSchema: {
         keyword: z.string().describe('아이템 이름 검색어'),
         exactMatch: z.boolean().optional().describe('정확히 일치 (기본 false)'),
@@ -163,7 +167,7 @@ export function createServer(bridge: BridgeLike): McpServer {
     {
       title: '무기 상세 검색 (전체 필터)',
       description:
-        '무기를 상세 필터로 검색한다 (검색 횟수 1회 소진, 추가 페이지는 get_page). 잠재/에디셔널 옵션은 [{option, minValue}] 형식이고 기본은 합산 모드다. 예: 에디셔널 공격력 합 21% 이상 체인 → subCategory=WEAPON_ONE_HANDED_CHAIN, additionalPotentialOptions=[{option:"physicalAttackPercent", minValue:21}]',
+        '무기를 상세 필터로 검색한다 (검색 횟수 1회 소진, 추가 페이지는 get_page). 잠재/에디셔널 옵션은 [{option, minValue}] 형식이고 기본은 합산 모드다. 예: 에디셔널 공격력 합 21% 이상 체인 → subCategory=WEAPON_ONE_HANDED_CHAIN, additionalPotentialOptions=[{option:"physicalAttackPercent", minValue:21}]' + RESULT_NOTE,
       inputSchema: {
         subCategory: enumOf(WEAPON_CATEGORY_KEYS)
           .default('WEAPON')
@@ -179,7 +183,7 @@ export function createServer(bridge: BridgeLike): McpServer {
     {
       title: '방어구·장신구 상세 검색 (전체 필터)',
       description:
-        '방어구/장신구를 상세 필터로 검색한다 (검색 횟수 1회 소진, 추가 페이지는 get_page). 잠재/에디셔널 옵션은 [{option, minValue}] 형식이고 기본은 합산 모드다.',
+        '방어구/장신구를 상세 필터로 검색한다 (검색 횟수 1회 소진, 추가 페이지는 get_page). 잠재/에디셔널 옵션은 [{option, minValue}] 형식이고 기본은 합산 모드다.' + RESULT_NOTE,
       inputSchema: {
         subCategory: enumOf(ARMOR_CATEGORY_KEYS)
           .default('ARMOR')
@@ -196,7 +200,7 @@ export function createServer(bridge: BridgeLike): McpServer {
     {
       title: '검색 결과 페이지 조회 (정렬/페이지네이션)',
       description:
-        'search_items/search_weapon/search_armor 가 반환한 searchKey로 원하는 정렬·페이지·크기의 결과를 조회한다. GET만 사용하므로 일일 검색 횟수를 소진하지 않는다. 응답의 hasNext가 true면 page를 늘려 다음 페이지를 볼 수 있다. 키가 만료됐으면 같은 조건으로 자동 재검색(이때만 검색 1회 소진).',
+        'search_items/search_weapon/search_armor 가 반환한 searchKey로 원하는 정렬·페이지·크기의 결과를 조회한다. GET만 사용하므로 일일 검색 횟수를 소진하지 않는다. 응답의 hasNext가 true면 page를 늘려 다음 페이지를 볼 수 있다. 키가 만료됐으면 같은 조건으로 자동 재검색(이때만 검색 1회 소진).' + RESULT_NOTE,
       inputSchema: {
         searchKey: z.string().describe('검색 응답의 searchKey'),
         page: z.number().int().min(1).default(1).describe('페이지 번호 (1부터)'),
@@ -241,7 +245,7 @@ export function createServer(bridge: BridgeLike): McpServer {
     {
       title: '최근 시세 (판매 완료 매물)',
       description:
-        '최근에 판매 완료된 매물(최근 시세)을 조회한다. 일일 검색 횟수를 소진하지 않는다. 현재 검색 기준 캐릭터의 월드(그룹) 기준이다.',
+        '최근에 판매 완료된 매물(최근 시세)을 조회한다. 일일 검색 횟수를 소진하지 않는다. 현재 검색 기준 캐릭터의 월드(그룹) 기준이다.' + RESULT_NOTE,
       inputSchema: {},
     },
     async () => {
