@@ -33,7 +33,9 @@ codex mcp add maple-auction -- npx -y maple-auction-mcp
 
 ## 사용 예
 
-> 앱솔랩스 스피어 에디공 21% 이상 매물 찾아줘
+> 에디공 21퍼 아케인 체인 검색해줘
+
+![메이플 경매장 검색 예시](docs/maple-auction-example.png)
 
 ## 개인정보 처리방침
 
