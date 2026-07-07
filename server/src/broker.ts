@@ -1,5 +1,6 @@
 import { WebSocketServer, WebSocket } from 'ws';
 import { randomUUID } from 'node:crypto';
+import { pathToFileURL } from 'node:url';
 import { BRIDGE_PORT, type BridgeCommandInput, type BridgeReply, type BridgeStatus } from '@maple/shared';
 
 const DISCONNECTED_MSG =
@@ -34,6 +35,8 @@ export class Broker {
   // origin 없는 MCP 클라이언트 연결들(다중 세션).
   private clients = new Set<WebSocket>();
   private pending = new Map<string, { resolve: (r: BridgeReply) => void; timer: NodeJS.Timeout }>();
+  // 서버 소켓 에러 훅. 단독 실행 시 EADDRINUSE 종료 처리에 사용(테스트에선 미설정).
+  onServerError?: (err: NodeJS.ErrnoException) => void;
 
   constructor(port: number = BRIDGE_PORT) {
     this.wss = new WebSocketServer({
@@ -43,8 +46,9 @@ export class Broker {
       // 확장 SW는 chrome-extension:// origin, node 클라이언트(테스트/MCP)는 origin 없음.
       verifyClient: ({ origin }: { origin?: string }) => !origin || origin.startsWith('chrome-extension://'),
     });
-    this.wss.on('error', (err) => {
+    this.wss.on('error', (err: NodeJS.ErrnoException) => {
       process.stderr.write(`[broker] WebSocketServer error: ${err.message}\n`);
+      this.onServerError?.(err);
     });
     this.wss.on('connection', (ws, req) => {
       const origin = req.headers.origin;
@@ -181,4 +185,17 @@ export class Broker {
     this.preferred = null;
     return new Promise((resolve) => this.wss.close(() => resolve()));
   }
+}
+
+export function startBroker(port: number = BRIDGE_PORT): Broker {
+  return new Broker(port);
+}
+
+// `node dist/broker.js`로 직접 실행될 때만 기동. import될 땐 실행 안 함.
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  const broker = startBroker();
+  broker.onServerError = (err) => {
+    // 포트 충돌(다른 브로커가 이미 소유) → 경쟁에서 진 이 프로세스는 조용히 종료. 승자가 서빙.
+    if (err.code === 'EADDRINUSE') process.exit(0);
+  };
 }
