@@ -55,7 +55,7 @@ function optionRows(keys: string[], labels: Record<string, string>, what: string
 
 // 매물을 반환하는 도구 설명에 공통으로 붙는 응답 해석 안내
 const RESULT_NOTE =
-  ' 응답 매물의 isAmazingHyperUpgradeUsed=true는 놀장(놀라운 장비강화 주문서) 사용 장비: 성 수 대비 스탯이 높아 보이지만 스타포스 최대 15성 제한이 있어 보통 저평가되니 가격 비교 시 주의.';
+  ' 응답 매물의 isAmazingHyperUpgradeUsed=true는 놀장(놀라운 장비강화 주문서) 사용 장비: 성 수 대비 스탯이 높아 보이지만 스타포스 최대 15성 제한이 있어 보통 저평가되니 가격 비교 시 주의. powerDiff(전투력 증가량)는 캐릭터 마지막 로그아웃 시점 기준.';
 
 // search_armor / search_weapon 이 공유하는 상세 필터
 const detailFilterSchema = {
@@ -94,15 +94,43 @@ const seedRingSchema = {
 };
 
 export function createServer(bridge: BridgeLike): McpServer {
-  // 클라이언트가 시스템 프롬프트에 주입하는 서버 사용 상식 (압축 유지)
+  // 클라이언트가 시스템 프롬프트에 주입하는 서버 사용 상식 (영문 본문 + 아래 한국어 번역 주석, 압축 유지)
   const instructions = [
-    '메이플스토리(KMS) 거래소 검색 MCP. 사용 시 알아야 할 게임 상식:',
-    '- 거래소는 월드 그룹 단위로 묶인다 (1그룹: 스카니아~챌린저스3 / 2그룹: 에오스·헬리오스·챌린저스4).',
-    '- 매물의 isMyWorld가 false(타 월드)면 구매 시 아이템 가격의 10%만큼 메이플포인트가 추가 수수료로 든다. 가격 비교·추천 시 반드시 반영할 것.',
-    '- tradeDesc의 "가위: n/10"은 장착 후 재거래 가능 횟수. 가위(플래티넘 카르마)는 개당 5,900 메이플포인트이고 월 1회 마일리지로도 구매 가능 → 가위 잔여 횟수가 많을수록 가치가 높다.',
-    '- 메소↔메이플포인트는 수수료를 내고 공식 교환 가능하므로, 메포 수수료도 메소 가치로 환산해 비교할 수 있다.',
-    '- 검색 생성(POST)은 일 100회 제한. 같은 조건 재조회는 get_page(무료), 시세 파악은 recent_sold(무료)를 우선 사용.',
+    'MapleStory (KMS) auction house MCP. Game knowledge required to use it well:',
+    '[Trading rules]',
+    '- The auction is world-group scoped (Group 1: Scania~Challengers3 / Group 2: Eos, Helios, Challengers4).',
+    '- Buying an item with isMyWorld=false costs an extra fee of 10% of its price in Maple Points (min 10 MP). Always factor this into price comparisons. The MP conversion rate refreshes daily at 10:00 KST; cross-world purchase is blocked 09:55-10:05.',
+    '- Selling fee is 5% (3% with MVP Silver+ or PC-bang, not stacked) plus a 2,000-meso listing deposit (refunded only when sold). Flip profit = sale*0.95 - cost(*1.1 if cross-world) - 2,000.',
+    '- Listings last 24h (48h with MVP Silver+); selling registration is limited to 20/day.',
+    '- tradeDesc "가위: n/10" = remaining re-trades via Platinum Karma scissors (5,900 MP each, buyable once/month with mileage). More remaining cuts = higher value.',
+    '- Meso and Maple Points are officially exchangeable (Meso Market), so MP fees can be valued in meso.',
+    '[Price judgment]',
+    '- recent_sold (actual completed sales) is more reliable than the lowest current listing; the 1-2 cheapest listings may be bait or price manipulation - judge by the distribution.',
+    '- Same-name items differ 10-100x in price by potential (boss dmg/IED/ATT%), additional potential, flame stats, starforce, scissors count, and 놀장 - never quote a bare item\'s lowest price as the market price of an optioned one.',
+    '- Prices swing most on weekends (Saturday dip, Sunday supply surge) and around events (Sunday Maple starforce discount, cube events) that spike enhancement demand.',
+    '[Finding deals]',
+    '- Snipe undervalued items: narrow with detail filters (additional potential ATT%, flames, scissors) then watch REGISTER_DATE_DESC; END_DATE_ASC surfaces urgent sellers.',
+    '[Usage]',
+    '- Search creation (POST) is limited to 100/day. Re-view the same search with get_page (free); check market prices with recent_sold (free) first.',
   ].join('\n');
+
+  // instructions 한국어 번역
+  // '메이플스토리(KMS) 거래소 검색 MCP. 사용 시 알아야 할 게임 상식:',
+  // '[거래 규칙]',
+  // '- 거래소는 월드 그룹 단위 (1그룹: 스카니아~챌린저스3 / 2그룹: 에오스·헬리오스·챌린저스4).',
+  // '- isMyWorld=false(타 월드) 매물은 구매 시 가격의 10%만큼 메이플포인트 추가 수수료(최소 10메포). 가격 비교 시 반드시 반영. 메포 변환비율은 매일 오전 10시 갱신, 09:55~10:05는 타 월드 구매 불가.',
+  // '- 판매 수수료 5%(MVP 실버 이상·PC방 3%, 중복 불가) + 등록 보증금 2,000메소(판매 성공 시에만 반환). 장사 순수익 = 판매가×0.95 − 매입가(타월드면 ×1.1) − 2,000.',
+  // '- 등록 기간 기본 24시간(MVP 실버 이상 48시간), 판매 등록 일 20회 제한.',
+  // '- tradeDesc의 "가위: n/10"은 장착 후 재거래 가능 횟수. 가위(플래티넘 카르마)는 개당 5,900메포, 월 1회 마일리지 구매 가능 → 잔여 횟수 많을수록 가치↑.',
+  // '- 메소↔메이플포인트는 메소마켓에서 공식 교환 가능 → 메포 수수료도 메소로 환산해 비교 가능.',
+  // '[시세 판단]',
+  // '- 현재 등록 매물 최저가보다 recent_sold(실제 판매 완료가)가 더 신뢰할 수 있는 시세. 최저 1~2건은 미끼·시세조작일 수 있으니 분포로 판단.',
+  // '- 같은 이름 아이템도 잠재(보공·방무·공%)·에디셔널(공%)·추옵·스타포스·가위 잔여·놀장 여부에 따라 가격이 수십~수백 배 차이. 깡통 최저가를 옵션 매물 시세로 착각 금지.',
+  // '- 시세는 주말 변동이 큼(토요일 저점, 일요일 공급 급증). 썬데이 메이플(샤타포스=스타포스 할인)·큐브 이벤트 시즌에 강화 수요 급변.',
+  // '[매물 발굴]',
+  // '- 저평가 스나이핑: 상세 필터(에디 공%, 추옵, 가위)로 좁힌 뒤 REGISTER_DATE_DESC(최신 등록순) 감시. END_DATE_ASC(마감 임박순)는 급처 매물 발굴용.',
+  // '[사용 수칙]',
+  // '- 검색 생성(POST)은 일 100회 제한. 같은 조건 재조회는 get_page(무료), 시세 파악은 recent_sold(무료) 우선.',
 
   const server = new McpServer({ name: 'maple-auction', version: '0.2.0' }, { instructions });
 
@@ -212,7 +240,7 @@ export function createServer(bridge: BridgeLike): McpServer {
           .enum(SORTS)
           .default('PRICE_PER_ITEM_ASC')
           .describe(
-            'ITEM_NAME_ASC(이름순) / PRICE_PER_ITEM_ASC(개당 낮은가격) / PRICE_DESC(높은가격) / ATTACK_POWER_DESC(전투력증가량 높은순) / END_DATE_ASC(판매종료 임박순) / REGISTER_DATE_DESC(최신등록순)'
+            'ITEM_NAME_ASC(이름순) / PRICE_PER_ITEM_ASC(개당 낮은가격) / PRICE_DESC(높은가격) / ATTACK_POWER_DESC(전투력증가량 높은순 — 검색 결과 500개 이하일 때만 동작, 필터로 좁힌 뒤 사용) / END_DATE_ASC(판매종료 임박순, 급처 매물) / REGISTER_DATE_DESC(최신등록순, 스나이핑)'
           ),
       },
     },
