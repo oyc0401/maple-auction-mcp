@@ -25,6 +25,7 @@ export interface ItemSummary {
   endDate: string;
   wishlist: number;
   isMyWorld: boolean; // 내 월드 매물 여부. false면 구매 시 가격의 10% 메이플포인트 수수료
+  isAmazingHyperUpgradeUsed: boolean; // 놀라운 장비강화 주문서(놀장) 사용 여부
 }
 
 export interface SearchSummary {
@@ -104,6 +105,7 @@ export function summarizeItem(item: any): ItemSummary {
     endDate: item.endDate,
     wishlist: item.wishlistCount,
     isMyWorld: item.isMyWorld !== false,
+    isAmazingHyperUpgradeUsed: tt.isAmazingHyperUpgradeUsed === true,
   };
 }
 

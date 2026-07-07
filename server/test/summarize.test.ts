@@ -68,6 +68,7 @@ describe('summarizeItem', () => {
       endDate: '2026-07-09T12:24:11.920Z',
       wishlist: 3,
       isMyWorld: true,
+      isAmazingHyperUpgradeUsed: false,
     });
   });
 
@@ -88,6 +89,11 @@ describe('summarizeItem', () => {
     expect(summarizeItem({ ...item, isMyWorld: false }).isMyWorld).toBe(false);
     expect(summarizeItem({ ...item, isMyWorld: true }).isMyWorld).toBe(true);
     expect(summarizeItem(item).isMyWorld).toBe(true);
+  });
+
+  it('놀장 사용 여부를 전달한다 (필드 없으면 false)', () => {
+    expect(summarizeItem({ ...item, toolTip: { ...item.toolTip, isAmazingHyperUpgradeUsed: true } }).isAmazingHyperUpgradeUsed).toBe(true);
+    expect(summarizeItem(item).isAmazingHyperUpgradeUsed).toBe(false);
   });
 
   it('소울 미장착이면 soul은 null', () => {

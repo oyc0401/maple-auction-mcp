@@ -151,6 +151,7 @@
 | `scroll` | `string \| null` | `"강화 N회 (남은 횟수 x / 복구가능 y / 총 z)"` |
 | `powerDiff` | `number \| null` | 전투력 증가량(현재 장비 대비, 음수 가능). 착용 불가 아이템이면 `null` |
 | `isMyWorld` | `boolean` | 내 월드 매물 여부. `false`면 구매 시 **가격의 10% 메이플포인트 수수료** |
+| `isAmazingHyperUpgradeUsed` | `boolean` | 놀라운 장비강화 주문서(놀장) 사용 여부 |
 | `finalStat` | `object \| null` | 최종 합산 스탯(고정 키, 0도 표기): `str/dex/int/luk/all/pad/mad/mhp/dam/bdr/imdr` |
 | `exOption` | `string \| null` | 추가옵션 항목 (`"마력 +33 / INT +40 / ..."`) |
 | `potential` | `string \| null` | 잠재능력 (`"레전드리: 옵션 / 옵션 / ..."`) |
