@@ -1,5 +1,9 @@
+// ===== Maple Auction Bridge — background service worker v0.1.3 =====
 import { BRIDGE_PORT, type BridgeCommand } from '@maple/shared';
 import { executeFetch, discoverIdentity } from './api.js';
+
+// 로드된 코드 버전을 SW 콘솔에 남긴다(예전/지금 코드 구분용). 버전 출처는 manifest.
+console.info(`[maple-bridge] service worker loaded — v${chrome.runtime.getManifest().version}`);
 
 let ws: WebSocket | null = null;
 let keepalive: ReturnType<typeof setInterval> | null = null;

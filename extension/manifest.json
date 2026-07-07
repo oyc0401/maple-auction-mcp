@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Maple Auction MCP",
   "description": "AI로 메이플스토리 매물을 검색하세요. Maple Auction MCP 서버와 브라우저를 연결합니다.",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "icons": {
     "16": "icons/icon16.png",
     "32": "icons/icon32.png",
