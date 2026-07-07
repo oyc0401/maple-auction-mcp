@@ -3,6 +3,12 @@
   "name": "Maple Auction MCP Bridge",
   "description": "메이플 거래소 검색 MCP를 위한 로컬 브릿지. 로그인 세션으로 거래소 API를 대신 호출합니다.",
   "version": "0.1.0",
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
   "background": { "service_worker": "dist/background.js", "type": "module" },
   "host_permissions": ["https://*.nexon.com/*"],
   "permissions": ["alarms"]
