@@ -9,7 +9,7 @@
 ### Claude Code
 
 ```bash
-claude mcp add maple-auction -- npx -y maple-auction-mcp
+claude mcp add --scope user maple-auction -- npx -y maple-auction-mcp
 ```
 
 Claude Desktop은 `claude_desktop_config.json`에 추가:
