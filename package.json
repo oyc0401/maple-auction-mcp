@@ -1,0 +1,13 @@
+{
+  "name": "maple-auction-monorepo",
+  "private": true,
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc -b server extension shared || pnpm -r exec tsc --noEmit",
+    "build": "pnpm -r run build"
+  },
+  "devDependencies": {
+    "typescript": "^5.5.0",
+    "vitest": "^2.0.0"
+  }
+}

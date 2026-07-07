@@ -1,0 +1,15 @@
+{
+  "name": "@maple/extension",
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "build": "node build.mjs"
+  },
+  "dependencies": {
+    "@maple/shared": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/chrome": "^0.0.270",
+    "esbuild": "^0.23.0"
+  }
+}

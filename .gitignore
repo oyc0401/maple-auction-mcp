@@ -1,0 +1,7 @@
+node_modules/
+dist/
+.DS_Store
+
+# 내부 작업 노트 (커밋 제외)
+maple_auction.md
+docs/superpowers/

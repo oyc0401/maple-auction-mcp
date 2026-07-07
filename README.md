@@ -1,0 +1,40 @@
+# Maple Auction MCP
+
+메이플스토리 경매장을 AI로 검색하는 MCP 서버.
+
+## 설치 방법
+
+먼저 [크롬 확장](https://chromewebstore.google.com/)을 설치하고, 크롬에서 [넥슨에 로그인](https://nxlogin.nexon.com/auth/login)해 두세요.
+
+### Claude Code
+
+```bash
+claude mcp add maple-auction -- npx -y maple-auction-mcp
+```
+
+Claude Desktop은 `claude_desktop_config.json`에 추가:
+
+```json
+{
+  "mcpServers": {
+    "maple-auction": {
+      "command": "npx",
+      "args": ["-y", "maple-auction-mcp"]
+    }
+  }
+}
+```
+
+### Codex
+
+```bash
+codex mcp add maple-auction -- npx -y maple-auction-mcp
+```
+
+## 사용 예
+
+> 앱솔랩스 스피어 공격력 21% 이상 매물 최저가로 찾아줘
+
+## 라이선스
+
+[MIT](LICENSE)
