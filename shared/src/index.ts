@@ -49,3 +49,12 @@ export interface BridgeErr {
 }
 
 export type BridgeReply = BridgeOk | BridgeErr;
+
+// 브로커 → MCP 클라이언트로 보내는 상태 통지(확장 연결 유무). id 없는 메시지.
+export interface BridgeStatus {
+  type: 'bridgeStatus';
+  extension: boolean;
+}
+
+// 브로커가 클라이언트 소켓으로 보내는 메시지 = 요청 응답(BridgeReply) 또는 상태 통지.
+export type BridgeServerMessage = BridgeReply | BridgeStatus;
