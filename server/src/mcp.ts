@@ -98,31 +98,25 @@ export function createServer(bridge: BridgeLike): McpServer {
   const instructions = [
     'MapleStory (KMS) auction house MCP. Game knowledge required to use it well:',
     '[Trading rules]',
-    '- The auction is world-group scoped (Group 1: Scania~Challengers3 / Group 2: Eos, Helios, Challengers4).',
+    '- The auction is world-group scoped (Group 2: Eos, Helios, Challengers4; every other world is Group 1).',
     '- Buying an item with isMyWorld=false costs an extra fee of 10% of its price in Maple Points. Always factor this into price comparisons.',
     '- Selling fee is 3-5% (3% with MVP Silver or higher).',
     '- tradeDesc scissors count = remaining re-trades after equipping. Scissors (Platinum Karma) cost 5,900 Maple Points each; value drops non-linearly and steeply as the remaining count approaches 0.',
     '- Meso and Maple Points are officially exchangeable (Meso Market), so MP fees can be valued in meso.',
     '[Price judgment]',
     '- Same-name items differ 10-100x in price by potential (boss dmg/IED/ATT%), additional potential (ATT%), flame stats, starforce, scissors count, and 놀장 - never quote a bare item\'s lowest price as the market price of an optioned one.',
-    '- Snipe undervalued items: narrow with detail filters (additional potential ATT%, flames, scissors) then watch REGISTER_DATE_DESC (newest first); END_DATE_ASC surfaces urgent sellers.',
-    '[Usage]',
-    '- Search creation (POST) is limited to 100/day. Re-view the same search with get_page (free); check market prices with recent_sold (free) first.',
   ].join('\n');
 
   // instructions 한국어 번역
   // '메이플스토리(KMS) 거래소 검색 MCP. 사용 시 알아야 할 게임 상식:',
   // '[거래 규칙]',
-  // '- 거래소는 월드 그룹 단위 (1그룹: 스카니아~챌린저스3 / 2그룹: 에오스·헬리오스·챌린저스4).',
+  // '- 거래소는 월드 그룹 단위 (2그룹: 에오스·헬리오스·챌린저스4, 나머지 월드는 전부 1그룹).',
   // '- isMyWorld=false(타 월드) 매물은 구매 시 가격의 10%만큼 메이플포인트 추가 수수료. 가격 비교 시 반드시 반영.',
   // '- 판매 수수료 3~5%(MVP등급 실버 이상 3%)',
   // '- tradeDesc의 가위는 장착 후 재거래 가능 횟수. 가위(플래티넘 카르마)는 개당 5,900메포, 잔여 횟수 0에 가까울수록 가치가 비선형적으로 급락',
   // '- 메소↔메이플포인트는 메소마켓에서 공식 교환 가능 → 메포 수수료도 메소로 환산해 비교 가능.',
   // '[시세 판단]',
   // '- 같은 이름 아이템도 잠재(보공·방무·공%)·에디셔널(공%)·추옵·스타포스·가위 잔여·놀장 여부에 따라 가격이 수십~수백 배 차이. 깡통 최저가를 옵션 매물 시세로 착각 금지.',
-  // '- 저평가 스나이핑: 상세 필터(에디 공%, 추옵, 가위)로 좁힌 뒤 REGISTER_DATE_DESC(최신 등록순) 감시. END_DATE_ASC(마감 임박순)는 급처 매물 발굴용.',
-  // '[사용 수칙]',
-  // '- 검색 생성(POST)은 일 100회 제한. 같은 조건 재조회는 get_page(무료), 시세 파악은 recent_sold(무료) 우선.',
 
   const server = new McpServer({ name: 'maple-auction', version: '0.2.0' }, { instructions });
 
