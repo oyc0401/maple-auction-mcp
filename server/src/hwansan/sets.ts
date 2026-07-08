@@ -42,6 +42,36 @@ export function detectVariantSuffix(setCounts: Record<string, number>): string {
   return Object.entries(freq).sort((a, b) => b[1] - a[1])[0]?.[0] ?? '';
 }
 
+// 세트 count단계에서 활성인 누적 보너스 (2..count 중 DB에 있는 단계 증분의 합).
+export function setBonusAt(setName: string, count: number): Contribution {
+  const tiers = SET_DB[setName];
+  if (!tiers) return EMPTY_CONTRIBUTION;
+  let c = EMPTY_CONTRIBUTION;
+  for (const [tierStr, opt] of Object.entries(tiers)) {
+    if (Number(tierStr) <= count) c = mergeContribution(c, contributionFromOptionText(opt));
+  }
+  return c;
+}
+
+// 여러 부위 동시 교체(조합)로 인한 세트 카운트 변화 → 총 세트 보너스 델타(다단계 반영).
+export function comboSetDelta(
+  baseCounts: Record<string, number>,
+  changes: { oldSet: string | null; newSet: string | null }[]
+): Contribution {
+  const counts: Record<string, number> = { ...baseCounts };
+  const affected = new Set<string>();
+  for (const { oldSet, newSet } of changes) {
+    if (oldSet) { counts[oldSet] = (counts[oldSet] ?? 0) - 1; affected.add(oldSet); }
+    if (newSet) { counts[newSet] = (counts[newSet] ?? 0) + 1; affected.add(newSet); }
+  }
+  let delta = EMPTY_CONTRIBUTION;
+  for (const set of affected) {
+    delta = mergeContribution(delta, setBonusAt(set, counts[set] ?? 0));
+    delta = mergeContribution(delta, negateContribution(setBonusAt(set, baseCounts[set] ?? 0)));
+  }
+  return delta;
+}
+
 // 현재 장비의 oldSet 한 피스가 빠지고 candidate의 newSet 한 피스가 들어올 때 세트 보너스 순변화.
 // oldSet/newSet은 SET_DB의 풀 세트명(또는 null). 같은 세트면 변화 없음.
 export function setSwapDelta(

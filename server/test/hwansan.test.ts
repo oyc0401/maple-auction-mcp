@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { resolveStatModel } from '../src/hwansan/jobs.js';
 import { contributionFromRawItem, hwansanDiff, damageMultiplier, type CharState } from '../src/hwansan/calc.js';
-import { setBaseOfItem, setSwapDelta } from '../src/hwansan/sets.js';
+import { setBaseOfItem, setSwapDelta, comboSetDelta } from '../src/hwansan/sets.js';
 
 // 원본 매물 형태 헬퍼: toolTip.stat + 잠재/에디 entries
 const rawItem = (stat: Record<string, number>, pot: string[] = [], add: string[] = []) => ({
@@ -92,6 +92,24 @@ describe('세트 델타', () => {
     expect(d.atk).toBe(-30); // 공격력 +30 손실
     expect(d.matk).toBe(-30);
     expect(d.dmgBoss).toBe(-10); // 보스 몬스터 데미지 +10% 손실
+  });
+
+  it('조합: 여러 피스로 세트 완성 시 다단계 누적 (에테르넬 0→4셋)', () => {
+    const changes = Array.from({ length: 4 }, () => ({ oldSet: null, newSet: '에테르넬 세트(전사)' }));
+    const d = comboSetDelta({}, changes);
+    // 에테르넬 2셋(공40) + 3셋(공40,올50) + 4셋(공40) = 공120, 올스탯50, 보공30
+    expect(d.atk).toBe(120);
+    expect(d.allStat).toBe(50);
+    expect(d.dmgBoss).toBe(30);
+  });
+
+  it('조합: 세트 여러 피스 동시 파괴 (앱솔 5→3셋 = 4·5셋 손실)', () => {
+    const d = comboSetDelta({ '앱솔랩스 세트(도적)': 5 }, [
+      { oldSet: '앱솔랩스 세트(도적)', newSet: null },
+      { oldSet: '앱솔랩스 세트(도적)', newSet: null },
+    ]);
+    expect(d.atk).toBe(-55); // 4셋(공25) + 5셋(공30) 손실
+    expect(d.dmgBoss).toBe(-10); // 5셋 보공10% 손실
   });
 });
 

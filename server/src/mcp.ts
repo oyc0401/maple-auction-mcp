@@ -21,7 +21,7 @@ import {
 } from './mapping.js';
 import { summarizeSearch, summarizeItem, type SearchSummary } from './summarize.js';
 import { listCharacters, type CharacterInfo } from './characters.js';
-import { fetchCharacterSpec, nexonApiKey, contributionFromRawItem, hwansanDiff, categoryToSlots, setSwapDelta, mergeContribution, EMPTY_CONTRIBUTION } from './hwansan/index.js';
+import { fetchCharacterSpec, nexonApiKey, contributionFromRawItem, hwansanDiff, categoryToSlots, setSwapDelta, comboSetDelta, mergeContribution, EMPTY_CONTRIBUTION, type Contribution } from './hwansan/index.js';
 
 // 세트 피스 수 변화를 이름으로 추론 가능한 부위(방어구/무기)만 세트 델타 적용. 장신구는 과대계상 방지 위해 제외.
 const SET_AWARE_SLOTS = new Set(['무기', '보조무기', '모자', '상의', '하의', '한벌옷', '신발', '장갑', '망토']);
@@ -149,6 +149,13 @@ export function createServer(bridge: BridgeLike): McpServer {
   let characters: CharacterInfo[] | null = null;
   const bodyCache = new Map<string, { body: ReturnType<typeof buildCreateBody>; sold: boolean; category?: string }>();
 
+  // 매물 id → { 원본, 후보 부위 }. compare_combo가 검색된 매물을 id로 조회한다(세션 동안 유지).
+  const itemCache = new Map<string, { raw: any; slots: string[] }>();
+  function cacheItems(rawItems: any[], category?: string) {
+    const slots = categoryToSlots(category) ?? [];
+    for (const it of rawItems) if (it?._id) itemCache.set(it._id, { raw: it, slots });
+  }
+
   // 장비 검색(무기/방어구/장신구)이면 각 매물에 환산 주스탯 증가량(hwansanDiff)을 채운다.
   // 비교 기준 = 해당 검색 카테고리의 현재 착용 부위(다부위는 교체 시 최대 이득 부위). 넥슨 키·캐릭명 필요.
   // rawItems는 summary.items와 같은 순서의 원본(잠재 파싱용). 실패는 조용히 생략(검색은 그대로 동작).
@@ -210,6 +217,7 @@ export function createServer(bridge: BridgeLike): McpServer {
     if (!created.ok) return text(errorText(created));
     const data = created.data as any;
     if (data?.searchKey) bodyCache.set(data.searchKey, { body, sold, category: params.category });
+    cacheItems(data.items ?? [], params.category);
     let summary = summarizeSearch(data);
     if (!sold) summary = await enrichHwansan(summary, data.items ?? [], params.category);
     return text({ ...summary, searchRemaining: await searchRemaining() });
@@ -301,6 +309,7 @@ export function createServer(bridge: BridgeLike): McpServer {
       const cachedEntry = bodyCache.get(searchKey);
       const sold = cachedEntry?.sold ?? false;
       const enrich = async (data: any) => {
+        cacheItems(data?.items ?? [], cachedEntry?.category);
         const s = summarizeSearch(data);
         return sold ? s : await enrichHwansan(s, data?.items ?? [], cachedEntry?.category);
       };
@@ -322,6 +331,78 @@ export function createServer(bridge: BridgeLike): McpServer {
         }
       }
       return text(errorText(reply));
+    }
+  );
+
+  server.registerTool(
+    'compare_combo',
+    {
+      title: '조합 환산 비교 (여러 매물 동시 착용)',
+      description:
+        '검색으로 조회했던 매물 여러 개(itemIds)를 동시에 착용한다고 가정하고 현재 장비 대비 오르는 환산 주스탯 총합을 계산한다. 각 매물은 자기 부위의 현재 장비를 대체하며, 묶음 전체가 도달하는 세트 단계로 세트 보너스를 재계산한다(단일 검색의 hwansanDiff로는 못 보는 세트 전환을 판단 — 예: 아케인셰이드 여러 부위를 함께 사서 세트 완성). 매물은 먼저 search_weapon/search_armor/get_page로 조회돼 있어야 한다(itemIds는 그 결과의 id 필드). 넥슨 오픈 API 키 필요.',
+      inputSchema: {
+        itemIds: z.array(z.string()).min(1).max(12).describe('동시에 착용할 매물 id 배열 (검색 결과의 id 필드)'),
+      },
+    },
+    async ({ itemIds }) => {
+      if (!nexonApiKey()) return text('NEXON_DEVELOPER_KEY가 설정되어 있지 않아 환산을 계산할 수 없습니다.');
+      const id = await ensureIdentity();
+      if (typeof id === 'string') return text(id);
+      const name = identity?.characterName;
+      if (!name) return text('현재 캐릭터 이름을 확인할 수 없어 환산을 계산할 수 없습니다.');
+      const spec = await fetchCharacterSpec(name);
+      if (typeof spec === 'string') return text(spec);
+
+      const missing: string[] = [];
+      const resolved = itemIds.map((iid) => ({ iid, e: itemCache.get(iid) }));
+      for (const r of resolved) if (!r.e) missing.push(r.iid);
+      if (missing.length) {
+        return text(`검색으로 불러오지 않은 매물 id: ${missing.join(', ')}. search_weapon/search_armor/get_page로 먼저 조회한 뒤 다시 시도하세요.`);
+      }
+
+      // 각 매물을 가장 이득인(비어있거나 최약) 부위에 배정. 이미 배정된 부위는 피한다.
+      const used = new Set<string>();
+      const assigned = resolved.map(({ iid, e }) => {
+        const cand = contributionFromRawItem(e!.raw);
+        const slotOptions = (e!.slots.length ? e!.slots : ['무기']).filter((s) => !used.has(s));
+        const pool = slotOptions.length ? slotOptions : e!.slots;
+        let bestSlot = pool[0];
+        let bestD = -Infinity;
+        for (const s of pool) {
+          const d = hwansanDiff(spec, spec.equipmentBySlot[s] ?? EMPTY_CONTRIBUTION, cand, spec.isMagic);
+          if (d > bestD) { bestD = d; bestSlot = s; }
+        }
+        used.add(bestSlot);
+        return { iid, raw: e!.raw, slot: bestSlot, cand };
+      });
+
+      let removed: Contribution = EMPTY_CONTRIBUTION;
+      let added: Contribution = EMPTY_CONTRIBUTION;
+      const changes: { oldSet: string | null; newSet: string | null }[] = [];
+      for (const a of assigned) {
+        removed = mergeContribution(removed, spec.equipmentBySlot[a.slot] ?? EMPTY_CONTRIBUTION);
+        added = mergeContribution(added, a.cand);
+        if (SET_AWARE_SLOTS.has(a.slot)) {
+          changes.push({ oldSet: spec.slotSet[a.slot] ?? null, newSet: a.raw?.toolTip?.setEffects?.[0] ?? null });
+        }
+      }
+      const setDelta = comboSetDelta(spec.setCounts, changes);
+      const comboHwansanDiff = Math.round(hwansanDiff(spec, removed, mergeContribution(added, setDelta), spec.isMagic));
+
+      const items = assigned.map((a) => ({
+        id: a.iid,
+        name: a.raw.itemName,
+        slot: a.slot,
+        price: Number(a.raw.pricePerItem),
+        soloDiff: Math.round(hwansanDiff(spec, spec.equipmentBySlot[a.slot] ?? EMPTY_CONTRIBUTION, a.cand, spec.isMagic)),
+      }));
+      const totalPrice = items.reduce((s, p) => s + (p.price || 0), 0);
+      return text({
+        comboHwansanDiff,
+        totalPrice,
+        items,
+        note: '각 매물이 자기 부위를 대체하고, 묶음이 도달하는 세트 단계로 세트 보너스를 반영한 총 환산 증가량. soloDiff는 각 매물을 단독 교체했을 때의 환산이라, 합보다 comboHwansanDiff가 크면 세트 시너지, 작으면 세트 파괴 손실이다.',
+      });
     }
   );
 
