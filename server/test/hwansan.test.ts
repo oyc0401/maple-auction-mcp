@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { resolveStatModel } from '../src/hwansan/jobs.js';
 import { contributionFromRawItem, hwansanDiff, damageMultiplier, type CharState } from '../src/hwansan/calc.js';
-import { setBaseOfItem, setSwapDelta, comboSetDelta } from '../src/hwansan/sets.js';
+import { setBaseOfItem, setSwapDelta, comboSetDelta, normalizeSet } from '../src/hwansan/sets.js';
 
 // 원본 매물 형태 헬퍼: toolTip.stat + 잠재/에디 entries
 const rawItem = (stat: Record<string, number>, pot: string[] = [], add: string[] = []) => ({
@@ -81,21 +81,27 @@ describe('세트 델타', () => {
     expect(setBaseOfItem('이글아이 어새신셔츠')).toBeNull(); // 비세트 이벤트템
   });
 
+  it('세트명 정규화: 직업 변형 접미사 제거', () => {
+    expect(normalizeSet('앱솔랩스 세트(도적)')).toBe('앱솔랩스');
+    expect(normalizeSet('칠흑의 보스 세트')).toBe('칠흑의 보스');
+    expect(normalizeSet(null)).toBeNull();
+  });
+
   it('같은 세트 유지 교체는 변화 없음', () => {
-    const d = setSwapDelta({ '앱솔랩스 세트(도적)': 5 }, '앱솔랩스 세트(도적)', '앱솔랩스 세트(도적)');
+    const d = setSwapDelta({ 앱솔랩스: 5 }, '앱솔랩스', '앱솔랩스');
     expect(d.atk).toBe(0);
     expect(d.dmgBoss).toBe(0);
   });
 
   it('앱솔 5셋 부위를 다른 세트로 교체하면 앱솔 5셋 옵션(공30·보공10%) 손실', () => {
-    const d = setSwapDelta({ '앱솔랩스 세트(도적)': 5 }, '앱솔랩스 세트(도적)', '아케인셰이드 세트(도적)');
+    const d = setSwapDelta({ 앱솔랩스: 5 }, '앱솔랩스', '아케인셰이드');
     expect(d.atk).toBe(-30); // 공격력 +30 손실
     expect(d.matk).toBe(-30);
     expect(d.dmgBoss).toBe(-10); // 보스 몬스터 데미지 +10% 손실
   });
 
   it('조합: 여러 피스로 세트 완성 시 다단계 누적 (에테르넬 0→4셋)', () => {
-    const changes = Array.from({ length: 4 }, () => ({ oldSet: null, newSet: '에테르넬 세트(전사)' }));
+    const changes = Array.from({ length: 4 }, () => ({ oldSet: null, newSet: '에테르넬' }));
     const d = comboSetDelta({}, changes);
     // 에테르넬 2셋(공40) + 3셋(공40,올50) + 4셋(공40) = 공120, 올스탯50, 보공30
     expect(d.atk).toBe(120);
@@ -103,10 +109,18 @@ describe('세트 델타', () => {
     expect(d.dmgBoss).toBe(30);
   });
 
+  it('조합: 아케인셰이드 여러 부위로 세트 완성 (0→4셋 = 보공+30·방무+10·공+65·올+50)', () => {
+    const changes = Array.from({ length: 4 }, () => ({ oldSet: null, newSet: '아케인셰이드' }));
+    const d = comboSetDelta({}, changes);
+    expect(d.atk).toBe(95); // 2셋 공30 + 3셋 공30 + 4셋 공35
+    expect(d.dmgBoss).toBe(20); // 2셋 보공10 + 4셋 보공10
+    expect(d.allStat).toBe(50); // 4셋 올50
+  });
+
   it('조합: 세트 여러 피스 동시 파괴 (앱솔 5→3셋 = 4·5셋 손실)', () => {
-    const d = comboSetDelta({ '앱솔랩스 세트(도적)': 5 }, [
-      { oldSet: '앱솔랩스 세트(도적)', newSet: null },
-      { oldSet: '앱솔랩스 세트(도적)', newSet: null },
+    const d = comboSetDelta({ 앱솔랩스: 5 }, [
+      { oldSet: '앱솔랩스', newSet: null },
+      { oldSet: '앱솔랩스', newSet: null },
     ]);
     expect(d.atk).toBe(-55); // 4셋(공25) + 5셋(공30) 손실
     expect(d.dmgBoss).toBe(-10); // 5셋 보공10% 손실

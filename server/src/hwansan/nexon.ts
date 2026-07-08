@@ -7,7 +7,7 @@
 
 import { contributionFromEquip, type CharState, type Contribution } from './calc.js';
 import { resolveStatModel, isMagicModel, type StatModel } from './jobs.js';
-import { setBaseOfItem, resolveFullSet, detectVariantSuffix } from './sets.js';
+import { setBaseOfItem, normalizeSet } from './sets.js';
 
 const OPEN_BASE = 'https://open.api.nexon.com/maplestory/v1';
 
@@ -83,8 +83,10 @@ export async function fetchCharacterSpec(characterName: string): Promise<Charact
     const isMagic = isMagicModel(model);
 
     const setCounts: Record<string, number> = {};
-    for (const s of setRes.set_effect ?? []) setCounts[s.set_name] = Number(s.total_set_count ?? 0);
-    const variantSuffix = detectVariantSuffix(setCounts);
+    for (const s of setRes.set_effect ?? []) {
+      const base = normalizeSet(s.set_name);
+      if (base) setCounts[base] = Number(s.total_set_count ?? 0);
+    }
 
     const equip = (equipRes.item_equipment ?? []) as any[];
     const bySlot: Record<string, Contribution> = {};
@@ -93,9 +95,8 @@ export async function fetchCharacterSpec(characterName: string): Promise<Charact
       const slot = it.item_equipment_slot;
       if (!slot || bySlot[slot]) continue;
       bySlot[slot] = contributionFromEquip(it);
-      const base = setBaseOfItem(it.item_name ?? '');
-      const full = base ? resolveFullSet(base, variantSuffix) : null;
-      if (full) slotSet[slot] = full;
+      const base = setBaseOfItem(it.item_name ?? ''); // 이미 SET_DB에 있는 base만 반환
+      if (base) slotSet[slot] = base;
     }
     const weapon = equip.find((it) => it.item_equipment_slot === '무기');
 
