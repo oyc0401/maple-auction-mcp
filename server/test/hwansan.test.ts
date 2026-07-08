@@ -53,25 +53,34 @@ describe('contributionFromRawItem 파싱', () => {
 });
 
 describe('contributionFromEquip 파싱 (넥슨 오픈 API)', () => {
-  it('item_total_option 수치 + potential/additional 잠재 %를 합산한다 ("이름 : +값%" 콜론 포맷)', () => {
+  // 실측 확인: 넥슨 잠재 옵션은 "STR +12%"처럼 콜론 없는 포맷(경매장과 동일).
+  it('item_total_option 수치 + potential/additional 잠재 %를 합산한다 (실측 포맷 "이름 +값%")', () => {
     const c = contributionFromEquip({
       item_total_option: {
         str: '0', dex: '269', int: '24', luk: '311', max_hp: '255', all_stat: '0',
         attack_power: '762', magic_power: '0', damage: '6', boss_damage: '30', ignore_monster_armor: '20',
       },
-      potential_option_1: '공격력 : +12%',
-      potential_option_2: '보스 몬스터 데미지 : +40%',
-      potential_option_3: '몬스터 방어율 무시 : +30%',
-      additional_option_1: '공격력 : +12%',
-      additional_option_2: '공격력 : +9%',
-      additional_option_3: '올스탯 : +3%',
+      potential_option_1: '공격력 +12%',
+      potential_option_2: '보스 몬스터 데미지 +40%',
+      potential_option_3: '몬스터 방어율 무시 +30%',
+      additional_option_1: '공격력 +12%',
+      additional_option_2: '공격력 +9%',
+      additional_option_3: '올스탯 +3%',
     });
     expect(c.luk).toBe(311);
     expect(c.atk).toBe(762);
-    expect(c.atkPct).toBe(33); // 12+12+9 — 콜론 포맷 잠재가 파싱되지 않으면 0이 되어 실패
+    expect(c.atkPct).toBe(33); // 12+12+9
     expect(c.dmgBoss).toBe(76); // damage 6 + boss(30 고정 + 40 잠재)
     expect(c.allPct).toBe(3);
     expect(c.idaFactor).toBeCloseTo(0.56, 5); // (1-0.2)(1-0.3)
+  });
+
+  it('콜론 포맷도 방어적으로 허용한다 ("이름 : +값%")', () => {
+    const c = contributionFromEquip({
+      item_total_option: { attack_power: '100' },
+      potential_option_1: '공격력 : +12%',
+    });
+    expect(c.atkPct).toBe(12);
   });
 });
 

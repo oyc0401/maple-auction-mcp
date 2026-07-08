@@ -156,8 +156,8 @@ export function createServer(bridge: BridgeLike): McpServer {
     for (const it of rawItems) if (it?._id) itemCache.set(it._id, { raw: it, slots });
   }
 
-  // 장비 검색(무기/방어구/장신구)이면 각 매물에 환산 주스탯 증가량(hwansanDiff)을 채운다.
-  // 비교 기준 = 해당 검색 카테고리의 현재 착용 부위(다부위는 교체 시 최대 이득 부위). 넥슨 키·캐릭명 필요.
+  // 장비 검색(무기/방어구/장신구)이면 각 매물에 부위별 환산 주스탯 증가량(hwansanBySlot)을 채운다.
+  // 비교 기준 = 해당 검색 카테고리의 현재 착용 부위. 다부위(반지·펜던트)는 전 부위 값을 명시. 넥슨 키·캐릭명 필요.
   // rawItems는 summary.items와 같은 순서의 원본(잠재 파싱용). 실패는 조용히 생략(검색은 그대로 동작).
   async function enrichHwansan(summary: SearchSummary, rawItems: any[], category?: string): Promise<SearchSummary> {
     const slots = categoryToSlots(category);

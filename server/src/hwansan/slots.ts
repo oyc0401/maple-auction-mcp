@@ -1,5 +1,5 @@
 // 경매장 검색 subCategory → 넥슨 item_equipment_slot 이름 (Δ환산 비교 기준 부위).
-// 무기·보조는 단일 슬롯. 다부위(반지 4·펜던트 2)는 여러 슬롯 → 교체 시 가장 이득인 부위 기준으로 비교.
+// 무기·보조는 단일 슬롯. 다부위(반지 4·펜던트 2)는 여러 슬롯 → 각 부위별로 환산을 명시(추측 없음).
 
 const ARMOR_SLOTS: Record<string, string[]> = {
   ARMOR_ARMOR_CAP: ['모자'],

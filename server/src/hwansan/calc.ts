@@ -51,8 +51,8 @@ function emptyRaw(): RawOpts {
     atk: 0, matk: 0, atkPct: 0, matkPct: 0, dmg: 0, boss: 0, ida: [], critDmg: 0, finalDmg: 0 };
 }
 
-// "STR, DEX +36"(경매장 툴팁) 과 "STR : +9%"(넥슨 오픈 API) 양쪽 포맷을 받는다.
-// 오픈 API는 옵션명 뒤에 " : " 구분자를 붙이므로 콜론을 선택적으로 허용한다.
+// 경매장 툴팁("STR, DEX +36")과 넥슨 오픈 API("STR +12%") 모두 옵션명 뒤 콜론 없이 "이름 +값" 포맷(실측 확인).
+// 콜론(:?)은 혹시 모를 포맷 변형에 대비한 방어적 허용일 뿐, 현재 어느 응답도 콜론을 쓰지 않는다.
 const OPT_RE = /^(.+?)\s*:?\s*\+\s*(-?\d+(?:\.\d+)?)\s*(%?)$/;
 
 function accumOpt(raw: RawOpts, seg: string | null | undefined) {
