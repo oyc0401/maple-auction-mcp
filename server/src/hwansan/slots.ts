@@ -23,6 +23,17 @@ const ARMOR_SLOTS: Record<string, string[]> = {
   ARMOR_ACCESSORY_POCKET: ['포켓 아이템'],
 };
 
+// 표시용 부위명. 넥슨은 펜던트 첫 슬롯을 "펜던트"로 주는데 "몇번째"가 분명하도록 1-based로 명시.
+// (반지는 이미 반지1~4, 펜던트2는 그대로.)
+export function slotLabel(slot: string): string {
+  return slot === '펜던트' ? '펜던트1' : slot;
+}
+
+// slotLabel 역변환. 입력으로 "펜던트1"을 받으면 넥슨 실제 슬롯키 "펜던트"로 되돌린다.
+export function slotFromLabel(label: string): string {
+  return label === '펜던트1' ? '펜던트' : label;
+}
+
 // 환산 비교 대상 부위를 반환. 대상이 아니면(장비 아님, 상위 카테고리 등) null.
 export function categoryToSlots(category?: string): string[] | null {
   if (!category) return null;

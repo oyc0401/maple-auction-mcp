@@ -1,7 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import { resolveStatModel } from '../src/hwansan/jobs.js';
-import { contributionFromRawItem, hwansanDiff, damageMultiplier, type CharState } from '../src/hwansan/calc.js';
+import { contributionFromRawItem, contributionFromEquip, hwansanDiff, damageMultiplier, type CharState } from '../src/hwansan/calc.js';
 import { setBaseOfItem, setSwapDelta, comboSetDelta, normalizeSet } from '../src/hwansan/sets.js';
+import { slotLabel, slotFromLabel, categoryToSlots } from '../src/hwansan/slots.js';
 
 // 원본 매물 형태 헬퍼: toolTip.stat + 잠재/에디 entries
 const rawItem = (stat: Record<string, number>, pot: string[] = [], add: string[] = []) => ({
@@ -46,6 +47,29 @@ describe('contributionFromRawItem 파싱', () => {
     expect(c.atk).toBe(762);
     expect(c.atkPct).toBe(33); // 12+12+9
     expect(c.dmgBoss).toBe(76); // 데미지6 + 보공(30 base + 40 잠재)
+    expect(c.allPct).toBe(3);
+    expect(c.idaFactor).toBeCloseTo(0.56, 5); // (1-0.2)(1-0.3)
+  });
+});
+
+describe('contributionFromEquip 파싱 (넥슨 오픈 API)', () => {
+  it('item_total_option 수치 + potential/additional 잠재 %를 합산한다 ("이름 : +값%" 콜론 포맷)', () => {
+    const c = contributionFromEquip({
+      item_total_option: {
+        str: '0', dex: '269', int: '24', luk: '311', max_hp: '255', all_stat: '0',
+        attack_power: '762', magic_power: '0', damage: '6', boss_damage: '30', ignore_monster_armor: '20',
+      },
+      potential_option_1: '공격력 : +12%',
+      potential_option_2: '보스 몬스터 데미지 : +40%',
+      potential_option_3: '몬스터 방어율 무시 : +30%',
+      additional_option_1: '공격력 : +12%',
+      additional_option_2: '공격력 : +9%',
+      additional_option_3: '올스탯 : +3%',
+    });
+    expect(c.luk).toBe(311);
+    expect(c.atk).toBe(762);
+    expect(c.atkPct).toBe(33); // 12+12+9 — 콜론 포맷 잠재가 파싱되지 않으면 0이 되어 실패
+    expect(c.dmgBoss).toBe(76); // damage 6 + boss(30 고정 + 40 잠재)
     expect(c.allPct).toBe(3);
     expect(c.idaFactor).toBeCloseTo(0.56, 5); // (1-0.2)(1-0.3)
   });
@@ -124,6 +148,30 @@ describe('세트 델타', () => {
     ]);
     expect(d.atk).toBe(-55); // 4셋(공25) + 5셋(공30) 손실
     expect(d.dmgBoss).toBe(-10); // 5셋 보공10% 손실
+  });
+});
+
+describe('부위명 (다부위 슬롯 명시)', () => {
+  it('반지는 4슬롯, 펜던트는 2슬롯', () => {
+    expect(categoryToSlots('ARMOR_ACCESSORY_RING')).toEqual(['반지1', '반지2', '반지3', '반지4']);
+    expect(categoryToSlots('ARMOR_ACCESSORY_PENDANT')).toEqual(['펜던트', '펜던트2']);
+  });
+
+  it('펜던트 첫 슬롯은 표시용으로 펜던트1, 나머지는 그대로', () => {
+    expect(slotLabel('펜던트')).toBe('펜던트1');
+    expect(slotLabel('펜던트2')).toBe('펜던트2');
+    expect(slotLabel('반지3')).toBe('반지3');
+    expect(slotLabel('무기')).toBe('무기');
+  });
+
+  it('slotFromLabel은 표시용 라벨을 넥슨 슬롯키로 역변환 (compare_combo 입력 파싱)', () => {
+    expect(slotFromLabel('펜던트1')).toBe('펜던트'); // 입력 "펜던트1:id" → 실제 슬롯 "펜던트"
+    expect(slotFromLabel('펜던트2')).toBe('펜던트2');
+    expect(slotFromLabel('반지2')).toBe('반지2');
+    // slotLabel ↔ slotFromLabel 라운드트립
+    for (const s of ['무기', '펜던트', '펜던트2', '반지1', '반지4', '모자']) {
+      expect(slotFromLabel(slotLabel(s))).toBe(s);
+    }
   });
 });
 

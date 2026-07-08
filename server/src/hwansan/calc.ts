@@ -51,7 +51,9 @@ function emptyRaw(): RawOpts {
     atk: 0, matk: 0, atkPct: 0, matkPct: 0, dmg: 0, boss: 0, ida: [], critDmg: 0, finalDmg: 0 };
 }
 
-const OPT_RE = /^(.+?)\s*\+\s*(-?\d+(?:\.\d+)?)\s*(%?)$/;
+// "STR, DEX +36"(경매장 툴팁) 과 "STR : +9%"(넥슨 오픈 API) 양쪽 포맷을 받는다.
+// 오픈 API는 옵션명 뒤에 " : " 구분자를 붙이므로 콜론을 선택적으로 허용한다.
+const OPT_RE = /^(.+?)\s*:?\s*\+\s*(-?\d+(?:\.\d+)?)\s*(%?)$/;
 
 function accumOpt(raw: RawOpts, seg: string | null | undefined) {
   if (!seg) return;
@@ -129,13 +131,6 @@ export function contributionFromEquip(equip: any): Contribution {
     'additional_option_1', 'additional_option_2', 'additional_option_3']) {
     accumOpt(raw, equip[k]);
   }
-  return toContribution(raw);
-}
-
-// 세트 옵션 텍스트("공격력 +30, 마력 +30, 보스 몬스터 데미지 +10%") → Contribution.
-export function contributionFromOptionText(text: string): Contribution {
-  const raw = emptyRaw();
-  for (const seg of text.split(',')) accumOpt(raw, seg);
   return toContribution(raw);
 }
 

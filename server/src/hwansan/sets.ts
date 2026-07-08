@@ -5,8 +5,22 @@
 // 직업 변형을 구분할 필요가 없다. 한계: 아이템명에 세트명이 있는 방어구/무기 세트만 현재 소속을 추론한다.
 // 장신구 세트(보스 장신구·칠흑·여명)는 아이템명에 세트명이 없어 소속 추론 불가 → 런타임 제외(과대계상 방지).
 
-import { SET_DB } from './set-db.js';
-import { contributionFromOptionText, mergeContribution, negateContribution, EMPTY_CONTRIBUTION, type Contribution } from './calc.js';
+import { SET_DB, type SetTier } from './set-db.js';
+import { mergeContribution, negateContribution, EMPTY_CONTRIBUTION, type Contribution } from './calc.js';
+
+// 세트 단계 옵션(SetTier) → Contribution. 세트는 공격력=마력 동일이라 둘 다 채우고,
+// 계산에서 주력에 맞는 쪽(공격력/마력)만 쓴다. 방무는 곱연산 계수로 보관.
+function tierContribution(t: SetTier): Contribution {
+  return {
+    ...EMPTY_CONTRIBUTION,
+    atk: t.atk ?? 0,
+    matk: t.atk ?? 0,
+    allStat: t.allStat ?? 0,
+    dmgBoss: t.boss ?? 0,
+    idaFactor: t.ida ? 1 - t.ida / 100 : 1,
+    critDmg: t.critDmg ?? 0,
+  };
+}
 
 // "앱솔랩스 세트(도적)" → "앱솔랩스", "칠흑의 보스 세트" → "칠흑의 보스"
 export function normalizeSet(setName: string | null | undefined): string | null {
@@ -32,7 +46,7 @@ export function setBonusAt(set: string, count: number): Contribution {
   if (!tiers) return EMPTY_CONTRIBUTION;
   let c = EMPTY_CONTRIBUTION;
   for (const [tierStr, opt] of Object.entries(tiers)) {
-    if (Number(tierStr) <= count) c = mergeContribution(c, contributionFromOptionText(opt));
+    if (Number(tierStr) <= count) c = mergeContribution(c, tierContribution(opt));
   }
   return c;
 }

@@ -16,8 +16,7 @@ export interface CharacterSpec extends CharState {
   characterName: string;
   characterClass: string;
   isMagic: boolean;
-  currentWeapon: Contribution | null; // 현재 착용 무기 (Δ환산 비교 기준)
-  equipmentBySlot: Record<string, Contribution>; // 부위명 → 현재 장비 기여 (방어구/장신구 비교용)
+  equipmentBySlot: Record<string, Contribution>; // 부위명 → 현재 장비 기여 (무기 포함, Δ환산 비교 기준)
   setCounts: Record<string, number>; // 세트명 → 현재 착용 피스 수
   slotSet: Record<string, string>; // 부위명 → 그 부위 장비의 세트명(이름 추론 가능한 방어구/무기만)
   model: StatModel;
@@ -98,7 +97,6 @@ export async function fetchCharacterSpec(characterName: string): Promise<Charact
       const base = setBaseOfItem(it.item_name ?? ''); // 이미 SET_DB에 있는 base만 반환
       if (base) slotSet[slot] = base;
     }
-    const weapon = equip.find((it) => it.item_equipment_slot === '무기');
 
     const spec: CharacterSpec = {
       model,
@@ -113,7 +111,6 @@ export async function fetchCharacterSpec(characterName: string): Promise<Charact
       critRate: m['크리티컬 확률'] ?? 0,
       critDamage: m['크리티컬 데미지'] ?? 0,
       finalDamage: m['최종 데미지'] ?? 0,
-      currentWeapon: weapon ? contributionFromEquip(weapon) : null,
       equipmentBySlot: bySlot,
       setCounts,
       slotSet,

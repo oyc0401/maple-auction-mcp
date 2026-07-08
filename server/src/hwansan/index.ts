@@ -12,5 +12,5 @@ export {
   type CharState,
 } from './calc.js';
 export { resolveStatModel, isMagicModel, type MainStat, type StatModel } from './jobs.js';
-export { categoryToSlots } from './slots.js';
+export { categoryToSlots, slotLabel, slotFromLabel } from './slots.js';
 export { setSwapDelta, comboSetDelta, normalizeSet } from './sets.js';
