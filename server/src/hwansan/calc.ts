@@ -132,6 +132,36 @@ export function contributionFromEquip(equip: any): Contribution {
   return toContribution(raw);
 }
 
+// 세트 옵션 텍스트("공격력 +30, 마력 +30, 보스 몬스터 데미지 +10%") → Contribution.
+export function contributionFromOptionText(text: string): Contribution {
+  const raw = emptyRaw();
+  for (const seg of text.split(',')) accumOpt(raw, seg);
+  return toContribution(raw);
+}
+
+// 두 기여 합성: 수치·%는 가산, 방무는 곱연산.
+export function mergeContribution(a: Contribution, b: Contribution): Contribution {
+  return {
+    str: a.str + b.str, dex: a.dex + b.dex, int: a.int + b.int, luk: a.luk + b.luk, hp: a.hp + b.hp, allStat: a.allStat + b.allStat,
+    strPct: a.strPct + b.strPct, dexPct: a.dexPct + b.dexPct, intPct: a.intPct + b.intPct, lukPct: a.lukPct + b.lukPct,
+    allPct: a.allPct + b.allPct, hpPct: a.hpPct + b.hpPct,
+    atk: a.atk + b.atk, matk: a.matk + b.matk, atkPct: a.atkPct + b.atkPct, matkPct: a.matkPct + b.matkPct,
+    dmgBoss: a.dmgBoss + b.dmgBoss, idaFactor: a.idaFactor * b.idaFactor,
+    critDmg: a.critDmg + b.critDmg, finalDmg: a.finalDmg + b.finalDmg,
+  };
+}
+
+// 기여 부호 반전 (잃는 세트 옵션용): 수치·%는 음수화, 방무는 역수.
+export function negateContribution(a: Contribution): Contribution {
+  return {
+    str: -a.str, dex: -a.dex, int: -a.int, luk: -a.luk, hp: -a.hp, allStat: -a.allStat,
+    strPct: -a.strPct, dexPct: -a.dexPct, intPct: -a.intPct, lukPct: -a.lukPct, allPct: -a.allPct, hpPct: -a.hpPct,
+    atk: -a.atk, matk: -a.matk, atkPct: -a.atkPct, matkPct: -a.matkPct,
+    dmgBoss: -a.dmgBoss, idaFactor: a.idaFactor ? 1 / a.idaFactor : 1,
+    critDmg: -a.critDmg, finalDmg: -a.finalDmg,
+  };
+}
+
 // ── 데미지 배수 D ─────────────────────────────────────────────────
 
 // StatFactor(스탯 항). 모델별 계산. 반환 항상 양수 근처.

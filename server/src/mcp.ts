@@ -21,7 +21,10 @@ import {
 } from './mapping.js';
 import { summarizeSearch, summarizeItem, type SearchSummary } from './summarize.js';
 import { listCharacters, type CharacterInfo } from './characters.js';
-import { fetchCharacterSpec, nexonApiKey, contributionFromRawItem, hwansanDiff, categoryToSlots, EMPTY_CONTRIBUTION } from './hwansan/index.js';
+import { fetchCharacterSpec, nexonApiKey, contributionFromRawItem, hwansanDiff, categoryToSlots, setSwapDelta, mergeContribution, EMPTY_CONTRIBUTION } from './hwansan/index.js';
+
+// 세트 피스 수 변화를 이름으로 추론 가능한 부위(방어구/무기)만 세트 델타 적용. 장신구는 과대계상 방지 위해 제외.
+const SET_AWARE_SLOTS = new Set(['무기', '보조무기', '모자', '상의', '하의', '한벌옷', '신발', '장갑', '망토']);
 import {
   worldName,
   labelList,
@@ -156,12 +159,20 @@ export function createServer(bridge: BridgeLike): McpServer {
     if (!name) return summary;
     const spec = await fetchCharacterSpec(name);
     if (typeof spec === 'string') return summary;
-    const baselines = slots.map((s) => spec.equipmentBySlot[s]).filter(Boolean);
-    const cur = baselines.length ? baselines : [EMPTY_CONTRIBUTION]; // 빈 부위면 순수 추가
     summary.items.forEach((it, i) => {
       if (it.powerDiff == null || !it.finalStat) return; // 착용 불가 → 생략
-      const cand = contributionFromRawItem(rawItems[i]);
-      it.hwansanDiff = Math.round(Math.max(...cur.map((b) => hwansanDiff(spec, b, cand, spec.isMagic))));
+      const raw = rawItems[i];
+      const cand = contributionFromRawItem(raw);
+      const newSet: string | null = raw?.toolTip?.setEffects?.[0] ?? null;
+      // 후보 부위 각각에 대해: 교체 시 세트 변화(방어구/무기만) 반영해 Δ환산, 다부위는 최대 이득 부위 채택.
+      const diffs = slots.map((slot) => {
+        const cur = spec.equipmentBySlot[slot] ?? EMPTY_CONTRIBUTION;
+        const setDelta = SET_AWARE_SLOTS.has(slot)
+          ? setSwapDelta(spec.setCounts, spec.slotSet[slot] ?? null, newSet)
+          : EMPTY_CONTRIBUTION;
+        return hwansanDiff(spec, cur, mergeContribution(cand, setDelta), spec.isMagic);
+      });
+      it.hwansanDiff = Math.round(Math.max(...diffs));
     });
     return summary;
   }

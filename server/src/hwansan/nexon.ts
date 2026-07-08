@@ -7,6 +7,7 @@
 
 import { contributionFromEquip, type CharState, type Contribution } from './calc.js';
 import { resolveStatModel, isMagicModel, type StatModel } from './jobs.js';
+import { setBaseOfItem, resolveFullSet, detectVariantSuffix } from './sets.js';
 
 const OPEN_BASE = 'https://open.api.nexon.com/maplestory/v1';
 
@@ -17,6 +18,8 @@ export interface CharacterSpec extends CharState {
   isMagic: boolean;
   currentWeapon: Contribution | null; // 현재 착용 무기 (Δ환산 비교 기준)
   equipmentBySlot: Record<string, Contribution>; // 부위명 → 현재 장비 기여 (방어구/장신구 비교용)
+  setCounts: Record<string, number>; // 세트명 → 현재 착용 피스 수
+  slotSet: Record<string, string>; // 부위명 → 그 부위 장비의 세트명(이름 추론 가능한 방어구/무기만)
   model: StatModel;
 }
 
@@ -68,21 +71,31 @@ export async function fetchCharacterSpec(characterName: string): Promise<Charact
     const { ocid } = await fetchJson('/id', { character_name: characterName }, key);
     if (!ocid) return `캐릭터를 찾지 못했습니다: ${characterName}`;
 
-    const [basicRes, statRes, equipRes] = await Promise.all([
+    const [basicRes, statRes, equipRes, setRes] = await Promise.all([
       fetchJson('/character/basic', { ocid }, key),
       fetchJson('/character/stat', { ocid }, key),
       fetchJson('/character/item-equipment', { ocid }, key),
+      fetchJson('/character/set-effect', { ocid }, key),
     ]);
 
     const m = statMap(statRes.final_stat);
     const model = resolveStatModel(statRes.character_class ?? '', m);
     const isMagic = isMagicModel(model);
 
+    const setCounts: Record<string, number> = {};
+    for (const s of setRes.set_effect ?? []) setCounts[s.set_name] = Number(s.total_set_count ?? 0);
+    const variantSuffix = detectVariantSuffix(setCounts);
+
     const equip = (equipRes.item_equipment ?? []) as any[];
     const bySlot: Record<string, Contribution> = {};
+    const slotSet: Record<string, string> = {};
     for (const it of equip) {
       const slot = it.item_equipment_slot;
-      if (slot && !bySlot[slot]) bySlot[slot] = contributionFromEquip(it);
+      if (!slot || bySlot[slot]) continue;
+      bySlot[slot] = contributionFromEquip(it);
+      const base = setBaseOfItem(it.item_name ?? '');
+      const full = base ? resolveFullSet(base, variantSuffix) : null;
+      if (full) slotSet[slot] = full;
     }
     const weapon = equip.find((it) => it.item_equipment_slot === '무기');
 
@@ -101,6 +114,8 @@ export async function fetchCharacterSpec(characterName: string): Promise<Charact
       finalDamage: m['최종 데미지'] ?? 0,
       currentWeapon: weapon ? contributionFromEquip(weapon) : null,
       equipmentBySlot: bySlot,
+      setCounts,
+      slotSet,
     };
     cache.set(characterName, spec);
     return spec;

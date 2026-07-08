@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { resolveStatModel } from '../src/hwansan/jobs.js';
 import { contributionFromRawItem, hwansanDiff, damageMultiplier, type CharState } from '../src/hwansan/calc.js';
+import { setBaseOfItem, setSwapDelta } from '../src/hwansan/sets.js';
 
 // 원본 매물 형태 헬퍼: toolTip.stat + 잠재/에디 entries
 const rawItem = (stat: Record<string, number>, pot: string[] = [], add: string[] = []) => ({
@@ -70,6 +71,27 @@ describe('hwansanDiff 부호 (표준 LUK)', () => {
 
   it('같은 무기면 0', () => {
     expect(hwansanDiff(state, cur, cur, false)).toBeCloseTo(0, 6);
+  });
+});
+
+describe('세트 델타', () => {
+  it('아이템명 → 세트 base 추론 (방어구 세트만)', () => {
+    expect(setBaseOfItem('앱솔랩스 시프슈즈')).toBe('앱솔랩스');
+    expect(setBaseOfItem('에테르넬 나이트메어')).toBe('에테르넬');
+    expect(setBaseOfItem('이글아이 어새신셔츠')).toBeNull(); // 비세트 이벤트템
+  });
+
+  it('같은 세트 유지 교체는 변화 없음', () => {
+    const d = setSwapDelta({ '앱솔랩스 세트(도적)': 5 }, '앱솔랩스 세트(도적)', '앱솔랩스 세트(도적)');
+    expect(d.atk).toBe(0);
+    expect(d.dmgBoss).toBe(0);
+  });
+
+  it('앱솔 5셋 부위를 다른 세트로 교체하면 앱솔 5셋 옵션(공30·보공10%) 손실', () => {
+    const d = setSwapDelta({ '앱솔랩스 세트(도적)': 5 }, '앱솔랩스 세트(도적)', '아케인셰이드 세트(도적)');
+    expect(d.atk).toBe(-30); // 공격력 +30 손실
+    expect(d.matk).toBe(-30);
+    expect(d.dmgBoss).toBe(-10); // 보스 몬스터 데미지 +10% 손실
   });
 });
 
