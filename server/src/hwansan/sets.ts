@@ -29,7 +29,7 @@ export function normalizeSet(setName: string | null | undefined): string | null 
 }
 
 // 아이템명으로 소속 추론이 가능한 세트 base (장신구 세트는 제외).
-const NON_INFERABLE = new Set(['여명의 보스', '칠흑의 보스', '보스 장신구']);
+const NON_INFERABLE = new Set(['여명의 보스', '칠흑의 보스', '보스 장신구', '광휘의 보스']);
 const INFERABLE_BASES = Object.keys(SET_DB)
   .filter((b) => !NON_INFERABLE.has(b))
   .sort((a, b) => b.length - a.length); // 긴 것 우선
