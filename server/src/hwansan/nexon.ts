@@ -2,28 +2,22 @@
 // 경매장 API와 달리 공개 API + 개발자 키 인증이라 브릿지(크롬 확장)를 거치지 않고 서버가 직접 호출한다.
 // 키가 없으면 환산 기능만 비활성(우아한 degrade)되고 검색은 정상 동작.
 //
-// 데이터: character/stat(최종 종합 스탯) + character/item-equipment(현재 무기 = Δ환산 비교 기준).
+// 데이터: character/basic(레벨) + character/stat(최종 종합 스탯) + character/item-equipment(현재 장비 = 비교 기준).
 // 캐릭명 기준으로 프로세스 생존 동안 인메모리 캐시(오픈 API는 일 1회 갱신, 재시작 시 초기화).
 
-import { contributionFromEquip, type Contribution } from './calc.js';
-import { resolveStatModel, type MainStat } from './jobs.js';
+import { contributionFromEquip, type CharState, type Contribution } from './calc.js';
+import { resolveStatModel, isMagicModel, type StatModel } from './jobs.js';
 
 const OPEN_BASE = 'https://open.api.nexon.com/maplestory/v1';
 
-export interface CharacterSpec {
+// CharState(계산 입력) + 표시/파싱용 메타.
+export interface CharacterSpec extends CharState {
   characterName: string;
   characterClass: string;
-  mainStat: MainStat;
-  isMagic: boolean; // INT 주력 → 마력 기준
-  main: number; // 주스탯 (최종)
-  sub: number; // 부스탯 (최종)
-  attack: number; // 총공격력 또는 총마력
-  damageBossSum: number; // 데미지% + 보스몬스터데미지%
-  ignoreDef: number; // 방어율 무시(실방무) %
-  critRate: number;
-  critDamage: number;
-  finalDamage: number;
-  currentWeapon: Contribution | null; // 현재 착용 무기 기여도 (Δ환산 기준)
+  isMagic: boolean;
+  currentWeapon: Contribution | null; // 현재 착용 무기 (Δ환산 비교 기준)
+  equipmentBySlot: Record<string, Contribution>; // 부위명 → 현재 장비 기여 (방어구/장신구 비교용)
+  model: StatModel;
 }
 
 export function nexonApiKey(): string | undefined {
@@ -62,7 +56,7 @@ async function fetchJson(path: string, params: Record<string, string>, key: stri
 // 캐릭명 → 스펙. 서버 프로세스 생존 동안 유지(넥슨 오픈 API 재호출 최소화).
 const cache = new Map<string, CharacterSpec>();
 
-// 캐릭터 스펙을 조회한다. 키 없음/조회 실패/미지원 직업이면 에러 문자열 반환(호출부에서 환산 생략).
+// 캐릭터 스펙을 조회한다. 키 없음/조회 실패면 에러 문자열 반환(호출부에서 환산 생략).
 export async function fetchCharacterSpec(characterName: string): Promise<CharacterSpec | string> {
   const key = nexonApiKey();
   if (!key) return 'NEXON_DEVELOPER_KEY 미설정 — 환산 계산을 건너뜁니다.';
@@ -74,33 +68,39 @@ export async function fetchCharacterSpec(characterName: string): Promise<Charact
     const { ocid } = await fetchJson('/id', { character_name: characterName }, key);
     if (!ocid) return `캐릭터를 찾지 못했습니다: ${characterName}`;
 
-    const [statRes, equipRes] = await Promise.all([
+    const [basicRes, statRes, equipRes] = await Promise.all([
+      fetchJson('/character/basic', { ocid }, key),
       fetchJson('/character/stat', { ocid }, key),
       fetchJson('/character/item-equipment', { ocid }, key),
     ]);
 
     const m = statMap(statRes.final_stat);
     const model = resolveStatModel(statRes.character_class ?? '', m);
-    if (model.kind !== 'standard') return `${statRes.character_class}: 환산 미지원 (${model.reason})`;
+    const isMagic = isMagicModel(model);
 
-    const isMagic = model.main === 'INT';
     const equip = (equipRes.item_equipment ?? []) as any[];
+    const bySlot: Record<string, Contribution> = {};
+    for (const it of equip) {
+      const slot = it.item_equipment_slot;
+      if (slot && !bySlot[slot]) bySlot[slot] = contributionFromEquip(it);
+    }
     const weapon = equip.find((it) => it.item_equipment_slot === '무기');
 
     const spec: CharacterSpec = {
+      model,
       characterName,
       characterClass: statRes.character_class ?? '',
-      mainStat: model.main,
       isMagic,
-      main: m[model.main] ?? 0,
-      sub: m[model.sub] ?? 0,
+      level: Number(basicRes.character_level ?? 0),
+      str: m['STR'] ?? 0, dex: m['DEX'] ?? 0, int: m['INT'] ?? 0, luk: m['LUK'] ?? 0, hp: m['HP'] ?? 0,
       attack: isMagic ? (m['마력'] ?? 0) : (m['공격력'] ?? 0),
       damageBossSum: (m['데미지'] ?? 0) + (m['보스 몬스터 데미지'] ?? 0),
       ignoreDef: m['방어율 무시'] ?? 0,
       critRate: m['크리티컬 확률'] ?? 0,
       critDamage: m['크리티컬 데미지'] ?? 0,
       finalDamage: m['최종 데미지'] ?? 0,
-      currentWeapon: weapon ? contributionFromEquip(weapon, model.main, isMagic) : null,
+      currentWeapon: weapon ? contributionFromEquip(weapon) : null,
+      equipmentBySlot: bySlot,
     };
     cache.set(characterName, spec);
     return spec;

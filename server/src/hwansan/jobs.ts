@@ -1,24 +1,20 @@
-// 직업별 주스탯/부스탯 판정. Δ환산은 (4·주스탯 + 부스탯) 구조라 주·부스탯 종류가 정확해야 한다.
+// 직업별 주스탯 모델. StatFactor(데미지의 스탯 항) 계산식이 직업군에 따라 다르다.
 //
-// - 표준 직업: 최종 STR/DEX/INT/LUK 최대값을 주스탯으로, 직업군 통상 규칙으로 부스탯을 정한다.
-//   (카데나·듀얼블레이드·섀도어 등 LUK주/DEX부 도적 포함 — 부스탯 1개라 정상 처리)
-// - 특수 직업: 제논(STR/DEX/LUK 3스탯 합산), 데몬어벤져(HP 기반)는 공식이 달라 별도 처리가 필요하다.
-//   정식 공식 이식 전까지는 'unsupported'로 표시해 환산을 생략한다(틀린 값을 내지 않기 위함).
+// - standard: (4·주스탯 + 부스탯). 최종 STR/DEX/INT/LUK 최대값을 주스탯으로, 통상 규칙으로 부스탯.
+//   (카데나·듀얼블레이더·섀도어 등 LUK주/DEX부 도적 포함)
+// - xenon(제논): STR/DEX/LUK 3스탯을 함께 사용 → 4·(STR+DEX+LUK). (근사: 방향/우열 판별용)
+// - hp(데몬어벤져): HP 기반 → 4·(순수HP/14 + 장비HP/17.5), 순수HP = 545 + level·90. (maplescouter 구버전식)
+//
+// 제논·데벤져 환산은 직업 상수 미반영이라 절대값은 근사지만, 무기/방어구 교체 시 강해지는지 여부는 판별된다.
 
 export type MainStat = 'STR' | 'DEX' | 'INT' | 'LUK';
 
 export type StatModel =
   | { kind: 'standard'; main: MainStat; sub: MainStat }
-  | { kind: 'unsupported'; reason: string };
+  | { kind: 'xenon' }
+  | { kind: 'hp' };
 
-// 주스탯 종류 → 부스탯 종류 (직업군 통상 규칙).
 const SUB_OF: Record<MainStat, MainStat> = { STR: 'DEX', DEX: 'STR', INT: 'LUK', LUK: 'DEX' };
-
-// 아직 환산 미지원인 특수 스탯 직업 (넥슨 character_class 명).
-const UNSUPPORTED: Record<string, string> = {
-  제논: '제논은 STR/DEX/LUK 3스탯 합산이라 별도 공식 필요',
-  데몬어벤져: '데몬어벤져는 HP 기반이라 별도 공식 필요',
-};
 
 function pickMain(stat: Record<string, number>): MainStat {
   const cand: [MainStat, number][] = [
@@ -31,10 +27,14 @@ function pickMain(stat: Record<string, number>): MainStat {
   return cand[0][0];
 }
 
-// character_class + 최종 스탯맵으로 주스탯 모델을 결정한다.
 export function resolveStatModel(characterClass: string, stat: Record<string, number>): StatModel {
-  const reason = UNSUPPORTED[characterClass];
-  if (reason) return { kind: 'unsupported', reason };
+  if (characterClass === '제논') return { kind: 'xenon' };
+  if (characterClass === '데몬어벤져') return { kind: 'hp' };
   const main = pickMain(stat);
   return { kind: 'standard', main, sub: SUB_OF[main] };
+}
+
+// INT 주력(마력 기준) 여부. xenon/hp는 물리(공격력) 기준.
+export function isMagicModel(model: StatModel): boolean {
+  return model.kind === 'standard' && model.main === 'INT';
 }

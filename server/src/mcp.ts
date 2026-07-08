@@ -21,7 +21,7 @@ import {
 } from './mapping.js';
 import { summarizeSearch, summarizeItem, type SearchSummary } from './summarize.js';
 import { listCharacters, type CharacterInfo } from './characters.js';
-import { fetchCharacterSpec, nexonApiKey, contributionFromAuction, hwansanDiff, type SpecTotals } from './hwansan/index.js';
+import { fetchCharacterSpec, nexonApiKey, contributionFromRawItem, hwansanDiff } from './hwansan/index.js';
 import {
   worldName,
   labelList,
@@ -147,22 +147,20 @@ export function createServer(bridge: BridgeLike): McpServer {
   const bodyCache = new Map<string, { body: ReturnType<typeof buildCreateBody>; sold: boolean; weapon: boolean }>();
 
   // 무기 검색이면 각 매물에 환산 주스탯 증가량(hwansanDiff)을 채운다. 넥슨 키·캐릭명이 있고
-  // 착용 가능한(powerDiff!=null) 매물에만. 실패는 조용히 생략(검색 기능은 그대로 동작).
-  async function enrichHwansan(summary: SearchSummary): Promise<SearchSummary> {
+  // 착용 가능한(powerDiff!=null) 매물에만. rawItems는 summary.items와 같은 순서의 원본(잠재 파싱용).
+  // 실패는 조용히 생략(검색 기능은 그대로 동작).
+  async function enrichHwansan(summary: SearchSummary, rawItems: any[]): Promise<SearchSummary> {
     if (!nexonApiKey()) return summary;
     const name = identity?.characterName;
     if (!name) return summary;
     const spec = await fetchCharacterSpec(name);
     if (typeof spec === 'string' || !spec.currentWeapon) return summary;
-    const base: SpecTotals = {
-      main: spec.main, sub: spec.sub, attack: spec.attack, damageBossSum: spec.damageBossSum,
-      ignoreDef: spec.ignoreDef, critRate: spec.critRate, critDamage: spec.critDamage, finalDamage: spec.finalDamage,
-    };
-    for (const it of summary.items) {
-      if (it.powerDiff == null || !it.finalStat) continue; // 착용 불가 → 생략
-      const cand = contributionFromAuction(it, spec.mainStat, spec.isMagic);
-      it.hwansanDiff = Math.round(hwansanDiff(base, spec.currentWeapon, cand));
-    }
+    const cur = spec.currentWeapon;
+    summary.items.forEach((it, i) => {
+      if (it.powerDiff == null || !it.finalStat) return; // 착용 불가 → 생략
+      const cand = contributionFromRawItem(rawItems[i]);
+      it.hwansanDiff = Math.round(hwansanDiff(spec, cur, cand, spec.isMagic));
+    });
     return summary;
   }
 
@@ -205,7 +203,7 @@ export function createServer(bridge: BridgeLike): McpServer {
     const weapon = isWeaponCategory(params.category);
     if (data?.searchKey) bodyCache.set(data.searchKey, { body, sold, weapon });
     let summary = summarizeSearch(data);
-    if (weapon && !sold) summary = await enrichHwansan(summary);
+    if (weapon && !sold) summary = await enrichHwansan(summary, data.items ?? []);
     return text({ ...summary, searchRemaining: await searchRemaining() });
   }
 
@@ -294,9 +292,9 @@ export function createServer(bridge: BridgeLike): McpServer {
       const q = { page, limit: limit as GetLimit, sort: sort as Sort };
       const cachedEntry = bodyCache.get(searchKey);
       const sold = cachedEntry?.sold ?? false;
-      const enrich = async (data: unknown) => {
+      const enrich = async (data: any) => {
         const s = summarizeSearch(data);
-        return cachedEntry?.weapon && !sold ? await enrichHwansan(s) : s;
+        return cachedEntry?.weapon && !sold ? await enrichHwansan(s, data?.items ?? []) : s;
       };
       const reply = await bridge.request({ type: 'fetch', url: buildPageUrl(searchKey, q, id, sold), method: 'GET' });
       if (reply.ok) return text(await enrich(reply.data));
