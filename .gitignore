@@ -11,3 +11,5 @@ maple_auction.md
 docs/superpowers/
 dev/
 Claude.md
+# playwright MCP 브라우저 로그
+.playwright-mcp/

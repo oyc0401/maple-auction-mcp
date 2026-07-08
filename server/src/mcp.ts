@@ -21,7 +21,7 @@ import {
 } from './mapping.js';
 import { summarizeSearch, summarizeItem, type SearchSummary } from './summarize.js';
 import { listCharacters, type CharacterInfo } from './characters.js';
-import { fetchCharacterSpec, nexonApiKey, contributionFromRawItem, hwansanDiff, categoryToSlots, setSwapDelta, comboSetDelta, mergeContribution, EMPTY_CONTRIBUTION, type Contribution } from './hwansan/index.js';
+import { fetchCharacterSpec, nexonApiKey, contributionFromRawItem, hwansanDiff, categoryToSlots, setSwapDelta, comboSetDelta, normalizeSet, mergeContribution, EMPTY_CONTRIBUTION, type Contribution } from './hwansan/index.js';
 
 // 세트 피스 수 변화를 이름으로 추론 가능한 부위(방어구/무기)만 세트 델타 적용. 장신구는 과대계상 방지 위해 제외.
 const SET_AWARE_SLOTS = new Set(['무기', '보조무기', '모자', '상의', '하의', '한벌옷', '신발', '장갑', '망토']);
@@ -170,7 +170,7 @@ export function createServer(bridge: BridgeLike): McpServer {
       if (it.powerDiff == null || !it.finalStat) return; // 착용 불가 → 생략
       const raw = rawItems[i];
       const cand = contributionFromRawItem(raw);
-      const newSet: string | null = raw?.toolTip?.setEffects?.[0] ?? null;
+      const newSet = normalizeSet(raw?.toolTip?.setEffects?.[0]);
       // 후보 부위 각각에 대해: 교체 시 세트 변화(방어구/무기만) 반영해 Δ환산, 다부위는 최대 이득 부위 채택.
       const diffs = slots.map((slot) => {
         const cur = spec.equipmentBySlot[slot] ?? EMPTY_CONTRIBUTION;
@@ -383,7 +383,7 @@ export function createServer(bridge: BridgeLike): McpServer {
         removed = mergeContribution(removed, spec.equipmentBySlot[a.slot] ?? EMPTY_CONTRIBUTION);
         added = mergeContribution(added, a.cand);
         if (SET_AWARE_SLOTS.has(a.slot)) {
-          changes.push({ oldSet: spec.slotSet[a.slot] ?? null, newSet: a.raw?.toolTip?.setEffects?.[0] ?? null });
+          changes.push({ oldSet: spec.slotSet[a.slot] ?? null, newSet: normalizeSet(a.raw?.toolTip?.setEffects?.[0]) });
         }
       }
       const setDelta = comboSetDelta(spec.setCounts, changes);
