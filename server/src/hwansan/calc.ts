@@ -80,6 +80,13 @@ function accumOpt(raw: RawOpts, seg: string | null | undefined) {
   }
 }
 
+// 빈 기여 (해당 부위에 현재 장비가 없을 때의 비교 기준 = 순수 추가).
+export const EMPTY_CONTRIBUTION: Contribution = {
+  str: 0, dex: 0, int: 0, luk: 0, hp: 0, allStat: 0,
+  strPct: 0, dexPct: 0, intPct: 0, lukPct: 0, allPct: 0, hpPct: 0,
+  atk: 0, matk: 0, atkPct: 0, matkPct: 0, dmgBoss: 0, idaFactor: 1, critDmg: 0, finalDmg: 0,
+};
+
 function toContribution(raw: RawOpts): Contribution {
   return {
     str: raw.str, dex: raw.dex, int: raw.int, luk: raw.luk, hp: raw.hp, allStat: raw.allStat,

@@ -21,7 +21,7 @@ import {
 } from './mapping.js';
 import { summarizeSearch, summarizeItem, type SearchSummary } from './summarize.js';
 import { listCharacters, type CharacterInfo } from './characters.js';
-import { fetchCharacterSpec, nexonApiKey, contributionFromRawItem, hwansanDiff } from './hwansan/index.js';
+import { fetchCharacterSpec, nexonApiKey, contributionFromRawItem, hwansanDiff, categoryToSlots, EMPTY_CONTRIBUTION } from './hwansan/index.js';
 import {
   worldName,
   labelList,
@@ -75,7 +75,7 @@ function optionRows(keys: string[], what: string, keyDesc: string) {
 
 // 매물을 반환하는 도구 설명에 공통으로 붙는 응답 해석 안내
 const RESULT_NOTE =
-  ' 응답 매물의 isAmazingHyperUpgradeUsed=true는 놀장(놀라운 장비강화 주문서) 사용 장비: 성 수 대비 스탯이 높아 보이지만 스타포스 최대 15성 제한이 있어 보통 저평가되니 가격 비교 시 주의. powerDiff(전투력 증가량)는 캐릭터 마지막 로그아웃 시점 기준이며 보공/방무가 반영되지 않으니 신뢰하지 말 것. hwansanDiff(있을 때)는 이 무기를 현재 착용 무기 대신 낄 때 오르는 환산 주스탯(음수면 하락)으로 보공·방무·데미지 비선형까지 반영한 값이라 무기 우열 판단은 이걸 우선한다. 무기 검색 + 넥슨 오픈 API 키가 있을 때만 채워지며, 착용 불가 매물은 생략된다.';
+  ' 응답 매물의 isAmazingHyperUpgradeUsed=true는 놀장(놀라운 장비강화 주문서) 사용 장비: 성 수 대비 스탯이 높아 보이지만 스타포스 최대 15성 제한이 있어 보통 저평가되니 가격 비교 시 주의. powerDiff(전투력 증가량)는 캐릭터 마지막 로그아웃 시점 기준이며 보공/방무가 반영되지 않으니 신뢰하지 말 것. hwansanDiff(있을 때)는 이 매물을 현재 착용 중인 같은 부위 장비 대신 낄 때 오르는 환산 주스탯(음수면 하락)으로 보공·방무·데미지 비선형까지 반영한 값이라 장비 우열 판단은 이걸 우선한다(반지·펜던트 등 다부위는 교체 시 가장 이득인 부위 기준). 무기/방어구/장신구 검색 + 넥슨 오픈 API 키가 있을 때만 채워지며, 착용 불가 매물은 생략된다. 세트 옵션 변화(교체로 세트 피스 수가 바뀌는 경우)는 아직 미반영이라 같은 세트 내 교체가 가장 정확하다.';
 
 // search_armor / search_weapon 이 공유하는 상세 필터
 const detailFilterSchema = {
@@ -144,29 +144,27 @@ export function createServer(bridge: BridgeLike): McpServer {
 
   let identity: (Identity & { characterName?: string }) | null = null;
   let characters: CharacterInfo[] | null = null;
-  const bodyCache = new Map<string, { body: ReturnType<typeof buildCreateBody>; sold: boolean; weapon: boolean }>();
+  const bodyCache = new Map<string, { body: ReturnType<typeof buildCreateBody>; sold: boolean; category?: string }>();
 
-  // 무기 검색이면 각 매물에 환산 주스탯 증가량(hwansanDiff)을 채운다. 넥슨 키·캐릭명이 있고
-  // 착용 가능한(powerDiff!=null) 매물에만. rawItems는 summary.items와 같은 순서의 원본(잠재 파싱용).
-  // 실패는 조용히 생략(검색 기능은 그대로 동작).
-  async function enrichHwansan(summary: SearchSummary, rawItems: any[]): Promise<SearchSummary> {
-    if (!nexonApiKey()) return summary;
+  // 장비 검색(무기/방어구/장신구)이면 각 매물에 환산 주스탯 증가량(hwansanDiff)을 채운다.
+  // 비교 기준 = 해당 검색 카테고리의 현재 착용 부위(다부위는 교체 시 최대 이득 부위). 넥슨 키·캐릭명 필요.
+  // rawItems는 summary.items와 같은 순서의 원본(잠재 파싱용). 실패는 조용히 생략(검색은 그대로 동작).
+  async function enrichHwansan(summary: SearchSummary, rawItems: any[], category?: string): Promise<SearchSummary> {
+    const slots = categoryToSlots(category);
+    if (!slots || !nexonApiKey()) return summary;
     const name = identity?.characterName;
     if (!name) return summary;
     const spec = await fetchCharacterSpec(name);
-    if (typeof spec === 'string' || !spec.currentWeapon) return summary;
-    const cur = spec.currentWeapon;
+    if (typeof spec === 'string') return summary;
+    const baselines = slots.map((s) => spec.equipmentBySlot[s]).filter(Boolean);
+    const cur = baselines.length ? baselines : [EMPTY_CONTRIBUTION]; // 빈 부위면 순수 추가
     summary.items.forEach((it, i) => {
       if (it.powerDiff == null || !it.finalStat) return; // 착용 불가 → 생략
       const cand = contributionFromRawItem(rawItems[i]);
-      it.hwansanDiff = Math.round(hwansanDiff(spec, cur, cand, spec.isMagic));
+      it.hwansanDiff = Math.round(Math.max(...cur.map((b) => hwansanDiff(spec, b, cand, spec.isMagic))));
     });
     return summary;
   }
-
-  // 검색 카테고리가 무기(보조무기 제외)면 환산 비교 대상. 현재 착용 "무기"가 기준이라 보조/방어구는 제외.
-  const isWeaponCategory = (category?: string) =>
-    !!category && category.startsWith('WEAPON') && category !== 'WEAPON_SUB';
 
   async function ensureIdentity(): Promise<Identity | string> {
     if (identity) return identity;
@@ -200,10 +198,9 @@ export function createServer(bridge: BridgeLike): McpServer {
     const created = await bridge.request({ type: 'fetch', url: sold ? SOLD_SEARCH_URL : SEARCH_URL, method: 'POST', body });
     if (!created.ok) return text(errorText(created));
     const data = created.data as any;
-    const weapon = isWeaponCategory(params.category);
-    if (data?.searchKey) bodyCache.set(data.searchKey, { body, sold, weapon });
+    if (data?.searchKey) bodyCache.set(data.searchKey, { body, sold, category: params.category });
     let summary = summarizeSearch(data);
-    if (weapon && !sold) summary = await enrichHwansan(summary, data.items ?? []);
+    if (!sold) summary = await enrichHwansan(summary, data.items ?? [], params.category);
     return text({ ...summary, searchRemaining: await searchRemaining() });
   }
 
@@ -294,7 +291,7 @@ export function createServer(bridge: BridgeLike): McpServer {
       const sold = cachedEntry?.sold ?? false;
       const enrich = async (data: any) => {
         const s = summarizeSearch(data);
-        return cachedEntry?.weapon && !sold ? await enrichHwansan(s, data?.items ?? []) : s;
+        return sold ? s : await enrichHwansan(s, data?.items ?? [], cachedEntry?.category);
       };
       const reply = await bridge.request({ type: 'fetch', url: buildPageUrl(searchKey, q, id, sold), method: 'GET' });
       if (reply.ok) return text(await enrich(reply.data));
