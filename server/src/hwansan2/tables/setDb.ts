@@ -10,6 +10,7 @@ export interface SetTier {
   boss?: number; // 보스 몬스터 데미지 %
   ida?: number; // 몬스터 방어율 무시 %
   critDmg?: number; // 크리티컬 데미지 %
+  hp?: number; // 최대 HP (데몬어벤져 환산에만 영향 — 미기입 세트는 추후 보강)
 }
 
 export const SET_DB: Record<string, Record<number, SetTier>> = {
@@ -44,11 +45,13 @@ export const SET_DB: Record<string, Record<number, SetTier>> = {
     4: { boss: 30 },
   },
   // ── 장신구 세트 ──
-  // 광휘의 보스: 실측(set-effect API) — 2셋 보공15%, 3셋 방무15%, 4셋 크뎀5%.
+  // 광휘의 보스: 인게임 실측 제공값 — 각 단계 올스탯20·HP500·공마20 공통, 2/5셋 보공15%, 3셋 방무15%, 4셋 크뎀5%, 6셋 크뎀7.5%.
   '광휘의 보스': {
-    2: { allStat: 20, atk: 20, boss: 15 },
-    3: { allStat: 20, atk: 20, ida: 15 },
-    4: { allStat: 20, atk: 20, critDmg: 5 },
+    2: { allStat: 20, hp: 500, atk: 20, boss: 15 },
+    3: { allStat: 20, hp: 500, atk: 20, ida: 15 },
+    4: { allStat: 20, hp: 500, atk: 20, critDmg: 5 },
+    5: { allStat: 20, hp: 500, atk: 20, boss: 15 },
+    6: { allStat: 20, hp: 500, atk: 20, critDmg: 7.5 },
   },
   '여명의 보스': {
     2: { allStat: 10, atk: 10, boss: 10 },

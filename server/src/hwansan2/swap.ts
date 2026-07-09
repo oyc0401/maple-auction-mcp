@@ -2,7 +2,7 @@
 // 흐름: ItemStats(현재/새) + 세트 델타 → simulator 축 델타 → dmg-simulator POST → Δ.
 import { baseSimulator, simulate, type ScouterData } from './scouterClient.js';
 import { fromScouterEquip, fromAuctionRaw, statAxes, toSimulatorDelta } from './axes.js';
-import { setSwapStatsByNames, countSets, parseSetOption, normalizeSet } from './sets.js';
+import { setSwapStatsByNames, countSets, parseSetOption, normalizeSet, KNOWN_SETS } from './sets.js';
 
 let simCaches = new WeakMap<object, Map<string, { delta380: number; delta300: number; unknown: string[] }>>();
 export function clearSwapCache() { simCaches = new WeakMap(); }
@@ -58,6 +58,7 @@ export async function swapDelta380(
   // 교차검증: 우리 카운트가 스카우터 계산(set_option)과 다르면 신호로 노출 (멤버십 누락·신규 세트 탐지)
   const ourCounts = countSets(names, setOpts);
   for (const [set, apiCount] of Object.entries(apiCounts)) {
+    if (!KNOWN_SETS.has(set)) continue; // 델타 계산에 안 쓰는 세트(마이스터·파퀘 등)는 대조 생략
     if ((ourCounts[set] ?? 0) !== apiCount) unknown.add(`세트카운트 불일치(${set}: 계산 ${ourCounts[set] ?? 0} vs 스카우터 ${apiCount})`);
   }
 
