@@ -1,0 +1,21 @@
+{
+   "id": "53_Wd1MT7xJWlx7ZvjfxLaO7FHll5IkZHkmDg5KW6vw:2",
+   "name": "아케인셰이드 체인",
+   "price": 3000000000,
+   "quantity": 1,
+   "starforce": 17,
+   "scroll": "강화 9회 (남은 횟수 0 / 복구가능 0 / 총 9)",
+   "powerDiff": -201234,
+   "exOption": "INT, LUK  +30 / 공격력  +133 / 올스탯 +4% / 보스 몬스터 데미지  +8%",
+   "potential": "레전드리: 보스 몬스터 데미지 +40% / 공격력 +9% / 몬스터 방어율 무시 +30%",
+   "additional": "레전드리: 공격력 +12% / 공격력 +9% / 공격 시 15% 확률로 95의 HP 회복",
+   "exceptional": null,
+   "soul": "위대한 루시드의 소울 / 공격력 +3%",
+   "tradeDesc": "1회 교환 가능 (거래 후 교환 불가) · (가위: 2 / 10)",
+   "status": "ON_SALE",
+   "tradeDate": null,
+   "endDate": "2026-07-11T13:34:58.963Z",
+   "wishlist": 0,
+   "isMyWorld": false,
+   "isAmazingHyperUpgradeUsed": false
+  }
