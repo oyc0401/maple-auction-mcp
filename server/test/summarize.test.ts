@@ -57,34 +57,45 @@ describe('summarizeItem', () => {
       starforce: 22,
       scroll: '강화 6회 (남은 횟수 2 / 복구가능 1 / 총 9)',
       powerDiff: 12500,
-      // 고정 키, 0도 표기. 방어력(pdd)·MP(mmp)는 제외, 공격력(pad)·HP(mhp) 포함.
-      finalStat: { str: 30, dex: 100, int: 0, luk: 163, all: 6, pad: 284, mad: 0, mhp: 1200, dam: 5, bdr: 30, imdr: 20 },
+      // 한 줄 스탯 문자열(user_equip과 동일 라벨). 0은 생략, 방어력(pdd)·MP(mmp)는 제외.
+      stat: 'STR+30 DEX+100 LUK+163 올스탯%+6 HP+1200 공격력+284 보공%+30 뎀%+5 방무%+20',
       exOption: '올스탯 +6% / 공격력 +72',
       potential: '레전드리: 공격력 +12% / 몬스터 방어율 무시 +40%',
-      additional: null,
+      // additional: 등급 없음 → 필드 생략
       exceptional: 'STR +30 / 공격력 +15',
       soul: '위대한 데미안의 소울 / 공격력 +15',
       tradeDesc: '1회 교환 가능 (거래 후 교환 불가) · (가위: 7 / 10)',
       status: 'ON_SALE',
-      tradeDate: null,
       endDate: '2026-07-09T12:24:11.920Z',
       wishlist: 3,
       isMyWorld: true,
-      isAmazingHyperUpgradeUsed: false,
     });
   });
 
-  it('toolTip이 없어도 죽지 않는다 (옵션 필드는 null)', () => {
-    const s = summarizeItem({ _id: 'x', itemName: 'y', pricePerItem: '1', quantity: 1, starforce: 0, wishlistCount: 0, endDate: 'd' });
+  it('값 없는 필드는 생략한다 (깡통 매물) — status·quantity·isMyWorld는 유지', () => {
+    const s = summarizeItem({ _id: 'x', itemName: 'y', pricePerItem: '1', quantity: 1, starforce: 0, wishlistCount: 0, endDate: 'd', status: 'ON_SALE' }) as any;
     expect(s.price).toBe(1);
-    expect(s.potential).toBeNull();
-    expect(s.exOption).toBeNull();
-    expect(s.exceptional).toBeNull();
-    expect(s.finalStat).toBeNull();
-    expect(s.soul).toBeNull();
-    expect(s.scroll).toBeNull();
-    expect(s.powerDiff).toBeNull();
-    expect(s.tradeDesc).toBeNull();
+    for (const k of ['scroll', 'powerDiff', 'stat', 'exOption', 'potential', 'additional', 'exceptional', 'soul', 'tradeDesc', 'tradeDate', 'isAmazingHyperUpgradeUsed', 'finalStat']) {
+      expect(s, `${k}는 값이 없으면 생략`).not.toHaveProperty(k);
+    }
+    // 시세(SOLD 구분)·기타/소비템(수량·개당가) 판단에 필요한 필드는 값이 뻔해도 유지
+    expect(s.status).toBe('ON_SALE');
+    expect(s.quantity).toBe(1);
+    expect(s.isMyWorld).toBe(true);
+  });
+
+  it('값이 있으면 유지한다 — tradeDate(시세), powerDiff 0, 놀장 true', () => {
+    const s = summarizeItem({
+      ...item,
+      status: 'SOLD',
+      tradeDate: '2026-07-01T00:00:00.000Z',
+      attackPowerDiff: 0,
+      toolTip: { ...item.toolTip, isAmazingHyperUpgradeUsed: true },
+    }) as any;
+    expect(s.status).toBe('SOLD');
+    expect(s.tradeDate).toBe('2026-07-01T00:00:00.000Z');
+    expect(s.powerDiff).toBe(0); // 0은 유효한 값(현재 장비와 동급)
+    expect(s.isAmazingHyperUpgradeUsed).toBe(true);
   });
 
   it('isMyWorld를 그대로 전달한다 (필드 없으면 true)', () => {
@@ -93,14 +104,14 @@ describe('summarizeItem', () => {
     expect(summarizeItem(item).isMyWorld).toBe(true);
   });
 
-  it('놀장 사용 여부를 전달한다 (필드 없으면 false)', () => {
-    expect(summarizeItem({ ...item, toolTip: { ...item.toolTip, isAmazingHyperUpgradeUsed: true } }).isAmazingHyperUpgradeUsed).toBe(true);
-    expect(summarizeItem(item).isAmazingHyperUpgradeUsed).toBe(false);
+  it('소울 미장착이면 soul을 생략한다', () => {
+    const s = summarizeItem({ ...item, toolTip: { ...item.toolTip, soulWeapon: { status: 'NOT_ENCHANTED', soulName: null, optionText: null, skillName: null } } });
+    expect(s).not.toHaveProperty('soul');
   });
 
-  it('소울 미장착이면 soul은 null', () => {
-    const s = summarizeItem({ ...item, toolTip: { ...item.toolTip, soulWeapon: { status: 'NOT_ENCHANTED', soulName: null, optionText: null, skillName: null } } });
-    expect(s.soul).toBeNull();
+  it('스탯이 전부 0이면 stat을 생략한다', () => {
+    const s = summarizeItem({ ...item, toolTip: { stat: { str: 0, pad: 0, pdd: 400 } } });
+    expect(s).not.toHaveProperty('stat');
   });
 });
 

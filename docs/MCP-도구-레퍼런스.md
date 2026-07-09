@@ -1,6 +1,6 @@
 # MCP 도구 레퍼런스 (AI가 보는 도구)
 
-`maple-auction` MCP 서버가 노출하는 도구는 **12개**다. 모든 매물(`items[]`)은 압축 요약 형태이며, 필드 의미는 [응답 예시 문서](./응답-예시-풀옵션-아이템.md)를 참고한다.
+`maple-auction` MCP 서버가 노출하는 도구는 **14개**다. 모든 매물(`items[]`)은 압축 요약 형태이며, 필드 의미는 [응답 예시 문서](./응답-예시-풀옵션-아이템.md)를 참고한다.
 
 | 도구 | 용도 | 검색 횟수 |
 | --- | --- | :---: |
@@ -9,12 +9,17 @@
 | `search_armor` | 방어구·장신구 상세 검색 (전체 필터, `sold`로 시세) | 1회 소진 |
 | `get_page` | 검색 결과 정렬·페이지 조회 (라이브/시세) | 무료 |
 | `recent_sold` | 최근 시세 (필터 없는 판매 완료 매물) | 무료 |
+| `item_hwansan` | 매물 1개 교체 시 환산 주스탯 증감 | 무료 |
+| `user_equip` | 닉네임으로 착용 장비 조회 | 무료 |
 | `add_wishlist` | 찜 목록에 추가 (남은 슬롯 반환) | 무료 |
 | `remove_wishlist` | 찜 목록에서 제거 (남은 슬롯 반환) | 무료 |
 | `get_wishlist` | 찜 목록·남은 슬롯 조회 | 무료 |
 | `list_characters` | 계정 캐릭터 목록 (월드 이름 포함) | 무료 |
 | `set_character` | 검색 기준 캐릭터(월드) 전환 | 무료 |
-| `get_status` | 연결·계정·잔여 횟수 확인 | 무료 |
+| `get_status` | 연결·계정·상태(state)·잔여 횟수 확인 | 무료 |
+| `get_knowledge` | 메이플 지식 노트 전문 (maple://knowledge와 동일) | 무료 |
+
+모든 도구에 `title`과 `readOnlyHint`/`destructiveHint` annotation이 붙는다(디렉토리 심사 기준). 검색은 일일 횟수를 소진하지만 데이터 변경이 없어 읽기(`readOnlyHint: true`)로 분류하며, 쓰기 도구는 `add_wishlist`/`remove_wishlist`/`set_character` 셋뿐이다. 행동 규칙은 도구 설명이 아니라 서버 `instructions`에 둔다(설명 속 행동 지시는 심사에서 프롬프트 인젝션으로 간주).
 
 **기본 흐름**: `search_items`(또는 `search_weapon`/`search_armor`)로 검색(일일 검색 1회 소진) → 응답의 `searchKey`로 `get_page`를 정렬·페이지 바꿔가며 자유롭게 조회(무료).
 
@@ -81,7 +86,7 @@
 | `items` | `object[]` | 매물 요약 배열 (아래 §매물 요약 필드) |
 | `searchRemaining` | `number \| null` | **남은 일일 검색 생성 횟수** (조회 실패 시 `null`) |
 
-**오류 시**: 문자열 안내를 반환한다. 미로그인이면 `"넥슨 로그인이 필요합니다. … nxlogin.nexon.com/auth/login …"`, 확장 미연결이면 확장 설치 안내.
+**오류 시**: 문자열 안내를 반환한다. 세션 없음/만료(401·403)면 옥션 페이지(auction.maplestory.nexon.com) 접속·새로고침 안내, 확장 미연결이면 확장 설치 안내.
 
 ---
 
@@ -104,8 +109,8 @@
 | --- | --- |
 | `ITEM_NAME_ASC` | 이름 가나다순 |
 | `PRICE_PER_ITEM_ASC` | 개당 가격 낮은 순 |
-| `PRICE_DESC` | 가격 높은 순 |
-| `ATTACK_POWER_DESC` | 전투력 증가량 높은 순 |
+| `PRICE_DESC` | 가격 높은 순 (필터 없는 검색에서 노작·깡통을 건너뛰고 고스펙부터) |
+| `ATTACK_POWER_DESC` | 전투력 증가량 높은 순 (보공·방무 미반영, 결과 500개 이하일 때만 동작) |
 | `END_DATE_ASC` | 판매 종료 임박순 |
 | `REGISTER_DATE_DESC` | 최신 등록순 |
 
@@ -129,20 +134,20 @@
 
 ## 3. `get_status` — 연결·계정 상태
 
-크롬 확장 연결 여부와 로그인 계정, 남은 검색/등록 횟수를 확인한다. 파라미터 없음.
+크롬 확장 연결 여부와 로그인 계정, 세션 상태(`state`), 남은 검색/등록 횟수를 확인한다. 파라미터 없음.
 
 ### 응답 (정상)
 
 ```json
 {
   "connected": true,
+  "state": "ready",
   "identity": { "worldId": 5, "accountId": 12345678, "characterId": 87654321, "characterName": "홍길동", "worldName": "크로아" },
   "dailyLimit": { "search": { "limit": 100, "remaining": 97 }, "register": { "limit": 20, "remaining": 20 } }
 }
 ```
 
-- 확장 미연결: `"크롬 확장이 연결되어 있지 않습니다. …"` 문자열.
-- 로그인 안 됨(계정 못 찾음): `{ "connected": true, "identity": null, "note": "…로그인 안내…" }`.
+`state` 값: `no_extension`(확장 미연결) / `no_session`(거래소 세션 없음 → `identity: null` + 옥션 페이지 안내) / `session_expired`(세션 만료·회전 → 옥션 페이지 새로고침 안내) / `ready`.
 
 ---
 
@@ -177,6 +182,8 @@
 
 두 검색 도구가 반환하는 각 매물의 요약 구조. 전체 예시·상세는 [응답 예시 문서](./응답-예시-풀옵션-아이템.md).
 
+**값 없는 필드는 응답에서 생략된다** (`?` 표기) — 잠재 없는 매물엔 `potential` 키 자체가 없다. 단 `status`·`quantity`·`isMyWorld`는 시세(SOLD)·소비템 수량·타월드 판단에 쓰여 항상 표기.
+
 | 필드 | 타입 | 설명 |
 | --- | --- | --- |
 | `id` | `string` | 매물 고유 ID (`{tradeSn}:{subIdx}`) |
@@ -184,20 +191,20 @@
 | `price` | `number` | 개당 가격(메소). 총가는 `price × quantity` |
 | `quantity` | `number` | 수량 |
 | `starforce` | `number` | 스타포스 강화 수치 |
-| `scroll` | `string \| null` | `"강화 N회 (남은 횟수 x / 복구가능 y / 총 z)"` |
-| `powerDiff` | `number \| null` | 전투력 증가량(현재 장비 대비, 음수 가능). 착용 불가 아이템이면 `null` |
+| `scroll` | `string?` | `"강화 N회 (남은 횟수 x / 복구가능 y / 총 z)"` |
+| `powerDiff` | `number?` | 전투력 증가량(현재 장비 대비, 음수 가능). 착용 불가 아이템이면 생략 |
 | `hwansanBySlot` | `Record<string,number>?` | 부위별 환산 주스탯 증가량(그 부위 현재 장비 대비, 음수면 하락). 어느 부위 교체인지 항상 명시 — 단일 `{"무기":120}`, 다부위 `{"반지1":..,"반지2":..}`. 보공·방무·데미지·세트까지 반영. maplescouter API 기반, 무기/제논/데벤 미지원, 착용 불가 매물은 생략 |
 | `isMyWorld` | `boolean` | 내 월드 매물 여부. `false`면 구매 시 **가격의 10% 메이플포인트 수수료** |
-| `isAmazingHyperUpgradeUsed` | `boolean` | 놀라운 장비강화 주문서(놀장) 사용 여부 |
-| `finalStat` | `object \| null` | 최종 합산 스탯(고정 키, 0도 표기): `str/dex/int/luk/all/pad/mad/mhp/dam/bdr/imdr` |
-| `exOption` | `string \| null` | 추가옵션 항목 (`"마력 +33 / INT +40 / ..."`) |
-| `potential` | `string \| null` | 잠재능력 (`"레전드리: 옵션 / 옵션 / ..."`) |
-| `additional` | `string \| null` | 에디셔널 잠재능력 (동일 형식) |
-| `exceptional` | `string \| null` | 익셉셔널 강화 내역 |
-| `soul` | `string \| null` | 소울 `"이름 / 옵션"` |
-| `tradeDesc` | `string \| null` | 거래 설명 (`"1회 교환 가능 … · (가위: 7 / 10)"`). 가위=플래티넘 카르마(5,900메포, 월 1회 마일리지 구매 가능) — 잔여 횟수 많을수록 가치↑ |
+| `isAmazingHyperUpgradeUsed` | `boolean?` | 놀라운 장비강화 주문서(놀장) 사용 시에만 `true` |
+| `stat` | `string?` | 최종 합산 스탯 한 줄 `"INT+350 올스탯%+12 마력+285 보공%+35 …"` (user_equip과 동일 라벨, 0인 스탯 생략 = 미표기는 0, 방어력·MP 제외) |
+| `exOption` | `string?` | 추가옵션 항목 (`"마력 +33 / INT +40 / ..."`) |
+| `potential` | `string?` | 잠재능력 (`"레전드리: 옵션 / 옵션 / ..."`) |
+| `additional` | `string?` | 에디셔널 잠재능력 (동일 형식) |
+| `exceptional` | `string?` | 익셉셔널 강화 내역 |
+| `soul` | `string?` | 소울 `"이름 / 옵션"` (미장착이면 생략) |
+| `tradeDesc` | `string?` | 거래 설명 (`"1회 교환 가능 … · (가위: 7 / 10)"`). 가위=플래티넘 카르마(5,900메포, 월 1회 마일리지 구매 가능) — 잔여 횟수 많을수록 가치↑ |
 | `seedRingLevel` | `number?` | 특수 스킬 반지 레벨(반지 전용, 가격 결정 요소). 반지가 아니거나 0이면 필드 생략 |
 | `status` | `string` | 매물 상태: `ON_SALE`(판매 중) / `SOLD`(판매 완료) 등 |
-| `tradeDate` | `string \| null` | **판매 완료 시각** (ISO 8601, UTC). 시세(`sold`)·찜의 팔린 매물에 존재. 판매 중이면 `null` |
+| `tradeDate` | `string?` | **판매 완료 시각** (ISO 8601, UTC). 시세(`sold`)·찜의 팔린 매물에만 존재(판매 중이면 생략) |
 | `endDate` | `string` | 판매 등록 만료 일시 (ISO 8601, UTC). 시세(`SOLD`)의 실제 판매 시각은 `tradeDate`를 볼 것 |
 | `wishlist` | `number` | 찜한 사람 수 |

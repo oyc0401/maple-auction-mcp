@@ -397,3 +397,29 @@ describe('get_knowledge (지식 노트 도구)', () => {
     expect(textOf(r)).toContain('가위횟수');
   });
 });
+
+// Anthropic 디렉토리 심사 pass/fail 기준 (mcp-server-dev 스킬 references/tool-design.md):
+// 모든 도구에 title·readOnlyHint·destructiveHint, 설명에 행동 지시 금지(프롬프트 인젝션 간주).
+describe('디렉토리 심사 기준 (공개 배포)', () => {
+  const WRITE_TOOLS = new Set(['add_wishlist', 'remove_wishlist', 'set_character']);
+
+  it('모든 도구에 title과 readOnlyHint·destructiveHint annotation이 있다', async () => {
+    const c = await client(fakeBridge(() => ({ id: '1', ok: true })));
+    const { tools } = await c.listTools();
+    expect(tools.length).toBeGreaterThan(0);
+    for (const t of tools) {
+      expect(t.title, `${t.name}: title`).toBeTruthy();
+      expect(typeof t.annotations?.readOnlyHint, `${t.name}: readOnlyHint`).toBe('boolean');
+      expect(typeof t.annotations?.destructiveHint, `${t.name}: destructiveHint`).toBe('boolean');
+      expect(t.annotations?.readOnlyHint, `${t.name}: 읽기/쓰기 분류`).toBe(!WRITE_TOOLS.has(t.name));
+    }
+  });
+
+  it('도구 설명에 행동 지시형 문구가 없다', async () => {
+    const c = await client(fakeBridge(() => ({ id: '1', ok: true })));
+    const { tools } = await c.listTools();
+    for (const t of tools) {
+      expect(t.description, `${t.name}: 행동 지시 금지`).not.toMatch(/반드시|필수|하세요|할 것|말 것|금지/);
+    }
+  });
+});

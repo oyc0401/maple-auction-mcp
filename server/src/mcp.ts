@@ -102,7 +102,7 @@ const detailFilterSchema = {
   isExOptExtractable: z.boolean().optional().describe('추가 옵션 추출 가능만'),
   isPotentialExtractable: z.boolean().optional().describe('잠재능력 추출 가능만'),
   myWorldOnly: z.boolean().optional().describe('현재 캐릭터 월드의 매물만'),
-  sold: z.boolean().optional().describe('true면 같은 필터로 판매 완료 매물(시세) 검색. 기본 false(판매 중)'),
+  sold: z.boolean().optional().describe('true면 같은 필터로 판매 완료 매물(최근 3개월 체결가 = 시세) 검색. 기본 false(판매 중 호가)'),
 };
 
 // 반지 전용이지만 방어구 스키마에 포함
@@ -114,16 +114,17 @@ const seedRingSchema = {
 export function createServer(bridge: BridgeLike): McpServer {
   // 클라이언트가 시스템 프롬프트에 주입하는 도구 사용 규칙. 한국어 유지 — 응답·필터가 전부 한국어라 톤을 맞추고,
   // 방무·공퍼·보공 같은 단축어를 모델에 학습시키는 의미도 있음. (압축 유지)
+  // 행동 규칙은 전부 여기에 둔다 — 도구 description에 행동 지시를 넣으면 디렉토리 심사에서 프롬프트 인젝션으로 간주됨.
   // 게임 도메인 지식은 여기가 아니라 maple://knowledge 리소스(지식 노트)로 서빙한다 — 상시 토큰을 아끼고 필요할 때만 로드.
   const instructions = [
     '메이플스토리(KMS) 거래소 검색 MCP.',
-    '필수: 매물 추천·가치 판단·시세 해석 전에 get_knowledge를 호출해 메이플 지식 노트를 읽을 것(같은 내용의 maple://knowledge 리소스도 제공) — 추옵·잠재(이탈)·가위·별칭·타월드 등 판단 기준. 읽지 않고 도메인 규칙을 임의 추론하지 말 것.',
-    '[검색 횟수 (일 100회)]',
-    '- 첫 검색 전 get_status로 검색 기준 캐릭터를 확인해 월드·닉네임을 사용자에게 알리고 시작. 다른 월드를 원하면 set_character 후 검색.',
-    '- search_items/search_weapon/search_armor만 1회 소진(sold=true 시세 포함). 나머지 도구는 소진 없음.',
-    '- 같은 조건 재조회는 재검색 대신 searchKey + get_page.',
+    '게임 도메인 지식(추옵·잠재(이탈)·가위·별칭·타월드 판단 기준)은 get_knowledge 도구(같은 내용의 maple://knowledge 리소스)에 있다. 매물 추천·가치 판단·시세 해석 전에 읽고, 읽지 않은 채 도메인 규칙을 임의 추론하지 말 것.',
+    '[비용 감각]',
+    '- 검색 생성(search_items/search_weapon/search_armor, sold 포함)만 일일 한도(100회)를 1회 소진. 같은 조건 재조회는 재검색 대신 searchKey + get_page(무료).',
+    '- 정작 비싼 건 응답 토큰이다. 필터 없는 검색 결과는 대부분 노작(미강화) 매물 — 잠재등급·스타포스·가격 필터를 걸거나 PRICE_DESC(가격 높은순)로 고스펙부터 훑으면 읽을 양이 준다. limit 40/60은 조건이 확정된 뒤에.',
     '[도구 사용]',
-    '- powerDiff(전투력 증가량)는 보공/방무 미반영이라 신뢰 금지, 캐릭터 마지막 로그아웃 시점 기준. 공격력·보공·방무 효율은 item_hwansan으로 환산 비교 — 매물·부위당 외부 계산 API 1회씩이니 후보를 먼저 추려 소수만, 부위가 정해졌으면 slot을 지정해 호출 최소화.',
+    '- 첫 검색 전 get_status로 검색 기준 캐릭터를 확인해 월드·닉네임을 사용자에게 알리고 시작. 다른 월드를 원하면 set_character 후 검색.',
+    '- powerDiff(전투력 증가량)와 ATTACK_POWER_DESC 정렬은 보공/방무 미반영에 마지막 로그아웃 기준이라 신뢰 금지. 정확한 효율은 item_hwansan으로 환산 비교 — 매물·부위당 외부 계산 API 1회씩이니 후보를 먼저 추려 소수만, 부위가 정해졌으면 slot을 지정해 호출 최소화.',
     '- 매물 id("ynoFBr…:1" 류)는 도구 호출용 내부 값 — 사용자에게 노출하지 말 것. 매물 지칭은 별칭으로 하고(관례는 지식 노트 참고), 별칭↔id 대응은 네가 기억해라.',
     '- 가위(재거래) 잔여 횟수가 낮은 매물은 사용자에게 꼭 명시(tradeDesc 참고).',
     '- 추천 리포트 형식: 표에는 스펙·가격·환산·가위·월드만. 타월드는 수수료 포함가를 계산하지 말고 "타월드"로만 표기. 별칭은 표에 넣지 말고 추천 문장에서 사용.',
@@ -147,9 +148,9 @@ export function createServer(bridge: BridgeLike): McpServer {
     'get_knowledge',
     {
       title: '메이플 지식 노트',
-      description: '메이플 게임 상식·매물 판단 기준(지식 노트) 전문 반환. 매물 추천·가치 판단·시세 해석 전에 반드시 1회 호출.',
+      description: '메이플 게임 상식·매물 판단 기준(지식 노트) 전문 반환 — 추옵·잠재(이탈)·가위·별칭·타월드 등 매물 추천과 가치 판단의 근거.',
       inputSchema: {},
-      annotations: { readOnlyHint: true },
+      annotations: { readOnlyHint: true, destructiveHint: false },
     },
     async () => text(loadKnowledge())
   );
@@ -276,7 +277,7 @@ export function createServer(bridge: BridgeLike): McpServer {
         characterName: z.string().optional().describe('조회할 캐릭터 닉네임. 생략 시 현재 검색 기준 캐릭터'),
         slot: z.string().optional().describe('부위 (예: "무기", "반지1", "펜던트2"). 생략 시 전체 목록'),
       },
-      annotations: { readOnlyHint: true },
+      annotations: { readOnlyHint: true, destructiveHint: false },
     },
     async ({ characterName, slot }) => {
       let name = characterName;
@@ -319,7 +320,7 @@ export function createServer(bridge: BridgeLike): McpServer {
     {
       title: '거래소 빠른 검색 (이름 위주)',
       description:
-        '아이템 이름으로 거래소 빠른 검색. 가격 낮은순 10개와 searchKey 반환, 추가 페이지·정렬은 get_page. 잠재·추옵·가격 등 상세 필터는 search_weapon/search_armor.',
+        '아이템 이름으로 거래소 빠른 검색. 가격 낮은순 10개와 searchKey 반환, 추가 페이지·정렬은 get_page. 잠재·추옵·가격 등 상세 필터와 시세(판매 완료가)는 search_weapon/search_armor.',
       inputSchema: {
         keyword: z.string().describe('아이템 이름 검색어'),
         exactMatch: z.boolean().optional().describe('정확히 일치 (기본 false)'),
@@ -327,6 +328,8 @@ export function createServer(bridge: BridgeLike): McpServer {
         potentialGrade: z.number().int().min(0).max(4).optional().describe(`잠재등급: ${gradeDesc}`),
         myWorldOnly: z.boolean().optional().describe('현재 캐릭터 월드의 매물만'),
       },
+      // 일일 검색 횟수를 소진하지만 데이터 변경은 없다 → 읽기로 분류
+      annotations: { readOnlyHint: true, destructiveHint: false },
     },
     async (params) => runSearch(params as SearchParams)
   );
@@ -336,13 +339,14 @@ export function createServer(bridge: BridgeLike): McpServer {
     {
       title: '무기 상세 검색 (전체 필터)',
       description:
-        '무기 상세 필터 검색. 잠재/에디셔널은 [{option, minValue}] 배열(기본 합산 모드). 예: 에디 공퍼 합 21%↑ 체인 → subCategory:"WEAPON_ONE_HANDED_CHAIN", additionalPotentialOptions:[{option:"physicalAttackPercent", minValue:21}]. 시세(판매 완료가)는 sold=true.',
+        '무기 상세 필터 검색(판매 중 호가). sold=true면 같은 필터로 판매 완료 매물(최근 3개월 체결가 = 시세)을 검색한다. 잠재/에디셔널은 [{option, minValue}] 배열(기본 합산 모드). 예: 에디 공퍼 합 21%↑ 체인 → subCategory:"WEAPON_ONE_HANDED_CHAIN", additionalPotentialOptions:[{option:"physicalAttackPercent", minValue:21}].',
       inputSchema: {
         subCategory: enumOf(WEAPON_CATEGORY_KEYS)
           .default('WEAPON')
           .describe('무기 분류. 키=무기명(비자명: THROWING_GLOVE=아대, SCROLL=두루마리, DUAL_BOW=듀얼 보우건, CANE=케인). WEAPON_SUB=보조무기 전체'),
         ...detailFilterSchema,
       },
+      annotations: { readOnlyHint: true, destructiveHint: false },
     },
     async ({ subCategory, sold, ...rest }) => runSearch({ ...(rest as SearchParams), category: subCategory as string }, sold)
   );
@@ -352,7 +356,7 @@ export function createServer(bridge: BridgeLike): McpServer {
     {
       title: '방어구·장신구 상세 검색 (전체 필터)',
       description:
-        '방어구/장신구 상세 필터 검색. 잠재/에디셔널은 [{option, minValue}] 배열(기본 합산 모드). 시세(판매 완료가)는 sold=true.',
+        '방어구/장신구 상세 필터 검색(판매 중 호가). sold=true면 같은 필터로 판매 완료 매물(최근 3개월 체결가 = 시세)을 검색한다. 잠재/에디셔널은 [{option, minValue}] 배열(기본 합산 모드).',
       inputSchema: {
         subCategory: enumOf(ARMOR_CATEGORY_KEYS)
           .default('ARMOR')
@@ -360,6 +364,7 @@ export function createServer(bridge: BridgeLike): McpServer {
         ...detailFilterSchema,
         ...seedRingSchema,
       },
+      annotations: { readOnlyHint: true, destructiveHint: false },
     },
     async ({ subCategory, sold, ...rest }) => runSearch({ ...(rest as SearchParams), category: subCategory as string }, sold)
   );
@@ -378,9 +383,10 @@ export function createServer(bridge: BridgeLike): McpServer {
           .enum(SORTS)
           .default('PRICE_PER_ITEM_ASC')
           .describe(
-            '정렬. PRICE_PER_ITEM_ASC=개당 낮은가격, ATTACK_POWER_DESC=전투력증가 높은순(결과 500개 이하일 때만 동작), END_DATE_ASC=종료 임박(급처), REGISTER_DATE_DESC=최신등록(스나이핑)'
+            '정렬. PRICE_PER_ITEM_ASC=개당 낮은가격, PRICE_DESC=가격 높은순(필터 없는 검색에서 노작·깡통을 건너뛰고 고스펙부터), ATTACK_POWER_DESC=전투력증가 높은순(보공·방무 미반영, 결과 500개 이하일 때만 동작), END_DATE_ASC=종료 임박(급처), REGISTER_DATE_DESC=최신등록(스나이핑)'
           ),
       },
+      annotations: { readOnlyHint: true, destructiveHint: false },
     },
     async ({ searchKey, page, limit, sort }) => {
       const id = await ensureIdentity();
@@ -425,7 +431,7 @@ export function createServer(bridge: BridgeLike): McpServer {
         itemId: z.string().describe('매물 id (검색 결과의 id 필드, "TRADESN:SUBIDX" 형식)'),
         slot: z.string().optional().describe('특정 부위만 계산 (예: "반지1", "펜던트2"). 생략 시 착용 가능한 모든 부위'),
       },
-      annotations: { readOnlyHint: true },
+      annotations: { readOnlyHint: true, destructiveHint: false },
     },
     async ({ itemId, slot }) => {
       const id = await ensureIdentity();
@@ -439,9 +445,9 @@ export function createServer(bridge: BridgeLike): McpServer {
     {
       title: '최근 시세 (판매 완료 매물)',
       description:
-        '최근 판매 완료 매물(시세) 조회. 현재 검색 기준 캐릭터의 월드 기준. 특정 아이템·조건의 시세는 이 도구 말고 search_*에 sold=true.',
+        '최근 판매 완료 매물(시세) 조회. 현재 검색 기준 캐릭터의 월드 기준. 특정 아이템·조건의 시세는 search_weapon/search_armor에 sold=true.',
       inputSchema: {},
-      annotations: { readOnlyHint: true },
+      annotations: { readOnlyHint: true, destructiveHint: false },
     },
     async () => {
       const id = await ensureIdentity();
@@ -464,7 +470,7 @@ export function createServer(bridge: BridgeLike): McpServer {
       description:
         `찜 목록과 남은 슬롯 조회 (최대 ${WISHLIST_MAX}개).`,
       inputSchema: {},
-      annotations: { readOnlyHint: true },
+      annotations: { readOnlyHint: true, destructiveHint: false },
     },
     async () => {
       const id = await ensureIdentity();
@@ -484,6 +490,7 @@ export function createServer(bridge: BridgeLike): McpServer {
       inputSchema: {
         itemId: z.string().describe('매물 id (검색 결과의 id 필드, "TRADESN:SUBIDX" 형식)'),
       },
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
     },
     async ({ itemId }) => {
       const id = await ensureIdentity();
@@ -516,6 +523,7 @@ export function createServer(bridge: BridgeLike): McpServer {
       inputSchema: {
         itemId: z.string().describe('매물 id (검색 결과 또는 get_wishlist의 id 필드)'),
       },
+      annotations: { readOnlyHint: false, destructiveHint: true },
     },
     async ({ itemId }) => {
       const id = await ensureIdentity();
@@ -545,7 +553,7 @@ export function createServer(bridge: BridgeLike): McpServer {
       description:
         '넥슨 계정의 캐릭터를 월드별로 조회. 검색 기준 월드 전환은 set_character.',
       inputSchema: {},
-      annotations: { readOnlyHint: true },
+      annotations: { readOnlyHint: true, destructiveHint: false },
     },
     async () => {
       const result = await listCharacters(bridge);
@@ -574,6 +582,8 @@ export function createServer(bridge: BridgeLike): McpServer {
         characterName: z.string().optional().describe('캐릭터 이름 (정확히 일치)'),
         characterId: z.number().int().optional().describe('characterId (이름이 여러 월드에 있을 때)'),
       },
+      // 서버 내부 검색 기준만 바꾼다(넥슨 데이터 변경 없음) — 읽기는 아니지만 파괴적이지 않고 재실행 안전
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
     },
     async ({ characterName, characterId }) => {
       if (!characterName && !characterId) return text('characterName 또는 characterId를 지정하세요.');
@@ -607,7 +617,7 @@ export function createServer(bridge: BridgeLike): McpServer {
       description:
         '크롬 확장 연결·넥슨 계정·현재 검색 기준 캐릭터(월드)·일일 검색 잔여 횟수 확인. state: no_extension(확장 미연결) / no_session(거래소 세션 없음) / session_expired(세션 만료·회전) / ready.',
       inputSchema: {},
-      annotations: { readOnlyHint: true },
+      annotations: { readOnlyHint: true, destructiveHint: false },
     },
     async () => {
       if (!bridge.connected) {
