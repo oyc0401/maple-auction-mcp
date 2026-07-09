@@ -1,7 +1,15 @@
 import { WebSocketServer, WebSocket } from 'ws';
 import { randomUUID } from 'node:crypto';
 import { pathToFileURL } from 'node:url';
-import { BRIDGE_PORT, DISCONNECTED_MSG, type BridgeCommandInput, type BridgeReply, type BridgeStatus } from '@maple/shared';
+import {
+  BRIDGE_PORT,
+  DISCONNECTED_MSG,
+  PROTOCOL_VERSION,
+  protocolMismatchMsg,
+  type BridgeCommandInput,
+  type BridgeReply,
+  type BridgeStatus,
+} from '@maple/shared';
 
 // promises 중 pred를 만족하는 첫 결과로 즉시 resolve, 하나도 없으면 null.
 // (로그인된 확장을 찾는 즉시 반환해 느린/잠든 확장을 기다리지 않기 위함)
@@ -29,6 +37,8 @@ export class Broker {
   private extensions = new Set<WebSocket>();
   // discover가 고른 로그인된 확장. 일반 요청은 여기로만.
   private preferred: WebSocket | null = null;
+  // 확장별 hello로 보고된 프로토콜 버전. 미보고(hello 도입 전 dev 빌드/수신 전 찰나)는 차단하지 않는다.
+  private extVersions = new Map<WebSocket, number>();
   // origin 없는 MCP 클라이언트 연결들(다중 세션).
   private clients = new Set<WebSocket>();
   private pending = new Map<string, { resolve: (r: BridgeReply) => void; timer: NodeJS.Timeout }>();
@@ -61,9 +71,10 @@ export class Broker {
     this.extensions.add(ws);
     this.broadcastStatus();
     ws.on('error', () => ws.close());
-    ws.on('message', (raw) => this.onExtensionMessage(raw.toString()));
+    ws.on('message', (raw) => this.onExtensionMessage(ws, raw.toString()));
     ws.on('close', () => {
       this.extensions.delete(ws);
+      this.extVersions.delete(ws);
       if (this.preferred === ws) this.preferred = null;
       this.broadcastStatus();
     });
@@ -110,11 +121,23 @@ export class Broker {
     return false;
   }
 
-  private onExtensionMessage(raw: string): void {
+  // hello로 보고된 버전이 서버와 다르면 불일치 에러, 호환(일치 또는 미보고)이면 null.
+  private protocolError(ws: WebSocket): BridgeReply | null {
+    const v = this.extVersions.get(ws);
+    if (v === undefined || v === PROTOCOL_VERSION) return null;
+    return { id: '', ok: false, code: 'PROTOCOL_MISMATCH', error: protocolMismatchMsg(v) };
+  }
+
+  private onExtensionMessage(ws: WebSocket, raw: string): void {
     let msg: BridgeReply;
     try {
       msg = JSON.parse(raw);
     } catch {
+      return;
+    }
+    if ((msg as unknown as { type?: string }).type === 'hello') {
+      const v = (msg as unknown as { protocolVersion?: unknown }).protocolVersion;
+      if (typeof v === 'number') this.extVersions.set(ws, v);
       return;
     }
     if (!msg.id) return; // keepalive 등 id 없는 메시지 무시
@@ -135,12 +158,20 @@ export class Broker {
     if (!target) {
       return Promise.resolve({ id: '', ok: false, code: 'DISCONNECTED', error: DISCONNECTED_MSG });
     }
+    const mismatch = this.protocolError(target);
+    if (mismatch) return Promise.resolve(mismatch);
     return this.sendTo(target, cmd, timeoutMs);
   }
 
   // discover를 붙어있는 모든 확장에 보내고, 가장 먼저 identity를 준(=로그인된) 확장을 preferred로 고정한다.
+  // 프로토콜 불일치 확장은 후보에서 제외 — 전부 불일치면 그 안내를 그대로 돌려준다.
   private async discover(cmd: BridgeCommandInput, timeoutMs: number): Promise<BridgeReply> {
-    const conns = [...this.extensions].filter((ws) => ws.readyState === WebSocket.OPEN);
+    const open = [...this.extensions].filter((ws) => ws.readyState === WebSocket.OPEN);
+    const conns = open.filter((ws) => !this.protocolError(ws));
+    if (!conns.length) {
+      const first = open[0] && this.protocolError(open[0]);
+      return first ?? { id: '', ok: false, code: 'DISCONNECTED', error: DISCONNECTED_MSG };
+    }
     const results = conns.map((ws) => this.sendTo(ws, cmd, timeoutMs).then((r) => ({ ws, r })));
     const winner = await firstMatch(results, ({ r }) => r.ok && r.data != null);
     if (winner) {

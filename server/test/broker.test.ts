@@ -1,5 +1,6 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import WebSocket from 'ws';
+import { PROTOCOL_VERSION } from '@maple/shared';
 import { Broker } from '../src/broker.js';
 
 const TEST_PORT = 29972;
@@ -115,6 +116,76 @@ describe('Broker — 확장 라우팅', () => {
     if (!reply.ok) expect(reply.code).toBe('NO_IDENTITY');
     a.close();
     b.close();
+  });
+});
+
+// hello(프로토콜 버전 보고)를 보내고 브로커가 처리할 틈을 준다
+async function sendHello(ws: WebSocket, protocolVersion: number): Promise<void> {
+  ws.send(JSON.stringify({ type: 'hello', protocolVersion, extensionVersion: '0.0.0-test' }));
+  await new Promise((r) => setTimeout(r, 30));
+}
+
+describe('Broker — 프로토콜 핸드셰이크', () => {
+  it('일치하는 hello를 보낸 확장은 정상 라우팅된다', async () => {
+    broker = new Broker(TEST_PORT);
+    const ws = await connectExtension();
+    respondAs(ws, { identity: { worldId: 5, accountId: 1, characterId: 2 }, fetchTag: 'ok' });
+    await sendHello(ws, PROTOCOL_VERSION);
+    const reply = await broker.request({ type: 'fetch', url: 'https://x', method: 'GET' });
+    expect(reply.ok && reply.data).toBe('ok');
+    ws.close();
+  });
+
+  it('구버전 확장이면 fetch가 PROTOCOL_MISMATCH + 확장 업데이트 안내', async () => {
+    broker = new Broker(TEST_PORT);
+    const ws = await connectExtension();
+    respondAs(ws, { identity: { worldId: 5, accountId: 1, characterId: 2 } });
+    await sendHello(ws, PROTOCOL_VERSION - 1);
+    const reply = await broker.request({ type: 'fetch', url: 'https://x', method: 'GET' });
+    expect(reply.ok).toBe(false);
+    if (!reply.ok) {
+      expect(reply.code).toBe('PROTOCOL_MISMATCH');
+      expect(reply.error).toContain('확장');
+      expect(reply.error).toContain('업데이트');
+    }
+    ws.close();
+  });
+
+  it('확장이 더 최신이면 서버 업데이트를 안내한다', async () => {
+    broker = new Broker(TEST_PORT);
+    const ws = await connectExtension();
+    await sendHello(ws, PROTOCOL_VERSION + 1);
+    const reply = await broker.request({ type: 'discover' });
+    expect(reply.ok).toBe(false);
+    if (!reply.ok) {
+      expect(reply.code).toBe('PROTOCOL_MISMATCH');
+      expect(reply.error).toContain('서버');
+    }
+    ws.close();
+  });
+
+  it('discover는 불일치 확장을 제외하고 호환 확장을 고른다', async () => {
+    broker = new Broker(TEST_PORT);
+    const oldExt = await connectExtension();
+    const curExt = await connectExtension();
+    respondAs(oldExt, { identity: { worldId: 1, accountId: 9, characterId: 9 } }); // 응답해도 제외돼야 함
+    respondAs(curExt, { identity: { worldId: 5, accountId: 1, characterId: 2 } });
+    await sendHello(oldExt, PROTOCOL_VERSION - 1);
+    await sendHello(curExt, PROTOCOL_VERSION);
+    const reply = await broker.request({ type: 'discover' });
+    expect(reply.ok).toBe(true);
+    if (reply.ok) expect(reply.data).toMatchObject({ worldId: 5, characterId: 2 });
+    oldExt.close();
+    curExt.close();
+  });
+
+  it('hello를 안 보낸 확장(도입 전 dev 빌드)은 차단하지 않는다', async () => {
+    broker = new Broker(TEST_PORT);
+    const ws = await connectExtension();
+    respondAs(ws, { fetchTag: 'legacy-ok' });
+    const reply = await broker.request({ type: 'fetch', url: 'https://x', method: 'GET' });
+    expect(reply.ok && reply.data).toBe('legacy-ok');
+    ws.close();
   });
 });
 

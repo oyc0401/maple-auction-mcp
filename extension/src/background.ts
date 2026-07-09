@@ -1,5 +1,5 @@
 // ===== Maple Auction Bridge — background service worker v0.1.3 =====
-import { BRIDGE_PORT, type BridgeCommand } from '@maple/shared';
+import { BRIDGE_PORT, PROTOCOL_VERSION, type BridgeCommand, type ExtensionHello } from '@maple/shared';
 import { executeFetch, discoverIdentity } from './api.js';
 
 // 로드된 코드 버전을 SW 콘솔에 남긴다(예전/지금 코드 구분용). 버전 출처는 manifest.
@@ -33,6 +33,13 @@ function connect(): void {
   ws = new WebSocket(`ws://127.0.0.1:${BRIDGE_PORT}`);
 
   ws.onopen = () => {
+    // 프로토콜 핸드셰이크: 다른 어떤 메시지보다 먼저 버전을 알린다 (브로커가 호환성 판정에 사용)
+    const hello: ExtensionHello = {
+      type: 'hello',
+      protocolVersion: PROTOCOL_VERSION,
+      extensionVersion: chrome.runtime.getManifest().version,
+    };
+    safeSend(hello);
     // MV3 SW keepalive: 20초마다 트래픽을 발생시켜 SW 수면을 막는다
     keepalive = setInterval(() => safeSend({ keepalive: true }), 20_000);
   };
