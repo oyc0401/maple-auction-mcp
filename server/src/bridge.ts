@@ -4,13 +4,11 @@ import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
 import {
   BRIDGE_PORT,
+  DISCONNECTED_MSG,
   type BridgeCommandInput,
   type BridgeReply,
   type BridgeServerMessage,
 } from '@maple/shared';
-
-const DISCONNECTED_MSG =
-  '크롬 확장이 연결되어 있지 않습니다. 크롬이 실행 중이고 Maple Auction Bridge 확장이 켜져 있는지 확인하세요.';
 
 // 브로커에 붙는 얇은 WS 클라이언트. 확장 선택/discover는 브로커가 담당한다.
 // 브로커가 없으면 한 번 자동 스폰하고 재접속한다.

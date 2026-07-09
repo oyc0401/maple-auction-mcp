@@ -1,6 +1,6 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
-import type { BridgeCommandInput, BridgeReply, Identity } from '@maple/shared';
+import { DISCONNECTED_MSG, type BridgeCommandInput, type BridgeReply, type Identity } from '@maple/shared';
 import {
   buildCreateBody,
   buildPageUrl,
@@ -43,7 +43,7 @@ function text(value: unknown) {
 
 function errorText(reply: Extract<BridgeReply, { ok: false }>): string {
   if (reply.status === 403) {
-    return '넥슨 로그인이 필요합니다. 크롬에서 https://nxlogin.nexon.com/auth/login 에 접속해 로그인한 뒤 다시 시도하세요.';
+    return '넥슨 로그인이 필요합니다. 사용자에게 크롬에서 https://nxlogin.nexon.com/auth/login 에 로그인한 뒤 다시 요청하라고 안내하고 대기하세요.';
   }
   const apiCode = (reply.data as { code?: number } | null)?.code;
   const suffix = apiCode != null ? ` (API code ${apiCode})` : '';
@@ -135,6 +135,7 @@ export function createServer(bridge: BridgeLike): McpServer {
     '- powerDiff(전투력 증가량)는 캐릭터 마지막 로그아웃 시점 기준.',
     '- 매물 id("ynoFBr…:1" 류)는 도구 호출용 내부 값 — 사용자에게 노출하지 말 것. 매물 지칭은 특징 별칭("22성 체인", "올이탈", "54억 무기" 식)으로 하고, 별칭↔id 대응은 네가 기억해라.',
     '- 가위(재거래) 잔여 횟수가 낮은 매물은 사용자에게 꼭 명시(tradeDesc 참고 — 가치 급락 요인).',
+    '- 추천 리포트 형식: 표에는 스펙·가격·환산·가위·월드만. 타월드는 수수료 포함가를 계산하지 말고 "타월드"로만 표기. 별칭은 표에 넣지 말고 추천 문장에서 사용.',
   ].join('\n');
 
   const server = new McpServer({ name: 'maple-auction', version: '0.4.0' }, { instructions });
@@ -595,7 +596,7 @@ export function createServer(bridge: BridgeLike): McpServer {
     },
     async () => {
       if (!bridge.connected) {
-        return text('크롬 확장이 연결되어 있지 않습니다. 크롬이 실행 중이고 Maple Auction Bridge 확장이 켜져 있는지 확인하세요.');
+        return text(DISCONNECTED_MSG);
       }
       const id = await ensureIdentity();
       if (typeof id === 'string') return text({ connected: true, identity: null, note: id });

@@ -44,7 +44,7 @@ export async function executeFetch(cmd: FetchCommand, fetchFn: typeof fetch = fe
 
 const AUTH_BASE = 'https://api.mskr.nexon.com/v1';
 export const LOGIN_GUIDE =
-  '넥슨에 로그인되어 있지 않습니다. 크롬에서 https://nxlogin.nexon.com/auth/login 에 접속해 로그인한 뒤 다시 시도하세요.';
+  '넥슨에 로그인되어 있지 않습니다. 사용자에게 크롬에서 https://nxlogin.nexon.com/auth/login 에 로그인한 뒤 다시 요청하라고 안내하고 대기하세요.';
 
 // 실측(2026-07-08): 존재하는 월드는 200 + characters[], 없는 월드는 500 {code:2}.
 // 확정 월드 ID(웹 거래소 번들 실측): 0스카니아 1베라 3루나 4제니스 5크로아 10유니온 16엘리시움

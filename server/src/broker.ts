@@ -1,10 +1,7 @@
 import { WebSocketServer, WebSocket } from 'ws';
 import { randomUUID } from 'node:crypto';
 import { pathToFileURL } from 'node:url';
-import { BRIDGE_PORT, type BridgeCommandInput, type BridgeReply, type BridgeStatus } from '@maple/shared';
-
-const DISCONNECTED_MSG =
-  '크롬 확장이 연결되어 있지 않습니다. 크롬이 실행 중이고 Maple Auction Bridge 확장이 켜져 있는지 확인하세요.';
+import { BRIDGE_PORT, DISCONNECTED_MSG, type BridgeCommandInput, type BridgeReply, type BridgeStatus } from '@maple/shared';
 
 // promises 중 pred를 만족하는 첫 결과로 즉시 resolve, 하나도 없으면 null.
 // (로그인된 확장을 찾는 즉시 반환해 느린/잠든 확장을 기다리지 않기 위함)
