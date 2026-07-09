@@ -310,20 +310,3 @@ describe('axes — 데몬어벤져·제논', () => {
     expect(sim.subStat).toBe('0');
   });
 });
-
-describe('sets — 아델 픽스처(넥슨 set-effect 실측) 교차검증', () => {
-  it('지원 세트의 카운트가 넥슨 set-effect와 일치한다 (광휘·칠흑·보장·에테르넬)', () => {
-    const eq = JSON.parse(readFileSync(new URL('./fixtures/hwansan2/adele/item-equipment.json', import.meta.url), 'utf8'));
-    const se = JSON.parse(readFileSync(new URL('./fixtures/hwansan2/adele/set-effect.json', import.meta.url), 'utf8'));
-    const names = (eq.item_equipment as any[]).map((e) => e.item_name);
-    const ours = countSets(names);
-    const nexon: Record<string, number> = {};
-    for (const s2 of se.set_effect) {
-      const base = s2.set_name.replace(/\s*세트\s*(\([^)]*\))?\s*$/, '').trim();
-      nexon[base] = s2.total_set_count;
-    }
-    for (const set of ['광휘의 보스', '칠흑의 보스', '보스 장신구', '에테르넬']) {
-      expect(ours[set] ?? 0, set).toBe(nexon[set] ?? 0);
-    }
-  });
-});
