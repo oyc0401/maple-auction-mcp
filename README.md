@@ -4,7 +4,7 @@
 
 ## 설치 방법
 
-먼저 [크롬 확장](https://chromewebstore.google.com/)을 설치하고, 크롬에서 [넥슨에 로그인](https://nxlogin.nexon.com/auth/login)해 주세요.
+먼저 [크롬 확장](https://chromewebstore.google.com)을 설치하고, 크롬에서 [메이플스토리 경매장](https://auction.maplestory.nexon.com)에 로그인 해 주세요
 
 ### Claude Code
 
