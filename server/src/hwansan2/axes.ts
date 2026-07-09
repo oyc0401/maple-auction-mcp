@@ -117,7 +117,7 @@ export function toSimulatorDelta(
 
   // 방무: base 실방무에서 현재 아이템 계수를 나눠 빼고 (새 아이템 × 세트델타) 계수를 곱해 %p 차이 산출
   const iedNext = next.iedFactor * setDelta.iedFactor;
-  const after = 100 * (1 - ((1 - baseIgnoreDef / 100) / cur.iedFactor) * iedNext);
+  const after = 100 * (1 - ((1 - baseIgnoreDef / 100) / (cur.iedFactor || 1)) * iedNext);
   const dIgn = after - baseIgnoreDef;
 
   const out: Record<string, number> = {

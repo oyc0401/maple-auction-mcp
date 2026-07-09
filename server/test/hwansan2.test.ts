@@ -52,7 +52,7 @@ describe('axes', () => {
   it('fromScouterEquip: 무기 잠재·소울·분해옵션을 ItemStats로', () => {
     const w = equips.find((e: any) => e.slot === '무기');
     const s = fromScouterEquip(w);
-    expect(s.atk).toBe(Number(w.totalOption.attack_power)); // 1122
+    expect(s.atk).toBe(Number(w.totalOption.attack_power)); // 실측 649 (base+add+etc+starforce 합)
     expect(s.dmgBoss).toBe(Number(w.totalOption.boss_damage) + Number(w.totalOption.damage) + 30 + 35 + 7); // 고정+잠재 보공30/35+소울7
     expect(s.iedFactor).toBeCloseTo((1 - Number(w.totalOption.ignore_monster_armor) / 100) * (1 - 0.4), 10);
     expect(s.atkPct).toBe(9 + 6); // 에디 공9%+6%
@@ -83,5 +83,12 @@ describe('axes', () => {
     expect(sim.coolTimeReduce).toBe('2');
     // 방무: 실방무 90% 기준, (1-0.9)에 (1-0.3) 곱 → 93% → 델타 +3
     expect(Number(sim.ignoreGuard)).toBeCloseTo(3, 6);
+  });
+  it('toSimulatorDelta: 현재 아이템 방무 100%(iedFactor 0)여도 NaN 없이 계산된다', () => {
+    const ax = statAxes(idResponse.userStat)!;
+    const cur = { ...emptyItemStats(), iedFactor: 0 };
+    const next = { ...emptyItemStats(), flat: { STR: 1, DEX: 0, INT: 0, LUK: 0 } };
+    const sim = toSimulatorDelta(cur, next, emptyItemStats(), ax, 90)!;
+    expect(Number.isFinite(Number(sim.ignoreGuard))).toBe(true);
   });
 });
