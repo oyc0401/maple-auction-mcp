@@ -41,7 +41,7 @@ export interface SearchSummary {
   hasNext: boolean;
   searchKey: string;
   items: ItemSummary[];
-  hwansan380?: number; // 현재 환산 주스탯(380). hwansanBySlot과의 증감률 계산 기준
+  hwansan380?: number; // 현재 환산 주스탯(380). hwansanBySlot 절대 증감의 참고 맥락
 }
 
 // 잠재: "레전드리: 공격력 +12% / ..." (등급명만 접두, 없으면 null)
