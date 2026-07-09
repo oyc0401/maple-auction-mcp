@@ -1,3 +1,5 @@
+import { ROYAL_LABEL_BY_VALUE, PET_GRADE_BY_VALUE } from './constants.js';
+
 interface PotentialBlock {
   grade: number;
   entries: { grade: number; text: string }[];
@@ -43,8 +45,11 @@ export interface ItemSummary {
   additional?: string; // 에디셔널 없으면 생략
   exceptional?: string; // 익셉셔널 강화 내역. 없으면 생략
   soul?: string; // 소울: "이름 / 옵션". 미장착이면 생략
-  tradeDesc?: string; // 거래 관련: "장착 시 교환 불가 · (가위: 7 / 10)"
+  tradeDesc?: string; // 거래 관련: "장착 시 교환 불가 · (가위: 7 / 10)". 비장비는 toolTip.tradeDescs 기반
   seedRingLevel?: number; // 특수 스킬 반지 레벨 (반지 전용, 가격 결정 요소). 반지 아니거나 0이면 생략
+  timeLimit?: string; // 기간제 정보 (비장비·캐시). 없으면 생략
+  gender?: string; // 착용 성별 "남"/"여" (코디·뷰티). NONE이면 생략
+  label?: string; // 코디 라벨 등급(레드라벨 등) 또는 펫 등급(루나 스윗 등). 없으면 생략
   status: string; // 매물 상태: ON_SALE 판매중 / SOLD 판매완료(시세)
   tradeDate?: string; // 판매 완료 시각(시세·찜의 팔린 매물만). 판매중이면 생략
   endDate: string; // 판매 등록 만료 시각(판매중 기준). 시세(SOLD)에선 판매시각은 tradeDate를 볼 것
@@ -104,6 +109,10 @@ function tradeLine(desc?: string[]): string | null {
 export function summarizeItem(item: any): ItemSummary {
   const tt = item.toolTip ?? {};
   const ui = tt.upgradeInfo ?? {};
+  // 코디 라벨(레드라벨 등)과 펫 등급(루나 스윗 등)은 같은 자리(label)에 요약 — 동시에 붙는 아이템은 없다
+  const label =
+    (item.royalSpecialType > 0 ? ROYAL_LABEL_BY_VALUE[item.royalSpecialType] : null) ??
+    (item.petGrade > 0 ? PET_GRADE_BY_VALUE[item.petGrade] : null);
   return omitEmpty({
     id: item._id,
     name: item.itemName,
@@ -118,8 +127,11 @@ export function summarizeItem(item: any): ItemSummary {
     additional: potentialLine(ui.additionalPotential),
     exceptional: exceptionalLine(tt.exceptionalUpgrade),
     soul: soulLine(tt.soulWeapon),
-    tradeDesc: tradeLine(tt.tradeDesc),
+    tradeDesc: tradeLine(tt.tradeDesc ?? tt.tradeDescs), // 장비는 tradeDesc, 비장비(toolTipType 5)는 tradeDescs
     seedRingLevel: item.seedRingLevel || null,
+    timeLimit: tt.timeLimit ?? null,
+    gender: item.gender === 'MALE' ? '남' : item.gender === 'FEMALE' ? '여' : null,
+    label,
     status: item.status,
     tradeDate: item.tradeDate ?? null,
     endDate: item.endDate,

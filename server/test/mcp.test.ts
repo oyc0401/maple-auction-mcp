@@ -263,6 +263,64 @@ describe('search_weapon / search_armor (상세 필터 검색)', () => {
   });
 });
 
+describe('search_consume / search_cash / search_etc (소비·캐시·기타 검색)', () => {
+  const searchBridge = (calls: any[]) =>
+    fakeBridge((cmd) => {
+      calls.push(cmd);
+      if (cmd.type === 'discover') return { id: '1', ok: true, data: ID };
+      if (cmd.method === 'GET') return { id: '3', ok: true, status: 200, data: { search: { limit: 100, remaining: 97 } } };
+      return { id: '2', ok: true, status: 201, data: pageResp('key-c', 1, 10, 176, false) };
+    });
+
+  it('search_consume: 하위 분류로 POST 바디를 만들고 sold=true면 시세 URL을 쓴다', async () => {
+    const calls: any[] = [];
+    const c = await client(searchBridge(calls));
+    await c.callTool({ name: 'search_consume', arguments: { subCategory: 'CONSUME_SCROLL_FLAME', sold: true } });
+    const post = calls.find((c) => c.type === 'fetch' && c.method === 'POST');
+    expect(post.url).toContain('/searches/sold/tool-tip');
+    expect(post.body.filters.itemCategory).toEqual({ itemDetailCategory: 'CONSUME_SCROLL_FLAME' });
+  });
+
+  it('search_cash: 성별·라벨·펫 등급·기간제 옵션을 실측 바디로 변환한다', async () => {
+    const calls: any[] = [];
+    const c = await client(searchBridge(calls));
+    await c.callTool({
+      name: 'search_cash',
+      arguments: {
+        subCategory: 'CASH',
+        gender: '남',
+        itemGrade: '블랙라벨',
+        periodOptions: [{ option: 'periodStr', minValue: 11 }],
+      },
+    });
+    const post = calls.find((c) => c.type === 'fetch' && c.method === 'POST');
+    // 2026-07-10 웹 거래소 캡처와 동일한 형태
+    expect(post.body.filters.itemCategory).toEqual({ itemDetailCategory: 'CASH' });
+    expect(post.body.filters.basicOption).toEqual({ gender: 'MALE', royalSpecialType: 2 });
+    expect(post.body.filters.cashOption).toEqual({ periodStr: 11 });
+  });
+
+  it('search_cash: 펫 등급을 숫자 코드로 변환한다 (루나 스윗 = 4)', async () => {
+    const calls: any[] = [];
+    const c = await client(searchBridge(calls));
+    await c.callTool({ name: 'search_cash', arguments: { subCategory: 'CASH_PET_PET', petGrade: '루나 스윗' } });
+    const post = calls.find((c) => c.type === 'fetch' && c.method === 'POST');
+    expect(post.body.filters.basicOption).toEqual({ petGrade: 4 });
+  });
+
+  it('search_etc: 결과 과다(422 code 4040)면 소진 없음 + 좁히기 안내를 반환한다', async () => {
+    const c = await client(
+      fakeBridge((cmd) => {
+        if (cmd.type === 'discover') return { id: '1', ok: true, data: ID };
+        return { id: '2', ok: false, code: 'HTTP_ERROR', status: 422, error: 'HTTP 422', data: { code: 4040 } };
+      })
+    );
+    const r = await c.callTool({ name: 'search_etc', arguments: { subCategory: 'ETC' } });
+    expect(textOf(r)).toContain('검색 결과가 너무 많아');
+    expect(textOf(r)).toContain('소진 없음');
+  });
+});
+
 // 인증 API를 흉내내는 브리지: accounts / gameWorlds/{5,45}에 캐릭터가 있다
 function authBridge(extra?: (cmd: any) => BridgeReply | null): BridgeLike {
   return fakeBridge((cmd: any) => {

@@ -115,6 +115,52 @@ describe('summarizeItem', () => {
   });
 });
 
+describe('summarizeItem (비장비: 소비·캐시·기타, toolTipType 5 — 2026-07-10 실측)', () => {
+  it('비장비 toolTip의 tradeDescs(복수형)를 tradeDesc 한 줄로 요약한다', () => {
+    const s = summarizeItem({
+      _id: 'co5:0',
+      itemName: '세이프티 실드',
+      quantity: 3,
+      pricePerItem: '53333333',
+      starforce: 0,
+      wishlistCount: 0,
+      endDate: 'd',
+      status: 'ON_SALE',
+      isCash: true,
+      gender: 'NONE',
+      royalSpecialType: 0,
+      petGrade: 0,
+      toolTip: { itemName: '세이프티 실드', tradeDescs: ['1회 교환 가능 (거래 후 교환 불가)'], timeLimit: null, cashTradeInfo: null },
+    }) as any;
+    expect(s.tradeDesc).toBe('1회 교환 가능 (거래 후 교환 불가)');
+    expect(s.quantity).toBe(3);
+    expect(s.price).toBe(53333333);
+    for (const k of ['stat', 'potential', 'scroll', 'gender', 'label', 'timeLimit']) {
+      expect(s, `${k}는 비장비/값 없음이면 생략`).not.toHaveProperty(k);
+    }
+  });
+
+  it('코디 라벨·성별, 펫 등급, 기간제 정보를 요약한다', () => {
+    const coordi = summarizeItem({
+      _id: 'a:0', itemName: '어느 코디', quantity: 1, pricePerItem: '1', starforce: 0,
+      wishlistCount: 0, endDate: 'd', status: 'ON_SALE',
+      gender: 'MALE', royalSpecialType: 2, petGrade: 0,
+      toolTip: { timeLimit: '기간제 90일' },
+    }) as any;
+    expect(coordi.gender).toBe('남');
+    expect(coordi.label).toBe('블랙라벨');
+    expect(coordi.timeLimit).toBe('기간제 90일');
+
+    const pet = summarizeItem({
+      _id: 'b:0', itemName: '어느 펫', quantity: 1, pricePerItem: '1', starforce: 0,
+      wishlistCount: 0, endDate: 'd', status: 'ON_SALE',
+      gender: 'FEMALE', royalSpecialType: 0, petGrade: 4, toolTip: {},
+    }) as any;
+    expect(pet.gender).toBe('여');
+    expect(pet.label).toBe('루나 스윗');
+  });
+});
+
 describe('summarizeSearch', () => {
   it('페이지네이션 메타 + 요약 아이템 배열을 반환한다', () => {
     const s = summarizeSearch(resp);

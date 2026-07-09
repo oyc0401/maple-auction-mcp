@@ -30,6 +30,14 @@ import {
   SCROLL_OPTION_KEYS,
   ARMOR_CATEGORY_KEYS,
   WEAPON_CATEGORY_KEYS,
+  CONSUME_CATEGORY_KEYS,
+  CASH_CATEGORY_KEYS,
+  ETC_CATEGORY_KEYS,
+  CASH_PERIOD_OPTION_KEYS,
+  ROYAL_LABEL_GRADES,
+  ROYAL_LABEL_KEYS,
+  PET_GRADES,
+  PET_GRADE_KEYS,
   JOB_CLASSES,
 } from './constants.js';
 
@@ -48,6 +56,10 @@ function errorText(reply: Extract<BridgeReply, { ok: false }>): string {
   // nxlogin이 아니라 옥션 페이지로 안내한다. 구버전 확장이 보낸 낡은 안내문도 여기서 최신 안내로 덮인다.
   if (reply.status === 401 || reply.status === 403) {
     return NO_SESSION_MSG + (apiCode != null ? ` (HTTP ${reply.status}, API code ${apiCode})` : '');
+  }
+  // 실측(2026-07-10): 결과가 너무 많으면 422 + code 4040으로 검색 자체를 거부한다 (검색 횟수 소진 없음).
+  if (reply.status === 422 && apiCode === 4040) {
+    return '검색 결과가 너무 많아 거래소가 검색을 거부했습니다 (검색 횟수 소진 없음). 하위 분류(subCategory)나 키워드로 범위를 좁혀 다시 검색하세요.';
   }
   const suffix = apiCode != null ? ` (API code ${apiCode})` : '';
   return `요청 실패 (${reply.code}): ${reply.error}${suffix}`;
@@ -105,6 +117,16 @@ const detailFilterSchema = {
   sold: z.boolean().optional().describe('true면 같은 필터로 판매 완료 매물(최근 3개월 체결가 = 시세) 검색. 기본 false(판매 중 호가)'),
 };
 
+// 소비·캐시·기타(비장비)가 공유하는 단순 필터 — 웹 UI 실측: 하위 분류·가격뿐, 장비 필터 없음
+const simpleFilterSchema = {
+  keyword: detailFilterSchema.keyword,
+  exactMatch: detailFilterSchema.exactMatch,
+  priceMin: detailFilterSchema.priceMin,
+  priceMax: detailFilterSchema.priceMax,
+  myWorldOnly: detailFilterSchema.myWorldOnly,
+  sold: detailFilterSchema.sold,
+};
+
 // 반지 전용이지만 방어구 스키마에 포함
 const seedRingSchema = {
   seedRingLevelMin: z.number().int().optional().describe('특수 스킬 반지 레벨 최소 (반지 전용)'),
@@ -122,14 +144,14 @@ export function createServer(bridge: BridgeLike): McpServer {
     '메이플스토리(KMS) 거래소 검색 MCP.',
     '매물 추천·가치 판단·시세 해석·검색 전략 수립 전에 get_knowledge(같은 내용의 maple://knowledge 리소스)를 읽는다 — 게임 지식(추옵·잠재·가위·별칭·타월드)과 경매장 검색 팁이 있다. 읽지 않은 채 도메인 규칙을 임의 추론하지 말 것.',
     '- 첫 검색 전 get_status로 검색 기준 캐릭터(월드·닉네임)를 확인해 사용자에게 알린다. 월드 전환은 set_character.',
-    '- 검색 생성(search_items/search_weapon/search_armor, sold 포함)만 일일 한도(100회)를 1회 소진 — 한도는 검색 품질을 깎을 만큼 빡빡하지 않다(잔여는 응답의 searchRemaining). 같은 조건 재조회만 재검색 대신 searchKey + get_page(무료). limit 40/60은 조건이 확정된 뒤에.',
+    '- 검색 생성(search_* 도구, sold 포함)만 일일 한도(100회)를 1회 소진 — 한도는 검색 품질을 깎을 만큼 빡빡하지 않다(잔여는 응답의 searchRemaining). 같은 조건 재조회만 재검색 대신 searchKey + get_page(무료). limit 40/60은 조건이 확정된 뒤에.',
     '- 정확한 효율 비교는 item_hwansan — 매물·부위당 외부 계산 API 1회이므로 후보를 추린 뒤 소수만, 부위가 정해졌으면 slot을 지정한다.',
     '- 검색 결과를 보여줄 때 사용한 필터 조건을 함께 표기한다.',
     '- 가위(재거래) 잔여 횟수가 낮은 매물은 사용자에게 꼭 명시한다(tradeDesc 참고).',
     '- 매물 id("ynoFBr…:1" 류)는 도구 호출용 내부 값 — 사용자에게 노출하지 말 것. 별칭은 표에 넣지 말고 문장에서 사용.',
   ].join('\n');
 
-  const server = new McpServer({ name: 'maple-auction', version: '0.4.0' }, { instructions });
+  const server = new McpServer({ name: 'maple-auction', version: '0.4.1' }, { instructions });
 
   server.registerResource(
     'maple-knowledge',
@@ -365,7 +387,7 @@ export function createServer(bridge: BridgeLike): McpServer {
     {
       title: '거래소 빠른 검색 (이름 위주)',
       description:
-        '아이템 이름으로 거래소 빠른 검색. 가격 낮은순 10개와 searchKey 반환, 추가 페이지·정렬은 get_page. 잠재·추옵·가격 등 상세 필터와 시세(판매 완료가)는 search_weapon/search_armor.',
+        '아이템 이름으로 거래소 빠른 검색. 가격 낮은순 10개와 searchKey 반환, 추가 페이지·정렬은 get_page. 잠재·추옵·가격 등 상세 필터와 시세(판매 완료가)는 search_weapon/search_armor, 소비·캐시·기타 아이템은 search_consume/search_cash/search_etc.',
       inputSchema: {
         keyword: z.string().describe('아이템 이름 검색어'),
         exactMatch: z.boolean().optional().describe('정확히 일치 (기본 false)'),
@@ -408,6 +430,70 @@ export function createServer(bridge: BridgeLike): McpServer {
           .describe('방어구·장신구 분류. 키=부위명(비자명: LONGCOAT=한벌옷, FACE/EYE=얼굴/눈장식, DRAGON_CAP=드래곤 장비, MACHINE_HEART=기계 심장)'),
         ...detailFilterSchema,
         ...seedRingSchema,
+      },
+      annotations: { readOnlyHint: true, destructiveHint: false },
+    },
+    async ({ subCategory, sold, ...rest }) => runSearch({ ...(rest as SearchParams), category: subCategory as string }, sold)
+  );
+
+  server.registerTool(
+    'search_consume',
+    {
+      title: '소비 아이템 검색 (물약·주문서·환불 등)',
+      description:
+        '소비 아이템 검색(판매 중 호가) — 회복·비약, 각종 주문서, 환생의 불꽃, 스킬북, 레시피 등. sold=true면 같은 필터로 판매 완료 매물(최근 3개월 체결가 = 시세)을 검색한다. 필터는 하위 분류·가격뿐(장비 필터 없음). CONSUME 전체 검색은 결과 과다로 거부될 수 있어 하위 분류·키워드 지정이 안전.',
+      inputSchema: {
+        subCategory: enumOf(CONSUME_CATEGORY_KEYS)
+          .default('CONSUME')
+          .describe('소비 분류. 비자명: SCROLL_FLAME=환생의 불꽃, SCROLL_WHITE=백의/혼돈의 주문서, SCROLL_ENCHANT=장비 강화/잠재 주문서, ALCHEMY_ELIXER=비약, ETC_ARROW=화살/표창'),
+        ...simpleFilterSchema,
+      },
+      annotations: { readOnlyHint: true, destructiveHint: false },
+    },
+    async ({ subCategory, sold, ...rest }) => runSearch({ ...(rest as SearchParams), category: subCategory as string }, sold)
+  );
+
+  server.registerTool(
+    'search_cash',
+    {
+      title: '캐시 아이템 검색 (큐브·코디·펫 등)',
+      description:
+        '캐시 아이템 검색(판매 중 호가) — 큐브·강화, 코디(성별·라벨 등급 필터), 뷰티(헤어·성형), 펫(펫 등급 필터), 게임 편의. sold=true면 같은 필터로 판매 완료 매물(시세)을 검색한다. 기간제 캐시템은 periodOptions로 스탯 최소값 필터 가능. CASH 전체 검색은 결과 과다로 거부될 수 있다.',
+      inputSchema: {
+        subCategory: enumOf(CASH_CATEGORY_KEYS)
+          .default('CASH')
+          .describe('캐시 분류. ENCHANT_CUBE=큐브, COORDINATION_*=코디(외형), BEAUTY_COSMETIC=성형, PET_PET=펫'),
+        ...simpleFilterSchema,
+        gender: z.enum(['남', '여']).optional().describe('착용 성별 (코디·뷰티 전용)'),
+        itemGrade: enumOf(ROYAL_LABEL_KEYS).optional().describe('코디 라벨 등급 (코디 전용)'),
+        petGrade: enumOf(PET_GRADE_KEYS).optional().describe('펫 등급 (펫 전용)'),
+        periodOptions: optionRows(CASH_PERIOD_OPTION_KEYS, '기간제', 'period+스탯명 (기간제 캐시템의 부여 스탯)'),
+      },
+      annotations: { readOnlyHint: true, destructiveHint: false },
+    },
+    async ({ subCategory, sold, gender, itemGrade, petGrade, periodOptions, ...rest }) =>
+      runSearch(
+        {
+          ...(rest as SearchParams),
+          category: subCategory as string,
+          gender: gender === '남' ? 'MALE' : gender === '여' ? 'FEMALE' : undefined,
+          royalSpecialType: itemGrade != null ? ROYAL_LABEL_GRADES[itemGrade] : undefined,
+          petGrade: petGrade != null ? PET_GRADES[petGrade] : undefined,
+          cashOptions: periodOptions,
+        },
+        sold
+      )
+  );
+
+  server.registerTool(
+    'search_etc',
+    {
+      title: '기타 아이템 검색 (의자·재료 등)',
+      description:
+        '기타 아이템 검색(판매 중 호가) — 의자, 전문기술 아이템, 재료류(주문의 정수 등은 ETC 전체에서). sold=true면 같은 필터로 판매 완료 매물(시세)을 검색한다. 필터는 하위 분류·가격뿐.',
+      inputSchema: {
+        subCategory: enumOf(ETC_CATEGORY_KEYS).default('ETC').describe('기타 분류'),
+        ...simpleFilterSchema,
       },
       annotations: { readOnlyHint: true, destructiveHint: false },
     },

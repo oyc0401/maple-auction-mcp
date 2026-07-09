@@ -1,12 +1,15 @@
 # MCP 도구 레퍼런스 (AI가 보는 도구)
 
-`maple-auction` MCP 서버가 노출하는 도구는 **14개**다. 모든 매물(`items[]`)은 압축 요약 형태이며, 필드 의미는 [응답 예시 문서](./응답-예시-풀옵션-아이템.md)를 참고한다.
+`maple-auction` MCP 서버가 노출하는 도구는 **17개**다. 모든 매물(`items[]`)은 압축 요약 형태이며, 필드 의미는 [응답 예시 문서](./응답-예시-풀옵션-아이템.md)를 참고한다.
 
 | 도구 | 용도 | 검색 횟수 |
 | --- | --- | :---: |
 | `search_items` | 이름 위주 빠른 검색 | 1회 소진 |
 | `search_weapon` | 무기 상세 검색 (전체 필터, `sold`로 시세) | 1회 소진 |
 | `search_armor` | 방어구·장신구 상세 검색 (전체 필터, `sold`로 시세) | 1회 소진 |
+| `search_consume` | 소비 아이템 검색 — 주문서·환불·비약 등 (`sold`로 시세) | 1회 소진 |
+| `search_cash` | 캐시 아이템 검색 — 큐브·코디·펫 등 (`sold`로 시세) | 1회 소진 |
+| `search_etc` | 기타 아이템 검색 — 의자·전문기술·재료 (`sold`로 시세) | 1회 소진 |
 | `get_page` | 검색 결과 정렬·페이지 조회 (라이브/시세) | 무료 |
 | `recent_sold` | 최근 시세 (필터 없는 판매 완료 매물) | 무료 |
 | `item_hwansan` | 매물 1개 교체 시 환산 주스탯 증감 | 무료 |
@@ -37,7 +40,9 @@
   "myWorldOnly": true }
 ```
 
-**시세(판매 완료가) 검색** (`sold: true`): `search_weapon`/`search_armor`에 `sold: true`를 주면 **같은 필터로 판매 완료 매물**을 검색한다(무기 시세/방어구 시세). 라이브 검색과 동일하게 POST가 검색 1회를 소진하고, `searchKey`로 `get_page`를 무료로 넘긴다(내부적으로 시세 전용 GET URL을 자동 선택). 필터 없이 최근 판매만 훑을 땐 `recent_sold`(무료)를 쓴다.
+**소비·캐시·기타 검색** (`search_consume` / `search_cash` / `search_etc`, 2026-07-10 웹 거래소 실측): 비장비 카테고리 검색. 공통 필터는 `subCategory`·`keyword`/`exactMatch`·`priceMin/Max`·`myWorldOnly`·`sold`뿐(장비 필터 없음 — 웹 UI와 동일). `search_cash`는 추가로 `gender`(`남`/`여`, 코디·뷰티), `itemGrade`(코디 라벨: `일반`/`스페셜라벨`/`레드라벨`/`블랙라벨`/`마스터라벨` → `basicOption.royalSpecialType` 0/3/1/2/4), `petGrade`(`일반`/`원더 블랙`/`루나 스윗`/`루나 드림`/`루나 쁘띠` → `basicOption.petGrade` 0/1/4/5/6), `periodOptions`(기간제 스탯 `[{option, minValue}]` → `filters.cashOption` 평면 객체, 키는 `periodStr`~`periodSpeed`)를 지원한다. **주의**: `CONSUME`/`CASH` 전체 검색은 결과 과다로 API가 **422(code 4040)** 로 거부할 수 있다(검색 횟수 소진 없음) — 하위 분류나 키워드로 좁힌다(`ETC` 전체는 5천 건 수준이라 통과). 비장비 매물 요약에는 `quantity`·`price`(개당가)에 더해 `tradeDesc`(비장비는 `toolTip.tradeDescs` 기반), `timeLimit`(기간제), `gender`, `label`(코디 라벨/펫 등급)이 값이 있을 때 표기된다.
+
+**시세(판매 완료가) 검색** (`sold: true`): `search_weapon`/`search_armor`/`search_consume`/`search_cash`/`search_etc`에 `sold: true`를 주면 **같은 필터로 판매 완료 매물**을 검색한다. 라이브 검색과 동일하게 POST가 검색 1회를 소진하고, `searchKey`로 `get_page`를 무료로 넘긴다(내부적으로 시세 전용 GET URL을 자동 선택). 필터 없이 최근 판매만 훑을 땐 `recent_sold`(무료)를 쓴다.
 
 **찜** (`add_wishlist` / `remove_wishlist` / `get_wishlist`): 매물의 `id`(`"{tradeSn}:{subIdx}"`)로 찜을 추가·제거한다. 검색 횟수를 소진하지 않으며, 조작 후 **남은 슬롯 수(`remainingSlots`)** 를 반환한다. 찜은 **최대 50개**. 이미 찜한 매물을 다시 추가하면 실패한다(HTTP 409). 거래소는 월드 그룹 단위라 다른 월드 그룹 매물은 찜할 수 없다.
 
@@ -208,6 +213,9 @@
 | `soul` | `string?` | 소울 `"이름 / 옵션"` (미장착이면 생략) |
 | `tradeDesc` | `string?` | 거래 설명 (`"1회 교환 가능 … · (가위: 7 / 10)"`). 가위=플래티넘 카르마(5,900메포, 월 1회 마일리지 구매 가능) — 잔여 횟수 많을수록 가치↑ |
 | `seedRingLevel` | `number?` | 특수 스킬 반지 레벨(반지 전용, 가격 결정 요소). 반지가 아니거나 0이면 필드 생략 |
+| `timeLimit` | `string?` | 기간제 정보 (비장비·캐시템). 없으면 생략 |
+| `gender` | `string?` | 착용 성별 `"남"`/`"여"` (코디·뷰티). 성별 무관이면 생략 |
+| `label` | `string?` | 코디 라벨 등급(`"블랙라벨"` 등) 또는 펫 등급(`"루나 스윗"` 등). 일반이면 생략 |
 | `status` | `string` | 매물 상태: `ON_SALE`(판매 중) / `SOLD`(판매 완료) 등 |
 | `tradeDate` | `string?` | **판매 완료 시각** (ISO 8601, UTC). 시세(`sold`)·찜의 팔린 매물에만 존재(판매 중이면 생략) |
 | `endDate` | `string` | 판매 등록 만료 일시 (ISO 8601, UTC). 시세(`SOLD`)의 실제 판매 시각은 `tradeDate`를 볼 것 |

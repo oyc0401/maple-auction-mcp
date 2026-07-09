@@ -59,6 +59,11 @@ export interface SearchParams {
   isExOptExtractable?: boolean; // 추가 옵션 추출 가능
   isPotentialExtractable?: boolean; // 잠재능력 추출 가능
   myWorldOnly?: boolean; // 현재 월드 아이템만
+  // ── 캐시 전용 (실측 2026-07-10: basicOption/cashOption 캡처) ──
+  gender?: 'MALE' | 'FEMALE'; // 착용 성별 (코디·뷰티·캐시 전체)
+  royalSpecialType?: number; // 코디 라벨 등급: 0일반 1레드 2블랙 3스페셜 4마스터
+  petGrade?: number; // 펫 등급: 0일반 1원더블랙 4루나스윗 5루나드림 6루나쁘띠
+  cashOptions?: OptionRow[]; // 기간제 옵션 (period* 키), filters.cashOption 평면 객체로 직렬화
 }
 
 export const SEARCH_URL = `${API_BASE}/searches/tool-tip`;
@@ -111,10 +116,14 @@ export function buildCreateBody(p: SearchParams, id: Identity) {
     filters.price = price;
   }
 
-  if (p.levelMin != null || p.levelMax != null) {
-    const basic: Record<string, number> = {};
+  // 캐시 전용 필터(gender·라벨·펫 등급)도 basicOption 아래로 들어간다 (실측)
+  if (p.levelMin != null || p.levelMax != null || p.gender != null || p.royalSpecialType != null || p.petGrade != null) {
+    const basic: Record<string, number | string> = {};
     if (p.levelMin != null) basic.levelMin = p.levelMin;
     if (p.levelMax != null) basic.levelMax = p.levelMax;
+    if (p.gender != null) basic.gender = p.gender;
+    if (p.royalSpecialType != null) basic.royalSpecialType = p.royalSpecialType;
+    if (p.petGrade != null) basic.petGrade = p.petGrade;
     filters.basicOption = basic;
   }
 
@@ -148,6 +157,9 @@ export function buildCreateBody(p: SearchParams, id: Identity) {
   if (p.isExOptExtractable) etc.isExOptExtractable = true;
   if (p.isPotentialExtractable) etc.isPotentialExtractable = true;
   if (Object.keys(etc).length) filters.etcOption = etc;
+
+  // 기간제 옵션: filters.cashOption 바로 아래 평면 키 (실측: { periodStr: 11 }). 같은 키 중복은 합산.
+  if (p.cashOptions?.length) filters.cashOption = sumRows(p.cashOptions);
 
   if (p.myWorldOnly) filters.myWorldOnly = true;
 

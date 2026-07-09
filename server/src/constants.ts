@@ -111,6 +111,130 @@ export const SCROLL_OPTION_LABELS: Record<string, string> = {
 };
 export const SCROLL_OPTION_KEYS = Object.keys(SCROLL_OPTION_LABELS);
 
+// 소비 하위 분류 (itemDetailCategory). 번들 카테고리 트리 실측 (2026-07-10).
+// CONSUME(전체)는 결과 과다로 API가 422(code 4040)를 반환할 수 있다 — 하위 분류·키워드로 좁혀야 함.
+export const CONSUME_CATEGORY_LABELS: Record<string, string> = {
+  CONSUME: '소비 전체 (결과 과다 시 422 거부됨)',
+  CONSUME_POTION: '회복 아이템 전체',
+  CONSUME_POTION_POTION: '회복 아이템',
+  CONSUME_POTION_CURE: '상태 이상 회복',
+  CONSUME_ALCHEMY: '연금술 아이템 전체',
+  CONSUME_ALCHEMY_POTION: '연금술 회복',
+  CONSUME_ALCHEMY_ELIXER: '비약',
+  CONSUME_ALCHEMY_BUFF: '버프',
+  CONSUME_SCROLL: '주문서 전체',
+  CONSUME_SCROLL_ARMOR: '방어구/장신구 주문서',
+  CONSUME_SCROLL_WEAPON: '무기 주문서',
+  CONSUME_SCROLL_ENCHANT: '장비 강화/잠재 주문서',
+  CONSUME_SCROLL_WHITE: '백의/혼돈의 주문서',
+  CONSUME_SCROLL_FLAME: '환생의 불꽃',
+  CONSUME_SCROLL_PET: '펫 주문서',
+  CONSUME_SCROLL_ETC: '기타 주문서',
+  CONSUME_RECIPE: '전문기술 레시피 전체',
+  CONSUME_RECIPE_EQUIP: '장비 레시피',
+  CONSUME_RECIPE_ACCESSORY: '장신구 레시피',
+  CONSUME_RECIPE_ALCHEMY: '연금술 레시피',
+  CONSUME_SKILL_BOOK: '스킬북',
+  CONSUME_ETC: '소비 기타 전체',
+  CONSUME_ETC_MOVE_MAP: '맵 이동 아이템',
+  CONSUME_ETC_ARROW: '화살/표창',
+  CONSUME_ETC_ETC: '소비 기타',
+};
+export const CONSUME_CATEGORY_KEYS = Object.keys(CONSUME_CATEGORY_LABELS);
+
+// 캐시 하위 분류 (itemDetailCategory). CASH(전체)도 결과 과다 422 가능.
+export const CASH_CATEGORY_LABELS: Record<string, string> = {
+  CASH: '캐시 전체 (결과 과다 시 422 거부됨)',
+  CASH_ENCHANT: '강화 전체',
+  CASH_ENCHANT_CUBE: '큐브',
+  CASH_ENCHANT_SCROLL: '강화 주문서',
+  CASH_GAME: '게임 전체',
+  CASH_GAME_CONVENIENCE: '편의',
+  CASH_GAME_SHOP: '상점',
+  CASH_GAME_MESSENGER: '메신저',
+  CASH_GAME_WEATHER_EFFECT: '기상효과',
+  CASH_COORDINATION: '코디 전체',
+  CASH_COORDINATION_COUPON: '코디 쿠폰',
+  CASH_COORDINATION_WEAPON: '코디 무기',
+  CASH_COORDINATION_CAP: '코디 모자',
+  CASH_COORDINATION_CAPE: '코디 망토',
+  CASH_COORDINATION_LONGCOAT: '코디 한벌옷',
+  CASH_COORDINATION_COAT: '코디 상의',
+  CASH_COORDINATION_PANTS: '코디 하의',
+  CASH_COORDINATION_SHOES: '코디 신발',
+  CASH_COORDINATION_GLOVE: '코디 장갑',
+  CASH_COORDINATION_FACE: '코디 얼굴장식',
+  CASH_COORDINATION_EAR: '코디 귀장식',
+  CASH_COORDINATION_RING: '코디 반지',
+  CASH_COORDINATION_EYE: '코디 눈장식',
+  CASH_COORDINATION_EFFECT: '코디 이펙트',
+  CASH_COORDINATION_SHIELD: '코디 방패',
+  CASH_BEAUTY: '뷰티 전체',
+  CASH_BEAUTY_HAIR: '헤어',
+  CASH_BEAUTY_COSMETIC: '성형',
+  CASH_BEAUTY_EMOTION: '감정표현',
+  CASH_BEAUTY_ETC: '뷰티 기타',
+  CASH_PET: '펫 전체',
+  CASH_PET_PET: '펫',
+  CASH_PET_PET_EQUIP: '펫장비',
+  CASH_PET_PET_FOOD: '펫먹이',
+  CASH_PET_PET_SKILL: '펫스킬',
+  CASH_ETC: '캐시 기타',
+};
+export const CASH_CATEGORY_KEYS = Object.keys(CASH_CATEGORY_LABELS);
+
+// 기타 하위 분류 (itemDetailCategory). 재료류(주문의 정수 등)는 ETC 전체에만 잡힌다.
+export const ETC_CATEGORY_LABELS: Record<string, string> = {
+  ETC: '기타 전체 (재료류 포함)',
+  ETC_CHAIR: '의자',
+  ETC_SUBJOB: '전문기술',
+};
+export const ETC_CATEGORY_KEYS = Object.keys(ETC_CATEGORY_LABELS);
+
+// 캐시 기간제 옵션 키 (실측 2026-07-10: filters.cashOption 바로 아래 { periodStr: 11 })
+export const CASH_PERIOD_OPTION_LABELS: Record<string, string> = {
+  periodStr: 'STR',
+  periodDex: 'DEX',
+  periodInt: 'INT',
+  periodLuk: 'LUK',
+  periodMaxHp: '최대 HP',
+  periodMaxMp: '최대 MP',
+  periodPhysicalAttack: '공격력',
+  periodMagicAttack: '마력',
+  periodDefense: '방어력',
+  periodJump: '점프력',
+  periodSpeed: '이동속도',
+};
+export const CASH_PERIOD_OPTION_KEYS = Object.keys(CASH_PERIOD_OPTION_LABELS);
+
+// 코디 라벨 등급 → basicOption.royalSpecialType (실측: 블랙라벨 = 2)
+export const ROYAL_LABEL_GRADES: Record<string, number> = {
+  일반: 0,
+  레드라벨: 1,
+  블랙라벨: 2,
+  스페셜라벨: 3,
+  마스터라벨: 4,
+};
+export const ROYAL_LABEL_KEYS = Object.keys(ROYAL_LABEL_GRADES);
+
+// 펫 등급 → basicOption.petGrade (번들 실측: NORMAL 0 / BLACK 1 / SWEET 4 / DREAM 5 / PETITE 6)
+export const PET_GRADES: Record<string, number> = {
+  일반: 0,
+  '원더 블랙': 1,
+  '루나 스윗': 4,
+  '루나 드림': 5,
+  '루나 쁘띠': 6,
+};
+export const PET_GRADE_KEYS = Object.keys(PET_GRADES);
+
+// 숫자 등급 → 라벨 역매핑 (응답 요약용)
+export const ROYAL_LABEL_BY_VALUE: Record<number, string> = Object.fromEntries(
+  Object.entries(ROYAL_LABEL_GRADES).map(([k, v]) => [v, k])
+);
+export const PET_GRADE_BY_VALUE: Record<number, string> = Object.fromEntries(
+  Object.entries(PET_GRADES).map(([k, v]) => [v, k])
+);
+
 // 방어구 하위 분류 (itemDetailCategory). 상위 코드(ARMOR_ARMOR 등)도 그대로 유효.
 export const ARMOR_CATEGORY_LABELS: Record<string, string> = {
   ARMOR: '방어구+장신구 전체',
