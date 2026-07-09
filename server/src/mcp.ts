@@ -115,7 +115,7 @@ export function createServer(bridge: BridgeLike): McpServer {
   // 게임 도메인 지식은 여기가 아니라 maple://knowledge 리소스(지식 노트)로 서빙한다 — 상시 토큰을 아끼고 필요할 때만 로드.
   const instructions = [
     '메이플스토리(KMS) 거래소 검색 MCP.',
-    '필수: 매물 추천·가치 판단·시세 해석 전에 maple://knowledge 리소스(메이플 지식 노트)를 반드시 읽을 것 — 추옵·잠재(이탈)·가위·별칭·타월드 등 판단 기준. 읽지 않고 도메인 규칙을 임의 추론하지 말 것.',
+    '필수: 매물 추천·가치 판단·시세 해석 전에 get_knowledge를 호출해 메이플 지식 노트를 읽을 것(같은 내용의 maple://knowledge 리소스도 제공) — 추옵·잠재(이탈)·가위·별칭·타월드 등 판단 기준. 읽지 않고 도메인 규칙을 임의 추론하지 말 것.',
     '[검색 횟수 (일 100회)]',
     '- 첫 검색 전 get_status로 검색 기준 캐릭터를 확인해 월드·닉네임을 사용자에게 알리고 시작. 다른 월드를 원하면 set_character 후 검색.',
     '- search_items/search_weapon/search_armor만 1회 소진(sold=true 시세 포함). 나머지 도구는 소진 없음.',
@@ -138,6 +138,18 @@ export function createServer(bridge: BridgeLike): McpServer {
       mimeType: 'text/markdown',
     },
     async (uri) => ({ contents: [{ uri: uri.href, mimeType: 'text/markdown', text: loadKnowledge() }] })
+  );
+
+  // 리소스를 못 읽는 호스트(Claude Desktop 등)를 위한 도구 버전 — context7의 문서 서빙 패턴.
+  server.registerTool(
+    'get_knowledge',
+    {
+      title: '메이플 지식 노트',
+      description: '메이플 게임 상식·매물 판단 기준(지식 노트) 전문 반환. 매물 추천·가치 판단·시세 해석 전에 반드시 1회 호출.',
+      inputSchema: {},
+      annotations: { readOnlyHint: true },
+    },
+    async () => text(loadKnowledge())
   );
 
   let identity: (Identity & { characterName?: string }) | null = null;

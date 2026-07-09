@@ -353,13 +353,22 @@ describe('get_status', () => {
 });
 
 describe('maple://knowledge 리소스', () => {
-  it('지식 노트 + 서버 제공 기본 상식을 서빙한다', async () => {
+  it('지식 노트 전문을 서빙한다', async () => {
     const c = await client(fakeBridge(() => ({ id: '1', ok: true })));
     const list = await c.listResources();
     expect(list.resources.map((r) => r.uri)).toContain('maple://knowledge');
     const res = await c.readResource({ uri: 'maple://knowledge' });
     const text = (res.contents[0] as { text?: string }).text ?? '';
     expect(text).toContain('메이플 지식 노트');
-    expect(text).toContain('기본 상식 (서버 제공)');
+    expect(text).toContain('가위횟수');
+  });
+});
+
+describe('get_knowledge (지식 노트 도구)', () => {
+  it('지식 노트 전문을 반환한다', async () => {
+    const c = await client(fakeBridge(() => ({ id: '1', ok: true })));
+    const r = await c.callTool({ name: 'get_knowledge', arguments: {} });
+    expect(textOf(r)).toContain('메이플 지식 노트');
+    expect(textOf(r)).toContain('가위횟수');
   });
 });
