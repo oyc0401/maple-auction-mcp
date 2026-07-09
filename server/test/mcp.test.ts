@@ -398,6 +398,98 @@ describe('get_knowledge (지식 노트 도구)', () => {
   });
 });
 
+// 하네스: 모델 지침이 아니라 서버 구조로 검색 횟수를 아끼고(dedup), 오판을 막는(note) 장치.
+describe('검색 하네스 (dedup · note)', () => {
+  // discover + POST(tool-tip) + GET(daily-limit) + GET(searches/{key})을 처리하는 브리지
+  function dedupBridge(opts?: { failPageGet?: boolean; total?: number; count?: number }) {
+    const calls: any[] = [];
+    let postCount = 0;
+    const bridge = fakeBridge((cmd: any) => {
+      calls.push(cmd);
+      if (cmd.type === 'discover') return { id: '1', ok: true, data: ID };
+      if (cmd.method === 'POST') {
+        postCount += 1;
+        return { id: '2', ok: true, status: 201, data: pageResp(`key-${postCount}`, 1, opts?.count ?? 10, opts?.total ?? 146, true) };
+      }
+      if (/daily-limit/.test(cmd.url)) return { id: '3', ok: true, status: 200, data: { search: { limit: 100, remaining: 97 } } };
+      if (/\/searches\//.test(cmd.url)) {
+        if (opts?.failPageGet) return { id: '4', ok: false, code: 'HTTP_ERROR', status: 404, error: 'HTTP 404' };
+        return { id: '4', ok: true, status: 200, data: pageResp('key-1', 1, 20, opts?.total ?? 146, true) };
+      }
+      return { id: '9', ok: true };
+    });
+    return { bridge, calls, posts: () => calls.filter((c) => c.type === 'fetch' && c.method === 'POST') };
+  }
+
+  it('같은 조건을 다시 검색하면 POST 없이 기존 searchKey를 재사용하고 note로 알린다', async () => {
+    const { bridge, posts } = dedupBridge();
+    const c = await client(bridge);
+    await c.callTool({ name: 'search_items', arguments: { keyword: '아케인셰이드 체인' } });
+    const r2 = await c.callTool({ name: 'search_items', arguments: { keyword: '아케인셰이드 체인' } });
+    const parsed = JSON.parse(textOf(r2));
+    expect(parsed.searchKey).toBe('key-1');
+    expect(parsed.note).toContain('재사용');
+    expect(posts()).toHaveLength(1); // 두 번째 검색은 POST(소진) 없음
+  });
+
+  it('조건이 다르면 새로 POST한다', async () => {
+    const { bridge, posts } = dedupBridge();
+    const c = await client(bridge);
+    await c.callTool({ name: 'search_items', arguments: { keyword: 'a' } });
+    const r2 = await c.callTool({ name: 'search_items', arguments: { keyword: 'b' } });
+    expect(JSON.parse(textOf(r2)).searchKey).toBe('key-2');
+    expect(posts()).toHaveLength(2);
+  });
+
+  it('재사용 GET이 실패(키 만료)하면 POST로 폴백한다', async () => {
+    const { bridge, posts } = dedupBridge({ failPageGet: true });
+    const c = await client(bridge);
+    await c.callTool({ name: 'search_items', arguments: { keyword: 'x' } });
+    const r2 = await c.callTool({ name: 'search_items', arguments: { keyword: 'x' } });
+    expect(JSON.parse(textOf(r2)).searchKey).toBe('key-2');
+    expect(posts()).toHaveLength(2);
+  });
+
+  it('0건이면 검색 횟수가 소진됐음을 note로 알린다', async () => {
+    const { bridge } = dedupBridge({ total: 0, count: 0 });
+    const c = await client(bridge);
+    const r = await c.callTool({ name: 'search_weapon', arguments: { keyword: '없는아이템' } });
+    expect(JSON.parse(textOf(r)).note).toContain('0건');
+  });
+
+  it('필터 없는 장비 검색이 대량이면 노작 매물 경고 note를 붙인다', async () => {
+    const { bridge } = dedupBridge({ total: 300 });
+    const c = await client(bridge);
+    const r = await c.callTool({ name: 'search_weapon', arguments: { subCategory: 'WEAPON_ONE_HANDED_CHAIN' } });
+    expect(JSON.parse(textOf(r)).note).toContain('노작');
+  });
+
+  it('필터(잠재등급 등)를 걸면 노작 note가 없다', async () => {
+    const { bridge } = dedupBridge({ total: 300 });
+    const c = await client(bridge);
+    const r = await c.callTool({ name: 'search_weapon', arguments: { subCategory: 'WEAPON_ONE_HANDED_CHAIN', potentialGrade: 4 } });
+    expect(JSON.parse(textOf(r)).note).toBeUndefined();
+  });
+
+  it('get_page: 결과 500건 초과 + ATTACK_POWER_DESC면 정렬 미적용 note', async () => {
+    const c = await client(fakeBridge((cmd: any) => {
+      if (cmd.type === 'discover') return { id: '1', ok: true, data: ID };
+      return { id: '2', ok: true, status: 200, data: pageResp('k', 1, 20, 600, true) };
+    }));
+    const r = await c.callTool({ name: 'get_page', arguments: { searchKey: 'k', sort: 'ATTACK_POWER_DESC' } });
+    expect(JSON.parse(textOf(r)).note).toContain('정렬');
+  });
+
+  it('get_page: 500건 이하면 정렬 note가 없다', async () => {
+    const c = await client(fakeBridge((cmd: any) => {
+      if (cmd.type === 'discover') return { id: '1', ok: true, data: ID };
+      return { id: '2', ok: true, status: 200, data: pageResp('k', 1, 20, 400, true) };
+    }));
+    const r = await c.callTool({ name: 'get_page', arguments: { searchKey: 'k', sort: 'ATTACK_POWER_DESC' } });
+    expect(JSON.parse(textOf(r)).note).toBeUndefined();
+  });
+});
+
 // Anthropic 디렉토리 심사 pass/fail 기준 (mcp-server-dev 스킬 references/tool-design.md):
 // 모든 도구에 title·readOnlyHint·destructiveHint, 설명에 행동 지시 금지(프롬프트 인젝션 간주).
 describe('디렉토리 심사 기준 (공개 배포)', () => {

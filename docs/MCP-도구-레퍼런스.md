@@ -23,6 +23,10 @@
 
 **기본 흐름**: `search_items`(또는 `search_weapon`/`search_armor`)로 검색(일일 검색 1회 소진) → 응답의 `searchKey`로 `get_page`를 정렬·페이지 바꿔가며 자유롭게 조회(무료).
 
+**서버 하네스** (모델 지침이 아니라 구조로 동작):
+- **동일 조건 dedup**: 같은 조건(body+sold)을 다시 검색하면 POST 없이 살아있는 기존 `searchKey`를 재사용하고 `note`로 알린다(소진 없음). searchKey는 조건만 저장하므로 재사용해도 결과는 실시간. 만료됐으면 자동으로 새로 생성.
+- **`note` 필드**: 응답 특성을 사실로 알린다 — 0건(횟수는 소진됨), 필터 없는 장비 검색 200건 초과(대부분 노작일 수 있음), `ATTACK_POWER_DESC`인데 결과 500건 초과(정렬 미적용).
+
 **상세 필터 검색** (`search_weapon` / `search_armor`): 웹 거래소의 검색 필터 전체를 지원한다 — `subCategory`(하위 분류), `jobClass`(직업군), `priceMin/Max`, `levelMin/Max`, `starforceMin/Max`, `potentialGrade`/`additionalPotentialGrade`(0없음~4레전드리), `potentialOptions`/`additionalPotentialOptions`(`[{option, minValue}]`, 기본 합산 모드 — `potentialSum: false`로 줄별 개별 충족), `extraOptions`(추옵), `scrollOptions`(주문서 누적), `remainUpgradeCountMin/Max`, `cuttableCountMin/Max`/`uncuttable`, `isBindedWhenEquipped`, `isExOptExtractable`/`isPotentialExtractable`, `myWorldOnly`(현재 월드만), `sold`(판매 완료가=시세), 방어구는 `seedRingLevelMin/Max`(특수 스킬 반지). 옵션 키·카테고리 코드 목록은 `server/src/constants.ts` 참고.
 
 예 — 에디셔널 공격력 합 21% 이상인 체인(현재 월드만):

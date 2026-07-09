@@ -158,6 +158,9 @@ export function createServer(bridge: BridgeLike): McpServer {
   let identity: (Identity & { characterName?: string }) | null = null;
   let characters: CharacterInfo[] | null = null;
   const bodyCache = new Map<string, { body: ReturnType<typeof buildCreateBody>; sold: boolean; category?: string }>();
+  // 동일 조건(body+sold) → 살아있는 searchKey. 같은 조건 재검색을 POST 없이 재사용해 검색 횟수를 구조적으로 아낀다.
+  // (searchKey는 조건만 저장하므로 GET 결과는 항상 실시간 — 재사용해도 낡은 데이터가 아니다)
+  const conditionCache = new Map<string, string>();
 
   // 원본 매물 캐시(id → 원본 + 검색 카테고리). item_hwansan이 단일 매물의 부위별 Δ환산을
   // 온디맨드로 계산할 때 쓴다. 검색·페이지 조회가 지날 때마다 채워지고, 상한 초과 시 오래된 것부터 버린다.
@@ -197,18 +200,61 @@ export function createServer(bridge: BridgeLike): McpServer {
     return dl.ok ? ((dl.data as any)?.search?.remaining ?? null) : null;
   }
 
+  // 결과 특성을 사실로 알려주는 note (행동 지시 아님) — 0건 소진, 무필터 장비 검색의 노작 편중.
+  function searchNote(total: number, params: SearchParams): string | undefined {
+    if (total === 0) return '조건에 맞는 매물이 0건 (검색 횟수는 소진됨)';
+    const isEquip = params.category?.startsWith('WEAPON') || params.category?.startsWith('ARMOR');
+    const narrowed =
+      params.potentialGrade != null || params.additionalPotentialGrade != null ||
+      params.potentialOptions?.length || params.additionalPotentialOptions?.length ||
+      params.extraOptions?.length || params.scrollOptions?.length ||
+      params.starforceMin != null || params.starforceMax != null ||
+      params.priceMin != null || params.priceMax != null ||
+      params.remainUpgradeCountMin != null || params.remainUpgradeCountMax != null ||
+      params.cuttableCountMin != null || params.cuttableCountMax != null || params.uncuttable != null ||
+      params.isBindedWhenEquipped != null || params.isExOptExtractable != null || params.isPotentialExtractable != null ||
+      params.seedRingLevelMin != null || params.seedRingLevelMax != null;
+    if (isEquip && !narrowed && total > 200) {
+      return `필터 없는 장비 검색 ${total}건 — 대부분 노작(미강화·잠재 없음) 매물일 수 있음`;
+    }
+    return undefined;
+  }
+
   // POST: 세션 생성. 정렬·페이지 선택 없이 가격낮은순 10개만 반환한다. 더 보려면 get_page(GET).
   // sold=true면 판매 완료(시세) 검색. body는 동일하고 URL만 다르다.
   async function runSearch(params: SearchParams, sold = false) {
     const id = await ensureIdentity();
     if (typeof id === 'string') return text(id);
     const body = buildCreateBody(params, id);
+
+    // 동일 조건의 살아있는 검색이 있으면 POST(소진) 없이 재사용. 만료됐으면 지우고 새로 생성.
+    const condKey = `${sold ? 'sold' : 'live'}:${JSON.stringify(body)}`;
+    const existingKey = conditionCache.get(condKey);
+    if (existingKey) {
+      const reused = await bridge.request({
+        type: 'fetch',
+        url: buildPageUrl(existingKey, { page: 1, limit: 20, sort: 'PRICE_PER_ITEM_ASC' }, id, sold),
+        method: 'GET',
+      });
+      if (reused.ok) {
+        const data = reused.data as any;
+        cacheRawItems(data?.items, params.category);
+        const note = ['동일 조건의 기존 검색을 재사용 (검색 횟수 소진 없음)', searchNote(data?.total, params)].filter(Boolean).join(' / ');
+        return text({ ...summarizeSearch(data), searchRemaining: await searchRemaining(), note });
+      }
+      conditionCache.delete(condKey);
+    }
+
     const created = await bridge.request({ type: 'fetch', url: sold ? SOLD_SEARCH_URL : SEARCH_URL, method: 'POST', body });
     if (!created.ok) return text(errorText(created));
     const data = created.data as any;
-    if (data?.searchKey) bodyCache.set(data.searchKey, { body, sold, category: params.category });
+    if (data?.searchKey) {
+      bodyCache.set(data.searchKey, { body, sold, category: params.category });
+      conditionCache.set(condKey, data.searchKey);
+    }
     cacheRawItems(data?.items, params.category);
-    return text({ ...summarizeSearch(data), searchRemaining: await searchRemaining() });
+    const note = searchNote(data?.total, params);
+    return text({ ...summarizeSearch(data), searchRemaining: await searchRemaining(), ...(note ? { note } : {}) });
   }
 
   // 찜 목록 개수·남은 슬롯을 조회한다(무료 GET). 실패 시 에러 문자열.
@@ -394,10 +440,19 @@ export function createServer(bridge: BridgeLike): McpServer {
       const q = { page, limit: limit as GetLimit, sort: sort as Sort };
       const cachedEntry = bodyCache.get(searchKey);
       const sold = cachedEntry?.sold ?? false;
+      // 실측: 결과 500건 초과면 API가 전투력 정렬을 조용히 무시한다 — 정렬됐다고 믿고 읽는 오판 방지
+      const pageResult = (data: unknown) => {
+        const summary = summarizeSearch(data);
+        const note =
+          sort === 'ATTACK_POWER_DESC' && summary.total > 500
+            ? '결과가 500건을 초과해 전투력 정렬이 적용되지 않음 (다른 정렬로 반환될 수 있음)'
+            : undefined;
+        return text({ ...summary, ...(note ? { note } : {}) });
+      };
       const reply = await bridge.request({ type: 'fetch', url: buildPageUrl(searchKey, q, id, sold), method: 'GET' });
       if (reply.ok) {
         cacheRawItems((reply.data as any)?.items, cachedEntry?.category);
-        return text(summarizeSearch(reply.data));
+        return pageResult(reply.data);
       }
 
       // searchKey 만료 추정 → 캐시된 조건으로 재검색(POST) 후 해당 페이지 재조회 (라이브/시세 각각의 URL로)
@@ -409,10 +464,11 @@ export function createServer(bridge: BridgeLike): McpServer {
           const newKey: string | undefined = recreated.ok ? (recreated.data as any)?.searchKey : undefined;
           if (newKey) {
             bodyCache.set(newKey, cached);
+            conditionCache.set(`${cached.sold ? 'sold' : 'live'}:${JSON.stringify(cached.body)}`, newKey);
             const retry = await bridge.request({ type: 'fetch', url: buildPageUrl(newKey, q, id, cached.sold), method: 'GET' });
             if (retry.ok) {
               cacheRawItems((retry.data as any)?.items, cached.category);
-              return text(summarizeSearch(retry.data));
+              return pageResult(retry.data);
             }
           }
         }
