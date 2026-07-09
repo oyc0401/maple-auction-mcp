@@ -21,6 +21,7 @@ import {
 } from './mapping.js';
 import { summarizeSearch, summarizeItem, summarizeScouterEquip } from './summarize.js';
 import { listCharacters, type CharacterInfo } from './characters.js';
+import { loadKnowledge } from './knowledge.js';
 import { fetchScouter, swapDelta380, categoryToSlots, slotLabel } from './hwansan2/index.js';
 import {
   worldName,
@@ -109,36 +110,35 @@ const seedRingSchema = {
 };
 
 export function createServer(bridge: BridgeLike): McpServer {
-  // 클라이언트가 시스템 프롬프트에 주입하는 서버 사용 상식. 한국어 유지 — 응답·필터가 전부 한국어라 톤을 맞추고,
-  // 방무·공퍼·보공·메획·아획 같은 단축어를 모델에 학습시키는 의미도 있음. (압축 유지)
+  // 클라이언트가 시스템 프롬프트에 주입하는 도구 사용 규칙. 한국어 유지 — 응답·필터가 전부 한국어라 톤을 맞추고,
+  // 방무·공퍼·보공 같은 단축어를 모델에 학습시키는 의미도 있음. (압축 유지)
+  // 게임 도메인 지식은 여기가 아니라 maple://knowledge 리소스(지식 노트)로 서빙한다 — 상시 토큰을 아끼고 필요할 때만 로드.
   const instructions = [
-    '메이플스토리(KMS) 거래소 검색 MCP. 사용 시 알아야 할 게임 상식:',
-    '[거래 규칙]',
-    '- 타 월드 매물 구매 시 가격의 10% 메포 추가 수수료.',
-    '- 판매 수수료 3~5% (MVP 실버 이상 3%).',
-    '- 가위는 장착 후 재거래 가능 횟수 (개당 5,900메포), 잔여 횟수 0에 가까울수록 가치가 비선형적으로 급락.',
-    '- 메소↔메이플포인트 공식 교환 가능',
-    '[아이템 판단]',
-    '- 공퍼·데미지·방무는 무기·보조·엠블렘에만, 보공은 무기·보조에만(엠블렘 X).',
-    '- 메획·아획은 (귀고리·반지·얼장·눈장·펜던트)에만 뜸.',
-    '- 반지 4개·펜던트 2개 착용가능.',
-    '- 같은 이름 아이템도 잠재·추옵·스타포스 여부에 따라 가격이 수백 배 차이.',
-    '- 제네시스는 교불',
-    '- 전투력은 보공/방무 반영 안됌 신뢰금지',
-    '- 공격력·보공·방무 옵션 효율은 눈대중 대신 item_hwansan으로 환산 비교. 단 매물·부위당 외부 계산 API 1회씩이니 가격·옵션으로 후보를 먼저 추려 소수만, 부위가 정해졌으면 slot을 지정해 호출 최소화.',
+    '메이플스토리(KMS) 거래소 검색 MCP.',
+    '필수: 매물 추천·가치 판단·시세 해석 전에 maple://knowledge 리소스(메이플 지식 노트)를 반드시 읽을 것 — 추옵·잠재(이탈)·가위·별칭·타월드 등 판단 기준. 읽지 않고 도메인 규칙을 임의 추론하지 말 것.',
     '[검색 횟수 (일 100회)]',
     '- 첫 검색 전 get_status로 검색 기준 캐릭터를 확인해 월드·닉네임을 사용자에게 알리고 시작. 다른 월드를 원하면 set_character 후 검색.',
     '- search_items/search_weapon/search_armor만 1회 소진(sold=true 시세 포함). 나머지 도구는 소진 없음.',
     '- 같은 조건 재조회는 재검색 대신 searchKey + get_page.',
-    '[응답 해석]',
-    '- isAmazingHyperUpgradeUsed=true는 놀장(놀라운 장비강화 주문서) 사용 장비: 성 수 대비 스탯이 높아 보이지만 스타포스 최대 15성 제한이 있어 보통 저평가되니 가격 비교 시 주의.',
-    '- powerDiff(전투력 증가량)는 캐릭터 마지막 로그아웃 시점 기준.',
-    '- 매물 id("ynoFBr…:1" 류)는 도구 호출용 내부 값 — 사용자에게 노출하지 말 것. 매물 지칭은 특징 별칭("22성 체인", "올이탈", "54억 무기" 식)으로 하고, 별칭↔id 대응은 네가 기억해라.',
-    '- 가위(재거래) 잔여 횟수가 낮은 매물은 사용자에게 꼭 명시(tradeDesc 참고 — 가치 급락 요인).',
+    '[도구 사용]',
+    '- powerDiff(전투력 증가량)는 보공/방무 미반영이라 신뢰 금지, 캐릭터 마지막 로그아웃 시점 기준. 공격력·보공·방무 효율은 item_hwansan으로 환산 비교 — 매물·부위당 외부 계산 API 1회씩이니 후보를 먼저 추려 소수만, 부위가 정해졌으면 slot을 지정해 호출 최소화.',
+    '- 매물 id("ynoFBr…:1" 류)는 도구 호출용 내부 값 — 사용자에게 노출하지 말 것. 매물 지칭은 별칭으로 하고(관례는 지식 노트 참고), 별칭↔id 대응은 네가 기억해라.',
+    '- 가위(재거래) 잔여 횟수가 낮은 매물은 사용자에게 꼭 명시(tradeDesc 참고).',
     '- 추천 리포트 형식: 표에는 스펙·가격·환산·가위·월드만. 타월드는 수수료 포함가를 계산하지 말고 "타월드"로만 표기. 별칭은 표에 넣지 말고 추천 문장에서 사용.',
   ].join('\n');
 
   const server = new McpServer({ name: 'maple-auction', version: '0.4.0' }, { instructions });
+
+  server.registerResource(
+    'maple-knowledge',
+    'maple://knowledge',
+    {
+      title: '메이플 지식 노트',
+      description: '매물 추천·가치 판단 전에 반드시 읽을 게임 상식 (추옵·잠재·가위·별칭·타월드)',
+      mimeType: 'text/markdown',
+    },
+    async (uri) => ({ contents: [{ uri: uri.href, mimeType: 'text/markdown', text: loadKnowledge() }] })
+  );
 
   let identity: (Identity & { characterName?: string }) | null = null;
   let characters: CharacterInfo[] | null = null;

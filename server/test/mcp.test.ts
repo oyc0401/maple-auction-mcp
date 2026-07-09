@@ -351,3 +351,15 @@ describe('get_status', () => {
     expect(textOf(r)).toContain('확장');
   });
 });
+
+describe('maple://knowledge 리소스', () => {
+  it('지식 노트 + 서버 제공 기본 상식을 서빙한다', async () => {
+    const c = await client(fakeBridge(() => ({ id: '1', ok: true })));
+    const list = await c.listResources();
+    expect(list.resources.map((r) => r.uri)).toContain('maple://knowledge');
+    const res = await c.readResource({ uri: 'maple://knowledge' });
+    const text = (res.contents[0] as { text?: string }).text ?? '';
+    expect(text).toContain('메이플 지식 노트');
+    expect(text).toContain('기본 상식 (서버 제공)');
+  });
+});
