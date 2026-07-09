@@ -1,11 +1,35 @@
 import type { BridgeReply, FetchCommand } from '@maple/shared';
 
+// api.mskr.nexon.com은 실제 웹 거래소가 보내는 클라이언트 식별 헤더를 요구한다.
+// 이게 없으면 서버가 426(Upgrade Required)로 튕긴다(쿠키가 유효해도). docs/API.md의 "필수/주요 요청 헤더" 참고.
+// origin/referer는 fetch가 설정 금지(forbidden header)라 못 넣지만, 확장은 host 권한으로 CORS를 우회하므로
+// 서버측 게이트를 통과시키는 x-platform / x-device-id / accept만 실어주면 된다.
+let DEVICE_ID = '';
+function deviceId(): string {
+  if (!DEVICE_ID) {
+    const b = crypto.getRandomValues(new Uint8Array(16));
+    DEVICE_ID = Array.from(b, (x) => x.toString(16).padStart(2, '0')).join('');
+  }
+  return DEVICE_ID;
+}
+export function nexonHeaders(hasBody = false): Record<string, string> {
+  const h: Record<string, string> = {
+    accept: 'application/json, text/plain, */*',
+    'x-platform': 'PC_WEB',
+    'x-device-id': deviceId(),
+    // 이게 없으면 서버가 426(Upgrade Required)로 튕긴다. 웹 거래소가 보내는 실측값(2026-07-09).
+    'x-client-version': '1.0.1',
+  };
+  if (hasBody) h['Content-Type'] = 'application/json';
+  return h;
+}
+
 export async function executeFetch(cmd: FetchCommand, fetchFn: typeof fetch = fetch): Promise<BridgeReply> {
   try {
     const res = await fetchFn(cmd.url, {
       method: cmd.method,
       credentials: 'include',
-      headers: cmd.body != null ? { 'Content-Type': 'application/json' } : undefined,
+      headers: nexonHeaders(cmd.body != null),
       body: cmd.body != null ? JSON.stringify(cmd.body) : undefined,
     });
     const data = await res.json().catch(() => null);
@@ -43,8 +67,14 @@ interface FoundCharacter {
 // 여러 계정·월드에 캐릭터가 있으면 최고 레벨 캐릭터를 선택한다.
 export async function discoverIdentity(fetchFn: typeof fetch = fetch): Promise<BridgeReply> {
   try {
-    await fetchFn(`${AUTH_BASE}/auth/web-token/session`, { method: 'POST', credentials: 'include' });
-    const accRes = await fetchFn(`${AUTH_BASE}/accounts`, { credentials: 'include' });
+    // 읽기전용 GET /accounts 를 먼저 시도한다. 이미 로그인된 정상 케이스에선 여기서 끝나
+    // web-token/session POST(세션 회전 → 확장 컨텍스트에서 새 쿠키 유실 → 로그아웃)를 아예 안 탄다.
+    let accRes = await fetchFn(`${AUTH_BASE}/accounts`, { credentials: 'include', headers: nexonHeaders() });
+    if (accRes.status === 401) {
+      // 세션 미형성(401)일 때만 최후수단으로 토큰 교환을 시도한다.
+      await fetchFn(`${AUTH_BASE}/auth/web-token/session`, { method: 'POST', credentials: 'include', headers: nexonHeaders() });
+      accRes = await fetchFn(`${AUTH_BASE}/accounts`, { credentials: 'include', headers: nexonHeaders() });
+    }
     if (!accRes.ok) {
       return { id: '', ok: false, code: 'NO_IDENTITY', status: accRes.status, error: LOGIN_GUIDE };
     }
@@ -59,6 +89,7 @@ export async function discoverIdentity(fetchFn: typeof fetch = fetch): Promise<B
         WORLD_CANDIDATES.map(async (worldId) => {
           const r = await fetchFn(`${AUTH_BASE}/accounts/${acc.accountId}/gameWorlds/${worldId}/characters`, {
             credentials: 'include',
+            headers: nexonHeaders(),
           });
           if (!r.ok) return;
           const { characters } = (await r.json()) as {

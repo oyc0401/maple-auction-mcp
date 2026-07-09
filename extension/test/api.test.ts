@@ -33,6 +33,20 @@ describe('executeFetch', () => {
     expect((seen?.headers as any)['Content-Type']).toBe('application/json');
   });
 
+  it('api.mskr 게이트 통과용 헤더(x-platform/x-device-id/accept)를 항상 붙인다', async () => {
+    let seen: RequestInit | undefined;
+    const spy: typeof fetch = (async (_u: any, init?: RequestInit) => {
+      seen = init;
+      return new Response('{}', { status: 200 });
+    }) as typeof fetch;
+    await executeFetch(cmd(), spy);
+    const h = seen?.headers as Record<string, string>;
+    expect(h['x-platform']).toBe('PC_WEB');
+    expect(h['x-device-id']).toMatch(/^[0-9a-f]{32}$/);
+    expect(h['x-client-version']).toBe('1.0.1');
+    expect(h['accept']).toContain('application/json');
+  });
+
   it('4xx면 HTTP_ERROR + status + 에러 body', async () => {
     const r = await executeFetch(cmd(), fakeFetch(403, { code: 4 }));
     expect(r.ok).toBe(false);
@@ -52,10 +66,14 @@ describe('executeFetch', () => {
   });
 });
 
-// URL 패턴별로 응답을 라우팅하는 fake fetch
-function routedFetch(routes: Array<[RegExp, { status: number; json: unknown }]>): typeof fetch {
+// URL 패턴별로 응답을 라우팅하는 fake fetch. calls 배열에 호출된 URL을 기록한다.
+function routedFetch(
+  routes: Array<[RegExp, { status: number; json: unknown }]>,
+  calls: string[] = []
+): typeof fetch {
   return (async (u: any) => {
     const url = String(u);
+    calls.push(url);
     for (const [re, v] of routes) {
       if (re.test(url)) return new Response(JSON.stringify(v.json), { status: v.status });
     }
@@ -89,6 +107,32 @@ describe('discoverIdentity', () => {
       expect(r.code).toBe('NO_IDENTITY');
       expect(r.error).toContain('nxlogin.nexon.com');
     }
+  });
+
+  // 회귀 방지: 정상 로그인(GET /accounts 200) 시 세션을 회전시키는 web-token/session POST를
+  // 절대 쏘지 않아야 한다. (그 POST가 확장 컨텍스트에서 로그아웃을 유발했음)
+  it('계정 조회가 200이면 web-token/session POST를 쏘지 않는다', async () => {
+    const calls: string[] = [];
+    const r = await discoverIdentity(
+      routedFetch(
+        [
+          [/auth\/web-token\/session/, { status: 201, json: {} }],
+          [/accounts$/, { status: 200, json: { accounts: [{ accountId: 1 }] } }],
+          [/gameWorlds\/5\/characters/, { status: 200, json: { characters: [{ characterId: 9, characterName: 'ㄱ', level: 1 }] } }],
+        ],
+        calls
+      )
+    );
+    expect(r.ok).toBe(true);
+    expect(calls.some((u) => /auth\/web-token\/session/.test(u))).toBe(false);
+  });
+
+  it('계정 조회가 401이면 최후수단으로 web-token/session POST를 쏜다', async () => {
+    const calls: string[] = [];
+    await discoverIdentity(
+      routedFetch([[/accounts$/, { status: 401, json: {} }]], calls)
+    );
+    expect(calls.some((u) => /auth\/web-token\/session/.test(u))).toBe(true);
   });
 
   it('캐릭터가 하나도 없으면 NO_IDENTITY', async () => {
