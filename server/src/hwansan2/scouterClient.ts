@@ -51,7 +51,7 @@ export async function fetchScouter(name: string, opts: Opts = {}): Promise<Scout
 // 도핑/링크는 userStat의 것을 그대로 복사(변경 없음 의미), weaponAtk는 절대값이라 현재값 유지.
 export function baseSimulator(userStat: ScouterData['userStat']): Record<string, unknown> {
   const st = userStat.stat;
-  const sp = userStat.special as Record<string, string>;
+  const sp = userStat.special as Record<string, unknown>;
   return {
     mainStat: '0', mainStatPer: '0', mainStatAbs: '0',
     subStat: '0', subStatPer: '0', subStatAbs: '0',
@@ -66,9 +66,9 @@ export function baseSimulator(userStat: ScouterData['userStat']): Record<string,
     generalCore2: '', generalCore3: '', erda: '0', solJanus: '0',
     dopingSimul: userStat.doping,
     linkSimul: userStat.linkSkill,
-    restraintRing: sp.restraintRing ?? '0', weaponRing: sp.weaponRing ?? '0',
-    ringofSum: sp.ringOfSum ?? '0', riskTaker: sp.riskTaker ?? '0',
-    contiRing: sp.continuosRing ?? '0', destiny2ndSkill: sp.destiny2ndSkill ?? false,
+    restraintRing: String(sp.restraintRing ?? '0'), weaponRing: String(sp.weaponRing ?? '0'),
+    ringofSum: String(sp.ringOfSum ?? '0'), riskTaker: String(sp.riskTaker ?? '0'),
+    contiRing: String(sp.continuosRing ?? '0'), destiny2ndSkill: Boolean(sp.destiny2ndSkill ?? false),
   };
 }
 

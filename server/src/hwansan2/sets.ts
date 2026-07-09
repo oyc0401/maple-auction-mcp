@@ -14,8 +14,14 @@ const INFERABLE_BASES = Object.keys(SET_DB)
   .filter((b) => !NON_INFERABLE.has(b))
   .sort((a, b) => b.length - a.length);
 
+// 아이템명 접두 → 세트 base 별칭 (이름에 세트명이 없는 세트)
+const SET_ALIASES: [RegExp, string][] = [
+  [/^(하이네스|이글아이|트릭스터|파프니르) /, '루타비스'],
+];
+
 export function setBaseOfItem(itemName: string): string | null {
   if (!itemName) return null;
+  for (const [re, base] of SET_ALIASES) if (re.test(itemName)) return base;
   return INFERABLE_BASES.find((b) => itemName.includes(b)) ?? null;
 }
 
@@ -85,20 +91,17 @@ function bonusAt(set: string, count: number): ItemStats {
   return acc;
 }
 
-// 한 부위 교체(oldSet 1피스 out, newSet 1피스 in)의 세트 보너스 순변화.
-export function setSwapStats(
-  counts: Record<string, number>,
-  oldSet: string | null,
-  newSet: string | null
-): ItemStats {
-  if (!oldSet && !newSet) return emptyItemStats();
-  const after: Record<string, number> = { ...counts };
-  if (oldSet) after[oldSet] = (after[oldSet] ?? 0) - 1;
-  if (newSet) after[newSet] = (after[newSet] ?? 0) + 1;
+// 교체 전/후 장비명 목록 각각으로 countSets를 돌려 세트 보너스 순변화를 구한다.
+// 럭키템 자체의 교체(획득/상실)나 3피스 경계를 넘는 교체 모두 카운트 diff에 자연히 반영된다
+// (기존 setSwapStats는 oldSet/newSet 1피스 증감만 가정해 럭키 재판정을 놓쳤다 — 삭제).
+export function setSwapStatsByNames(namesBefore: string[], namesAfter: string[]): ItemStats {
+  const countsB = countSets(namesBefore);
+  const countsA = countSets(namesAfter);
+  const sets = new Set([...Object.keys(countsB), ...Object.keys(countsA)]);
   let delta = emptyItemStats();
-  for (const set of new Set([oldSet, newSet].filter(Boolean) as string[])) {
-    delta = mergeStats(delta, bonusAt(set, after[set] ?? 0), 1);
-    delta = mergeStats(delta, bonusAt(set, counts[set] ?? 0), -1);
+  for (const set of sets) {
+    delta = mergeStats(delta, bonusAt(set, countsA[set] ?? 0), 1);
+    delta = mergeStats(delta, bonusAt(set, countsB[set] ?? 0), -1);
   }
   return delta;
 }

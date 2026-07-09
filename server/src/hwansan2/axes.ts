@@ -14,7 +14,7 @@ export interface ItemStats {
   atkPct: number; matkPct: number;
   dmgBoss: number;   // 데미지%+보스뎀% (calc상 합산 등가 → bossDmg 축 하나로 전달)
   iedFactor: number; // ∏(1 − 방무/100)
-  critDmg: number; finalDmg: number; coolSec: number;
+  critDmg: number; finalDmg: number; coolSec: number; critRate: number;
   unknown: string[];
 }
 
@@ -22,7 +22,7 @@ export function emptyItemStats(): ItemStats {
   return {
     flat: { STR: 0, DEX: 0, INT: 0, LUK: 0 }, hp: 0, atk: 0, matk: 0,
     pct: { STR: 0, DEX: 0, INT: 0, LUK: 0 }, allPct: 0, atkPct: 0, matkPct: 0,
-    dmgBoss: 0, iedFactor: 1, critDmg: 0, finalDmg: 0, coolSec: 0, unknown: [],
+    dmgBoss: 0, iedFactor: 1, critDmg: 0, finalDmg: 0, coolSec: 0, critRate: 0, unknown: [],
   };
 }
 
@@ -43,6 +43,7 @@ function accumLine(s: ItemStats, line: string | null | undefined) {
     case 'critDmg': if (pct) s.critDmg += val; break;
     case 'finalDmg': if (pct) s.finalDmg += val; break;
     case 'coolSec': s.coolSec += val; break;
+    case 'critRate': if (pct) s.critRate += val; break;
   }
 }
 
@@ -83,7 +84,7 @@ export function fromAuctionRaw(raw: any): ItemStats {
 // 직업별 축 매핑. 이중부스탯(카데나·듀얼블레이더·섀도어): sub=DEX, ssub=STR
 // (스카우터 payload의 subStatBase>ssubStatBase 실측과 부합. 깡부스탯 효율은 두 축 동일이라 뒤집혀도 무해,
 //  부스탯 개별 %줄만 영향 — cli 포킹으로 재검증). 제논·데벤져는 stat 블록 구조가 달라 미지원(null).
-const DOUBLE_SUB = new Set(['카데나', '듀얼블레이더', '섀도어']);
+const DOUBLE_SUB = new Set(['카데나', '듀얼블레이드', '섀도어']);
 const SUB_OF: Record<Stat4, Stat4> = { STR: 'DEX', DEX: 'STR', INT: 'LUK', LUK: 'DEX' };
 
 export function statAxes(userStat: ScouterData['userStat']):
@@ -135,6 +136,7 @@ export function toSimulatorDelta(
     finalDmg: d((s) => s.finalDmg),
     coolTimeReduce: d((s) => s.coolSec),
     ignoreGuard: dIgn,
+    criRate: d((s) => s.critRate),
   };
   if (Object.values(out).every((v) => Math.abs(v) < 1e-9)) return null;
   return Object.fromEntries(Object.entries(out).map(([k, v]) => [k, fmt(v)]));

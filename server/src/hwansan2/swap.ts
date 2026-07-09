@@ -2,7 +2,7 @@
 // 흐름: ItemStats(현재/새) + 세트 델타 → simulator 축 델타 → dmg-simulator POST → Δ.
 import { baseSimulator, simulate, type ScouterData } from './scouterClient.js';
 import { fromScouterEquip, fromAuctionRaw, statAxes, toSimulatorDelta } from './axes.js';
-import { countSets, setBaseOfItem, setSwapStats } from './sets.js';
+import { setSwapStatsByNames } from './sets.js';
 
 let simCaches = new WeakMap<object, Map<string, { delta380: number; delta300: number; unknown: string[] }>>();
 export function clearSwapCache() { simCaches = new WeakMap(); }
@@ -31,8 +31,13 @@ export async function swapDelta380(
 
   const curStats = fromScouterEquip(cur);
   const nextStats = fromAuctionRaw(newItemRaw);
-  const counts = countSets(data.userEquipData.map((e) => e.name));
-  const setDelta = setSwapStats(counts, setBaseOfItem(cur.name), setBaseOfItem(String(newItemRaw?.itemName ?? '')));
+  // 럭키템(3피스 이상 세트 전체 +1) 재판정을 위해 교체 전/후 이름 목록을 각각 countSets로 돌린다.
+  // 동일 이름 장비가 여럿(반지 등)일 수 있어 findIndex로 이 slot의 아이템 하나만 교체.
+  const names = data.userEquipData.map((e) => e.name);
+  const idx = data.userEquipData.findIndex((e) => e.slot === slot);
+  const namesAfter = [...names];
+  namesAfter[idx] = String(newItemRaw?.itemName ?? '');
+  const setDelta = setSwapStatsByNames(names, namesAfter);
   const unknown = [...new Set([...curStats.unknown, ...nextStats.unknown])];
 
   const baseIgn = Number(data.userStat.stat.ignoreDef ?? 0);

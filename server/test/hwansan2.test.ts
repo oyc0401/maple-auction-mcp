@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import { fetchScouter, baseSimulator, clearScouterCache } from '../src/hwansan2/scouterClient.js';
 import { parseOptionLine } from '../src/hwansan2/optionDict.js';
 import { fromScouterEquip, fromAuctionRaw, statAxes, toSimulatorDelta, emptyItemStats } from '../src/hwansan2/axes.js';
-import { countSets, setSwapStats, setBaseOfItem } from '../src/hwansan2/sets.js';
+import { countSets, setSwapStatsByNames, setBaseOfItem } from '../src/hwansan2/sets.js';
 import { swapDelta380, clearSwapCache } from '../src/hwansan2/swap.js';
 
 const idResponse = JSON.parse(readFileSync(new URL('../src/scouter/id-response', import.meta.url), 'utf8'));
@@ -44,6 +44,7 @@ describe('optionDict', () => {
     expect(parseOptionLine('공격력 +9%')).toEqual({ key: 'atk', val: 9, pct: true });
     expect(parseOptionLine('DEX +14')).toEqual({ key: 'DEX', val: 14, pct: false });
     expect(parseOptionLine('스킬 재사용 대기시간 -2초')).toEqual({ key: 'coolSec', val: 2, pct: false });
+    expect(parseOptionLine('크리티컬 확률 +9%')).toEqual({ key: 'critRate', val: 9, pct: true });
     expect(parseOptionLine('공격 시 7% 확률로 오토스틸')).toEqual({ unknown: '공격 시 7% 확률로 오토스틸' });
     expect(parseOptionLine('')).toBeNull();
   });
@@ -75,7 +76,7 @@ describe('axes', () => {
   it('toSimulatorDelta: 깡스탯·%·방무 차이를 올바른 축에 싣는다', () => {
     const ax = statAxes(idResponse.userStat)!;
     const cur = emptyItemStats();
-    const next = { ...emptyItemStats(), flat: { STR: 10, DEX: 20, INT: 0, LUK: 100 }, pct: { STR: 0, DEX: 0, INT: 0, LUK: 12 }, iedFactor: 1 - 0.3, dmgBoss: 30, coolSec: 2 };
+    const next = { ...emptyItemStats(), flat: { STR: 10, DEX: 20, INT: 0, LUK: 100 }, pct: { STR: 0, DEX: 0, INT: 0, LUK: 12 }, iedFactor: 1 - 0.3, dmgBoss: 30, coolSec: 2, critRate: 9 };
     const sim = toSimulatorDelta(cur, next, emptyItemStats(), ax, 90)!;
     expect(sim.mainStat).toBe('100');
     expect(sim.subStat).toBe('20');
@@ -83,6 +84,7 @@ describe('axes', () => {
     expect(sim.mainStatPer).toBe('12');
     expect(sim.bossDmg).toBe('30');
     expect(sim.coolTimeReduce).toBe('2');
+    expect(sim.criRate).toBe('9');
     // 방무: 실방무 90% 기준, (1-0.9)에 (1-0.3) 곱 → 93% → 델타 +3
     expect(Number(sim.ignoreGuard)).toBeCloseTo(3, 6);
   });
@@ -105,14 +107,19 @@ describe('sets', () => {
     const counts = countSets(['아케인셰이드 체인', '아케인셰이드 슈트', '아케인셰이드 숄더', '카오스 벨룸의 헬름']);
     expect(counts['아케인셰이드']).toBe(4); // 3피스 + 카벨모자 럭키 +1
   });
-  it('setSwapStats: 앱솔 4→3 파괴 델타는 음수 방향', () => {
-    const counts = { 앱솔랩스: 4 };
-    const d = setSwapStats(counts, '앱솔랩스', null);
+  it('setSwapStatsByNames: 앱솔 4→3 파괴 델타는 음수 방향', () => {
+    const before = ['앱솔랩스 나이트케이프', '앱솔랩스 헬름', '앱솔랩스 슈트', '앱솔랩스 슈즈'];
+    const after = ['앱솔랩스 나이트케이프', '앱솔랩스 헬름', '앱솔랩스 슈트', '일반 신발'];
+    const d = setSwapStatsByNames(before, after);
     expect(d.atk).toBeLessThan(0); // 4셋 옵션 상실
   });
   it('setBaseOfItem: 이름 추론', () => {
     expect(setBaseOfItem('앱솔랩스 나이트케이프')).toBe('앱솔랩스');
     expect(setBaseOfItem('스칼렛 링')).toBeNull(); // 장신구 세트는 추론 제외(럭키 판정과 별개)
+  });
+  it('setBaseOfItem: 루타비스는 하이네스/이글아이/트릭스터/파프니르 접두 alias로 추론', () => {
+    expect(setBaseOfItem('하이네스 던위치헬름')).toBe('루타비스');
+    expect(setBaseOfItem('파프니르 페니텐시아')).toBe('루타비스');
   });
   it('럭키 아이템 2개 착용해도 +1은 한 번만', () => {
     const counts = countSets(['아케인셰이드 체인', '아케인셰이드 슈트', '아케인셰이드 숄더', '카오스 벨룸의 헬름', '스칼렛 링']);
@@ -127,6 +134,20 @@ describe('sets', () => {
     const counts = countSets(['아케인셰이드 체인', '아케인셰이드 슈트', '아케인셰이드 숄더', '앱솔랩스 케이프', '앱솔랩스 슈즈', '카오스 벨룸의 헬름']);
     expect(counts['아케인셰이드']).toBe(4);
     expect(counts['앱솔랩스']).toBe(2); // 3피스 미만이라 럭키 미적용
+  });
+
+  it('setSwapStatsByNames: 2→3피스 완성 시 럭키 +1이 함께 발동해 4셋 효과 도달', () => {
+    const before = ['아케인셰이드 체인', '아케인셰이드 슈트', '카오스 벨룸의 헬름', '일반 신발'];
+    const after = ['아케인셰이드 체인', '아케인셰이드 슈트', '카오스 벨룸의 헬름', '아케인셰이드 슈즈'];
+    // before: 2피스(럭키 미발동) → after: 3피스+럭키 = 4셋
+    const d = setSwapStatsByNames(before, after);
+    expect(d.atk).toBeGreaterThan(0);
+  });
+  it('setSwapStatsByNames: 럭키템을 빼면 모든 3피스+ 세트가 -1', () => {
+    const before = ['아케인셰이드 체인', '아케인셰이드 슈트', '아케인셰이드 숄더', '카오스 벨룸의 헬름'];
+    const after = ['아케인셰이드 체인', '아케인셰이드 슈트', '아케인셰이드 숄더', '일반 모자'];
+    const d = setSwapStatsByNames(before, after); // 4셋 → 3셋
+    expect(d.atk).toBeLessThan(0);
   });
 });
 

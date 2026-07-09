@@ -2,7 +2,7 @@
 // 등록된 정확한 형태("이름 +값[%]")만 인정, 그 외는 unknown으로 노출(조용히 버리지 않음).
 export type OptionKey =
   | 'STR' | 'DEX' | 'INT' | 'LUK' | 'allStat' | 'hp'
-  | 'atk' | 'matk' | 'dmg' | 'boss' | 'ied' | 'critDmg' | 'finalDmg' | 'coolSec';
+  | 'atk' | 'matk' | 'dmg' | 'boss' | 'ied' | 'critDmg' | 'finalDmg' | 'coolSec' | 'critRate';
 
 const NAME_TO_KEY: Record<string, OptionKey> = {
   STR: 'STR', DEX: 'DEX', INT: 'INT', LUK: 'LUK',
@@ -10,6 +10,7 @@ const NAME_TO_KEY: Record<string, OptionKey> = {
   공격력: 'atk', 마력: 'matk',
   데미지: 'dmg', '보스 몬스터 데미지': 'boss', '보스 데미지': 'boss',
   '몬스터 방어율 무시': 'ied', '크리티컬 데미지': 'critDmg', '최종 데미지': 'finalDmg',
+  '크리티컬 확률': 'critRate',
 };
 
 // "이름 +13%" / "이름, 이름 +36" (실측: 콜론 없음) / "스킬 재사용 대기시간 -2초"

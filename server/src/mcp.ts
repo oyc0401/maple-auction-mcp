@@ -156,17 +156,26 @@ export function createServer(bridge: BridgeLike): McpServer {
     let data;
     try { data = await fetchScouter(name); } catch { return summary; }
     summary.hwansan380 = data.calculatedData.boss380_stat;
+    // 스카우터 서버 예의 + MCP 응답 지연 상한. 캐시 히트·제로컷도 호출 1회로 셈(단순성).
+    let budget = 40;
+    outer:
     for (let i = 0; i < summary.items.length; i++) {
       const it = summary.items[i];
       if (it.powerDiff == null || !it.finalStat) continue; // 착용 불가 → 생략
       const bySlot: Record<string, number> = {};
+      const unknown = new Set<string>();
       for (const slot of slots) {
+        if (budget-- <= 0) break outer;
         try {
           const r = await swapDelta380(data, slot, rawItems[i]);
-          if (r) bySlot[slotLabel(slot)] = r.delta380;
+          if (r) {
+            bySlot[slotLabel(slot)] = r.delta380;
+            for (const u of r.unknown) unknown.add(u);
+          }
         } catch { /* 개별 실패 생략 */ }
       }
       if (Object.keys(bySlot).length) it.hwansanBySlot = bySlot;
+      if (unknown.size) it.hwansanUnknown = [...unknown];
     }
     return summary;
   }

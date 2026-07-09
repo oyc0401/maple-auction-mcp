@@ -17,6 +17,7 @@ export interface ItemSummary {
   powerDiff: number | null; // 전투력 증가량 (착용 시). 착용 불가 시 null
   hwansanBySlot?: Record<string, number>; // 부위별 Δ환산380(maplescouter 기준). 어느 부위를
   // 바꾸는지 항상 명시 — 단일 부위는 {무기: 120}, 다부위는 {반지1: .., 반지2: ..}. 계산 실패 시 생략
+  hwansanUnknown?: string[]; // 환산 계산이 인식 못 한 옵션 문구. 있으면 델타가 과소평가일 수 있음
   finalStat: Record<string, number> | null; // 최종 합산 스탯 (고정 키, 0도 표기)
   exOption: string | null; // 추가옵션 항목 (예: "마력 +33 / INT +40 / ...")
   potential: string | null;
