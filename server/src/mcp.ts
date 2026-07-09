@@ -19,7 +19,7 @@ import {
   type Sort,
   type GetLimit,
 } from './mapping.js';
-import { summarizeSearch, summarizeItem, type SearchSummary } from './summarize.js';
+import { summarizeSearch, summarizeItem } from './summarize.js';
 import { listCharacters, type CharacterInfo } from './characters.js';
 import { fetchScouter, swapDelta380, categoryToSlots, slotLabel } from './hwansan2/index.js';
 import {
@@ -75,7 +75,7 @@ function optionRows(keys: string[], what: string, keyDesc: string) {
 
 // 매물을 반환하는 도구 설명에 공통으로 붙는 응답 해석 안내
 const RESULT_NOTE =
-  ' 응답 매물의 isAmazingHyperUpgradeUsed=true는 놀장(놀라운 장비강화 주문서) 사용 장비: 성 수 대비 스탯이 높아 보이지만 스타포스 최대 15성 제한이 있어 보통 저평가되니 가격 비교 시 주의. powerDiff(전투력 증가량)는 보공/방무가 반영되지 않으니 신뢰하지 말 것. hwansanBySlot(있을 때)는 이 매물을 각 부위의 현재 장비 대신 낄 때의 환산 주스탯(380) 증감으로, maplescouter 계산 기준(도핑·세트 변화 반영)이라 장비 우열 판단은 이걸 최우선한다. 값은 절대 증감(환산 주스탯 몇 상승/하락)이며 그대로 표시한다 — 퍼센트로 환산하지 말 것. hwansan380은 현재 환산(참고용 맥락). 반지·펜던트는 {"반지1": .., "반지2": ..}처럼 전 부위 값을 주니 교체 슬롯을 직접 고르면 된다. 세트 전환(럭키템·칠흑 등 장신구 세트 포함)도 반영된다. 무기 검색은 아직 미지원이라 생략된다.';
+  ' 응답 매물의 isAmazingHyperUpgradeUsed=true는 놀장(놀라운 장비강화 주문서) 사용 장비: 성 수 대비 스탯이 높아 보이지만 스타포스 최대 15성 제한이 있어 보통 저평가되니 가격 비교 시 주의. powerDiff(전투력 증가량)는 캐릭터 마지막 로그아웃 시점 기준.';
 
 // search_armor / search_weapon 이 공유하는 상세 필터
 const detailFilterSchema = {
@@ -140,44 +140,25 @@ export function createServer(bridge: BridgeLike): McpServer {
     '- 전투력은 보공/방무 반영 안됌 신뢰금지',
   ].join('\n');
 
-  const server = new McpServer({ name: 'maple-auction', version: '0.3.3' }, { instructions });
+  const server = new McpServer({ name: 'maple-auction', version: '0.4.0' }, { instructions });
 
   let identity: (Identity & { characterName?: string }) | null = null;
   let characters: CharacterInfo[] | null = null;
   const bodyCache = new Map<string, { body: ReturnType<typeof buildCreateBody>; sold: boolean; category?: string }>();
 
-  // 장비 검색(무기 제외)이면 각 매물에 부위별 Δ환산380(hwansanBySlot)을 채운다.
-  // 계산은 maplescouter API(현재 캐릭터 스펙 + 교체 시뮬레이터). 실패는 조용히 생략(검색은 그대로 동작).
-  async function enrichHwansan(summary: SearchSummary, rawItems: any[], category?: string): Promise<SearchSummary> {
-    const slots = categoryToSlots(category);
-    if (!slots || slots[0] === '무기') return summary; // 무기 교체는 v1 미지원(weaponAtk 의미 미확정)
-    const name = identity?.characterName;
-    if (!name) return summary;
-    let data;
-    try { data = await fetchScouter(name); } catch { return summary; }
-    summary.hwansan380 = data.calculatedData.boss380_stat;
-    // 스카우터 서버 예의 + MCP 응답 지연 상한. 캐시 히트·제로컷도 호출 1회로 셈(단순성).
-    let budget = 40;
-    for (let i = 0; i < summary.items.length && budget > 0; i++) {
-      const it = summary.items[i];
-      if (it.powerDiff == null || !it.finalStat) continue; // 착용 불가 → 생략
-      const bySlot: Record<string, number> = {};
-      const unknown = new Set<string>();
-      for (const slot of slots) {
-        if (budget-- <= 0) break;
-        try {
-          const r = await swapDelta380(data, slot, rawItems[i]);
-          if (r) {
-            bySlot[slotLabel(slot)] = r.delta380;
-            for (const u of r.unknown) unknown.add(u);
-          }
-        } catch { /* 개별 실패 생략 */ }
+  // 원본 매물 캐시(id → 원본 + 검색 카테고리). item_hwansan이 단일 매물의 부위별 Δ환산을
+  // 온디맨드로 계산할 때 쓴다. 검색·페이지 조회가 지날 때마다 채워지고, 상한 초과 시 오래된 것부터 버린다.
+  const rawItemCache = new Map<string, { raw: any; category?: string }>();
+  const RAW_ITEM_CACHE_MAX = 300;
+  function cacheRawItems(items: any[] | undefined, category?: string) {
+    for (const it of items ?? []) {
+      if (!it?._id) continue;
+      rawItemCache.set(it._id, { raw: it, category });
+      if (rawItemCache.size > RAW_ITEM_CACHE_MAX) {
+        const oldest = rawItemCache.keys().next().value;
+        if (oldest !== undefined) rawItemCache.delete(oldest);
       }
-      // 예산이 슬롯 도중 소진돼도 이미 계산한 부위 결과는 버리지 않는다
-      if (Object.keys(bySlot).length) it.hwansanBySlot = bySlot;
-      if (unknown.size) it.hwansanUnknown = [...unknown];
     }
-    return summary;
   }
 
   async function ensureIdentity(): Promise<Identity | string> {
@@ -213,9 +194,8 @@ export function createServer(bridge: BridgeLike): McpServer {
     if (!created.ok) return text(errorText(created));
     const data = created.data as any;
     if (data?.searchKey) bodyCache.set(data.searchKey, { body, sold, category: params.category });
-    let summary = summarizeSearch(data);
-    if (!sold) summary = await enrichHwansan(summary, data.items ?? [], params.category);
-    return text({ ...summary, searchRemaining: await searchRemaining() });
+    cacheRawItems(data?.items, params.category);
+    return text({ ...summarizeSearch(data), searchRemaining: await searchRemaining() });
   }
 
   // 찜 목록 개수·남은 슬롯을 조회한다(무료 GET). 실패 시 에러 문자열.
@@ -224,6 +204,54 @@ export function createServer(bridge: BridgeLike): McpServer {
     if (!reply.ok) return errorText(reply);
     const items = ((reply.data as any)?.items ?? []) as unknown[];
     return { count: items.length, remaining: Math.max(0, WISHLIST_MAX - items.length), items };
+  }
+
+  // 단일 매물의 부위별 Δ환산380(maplescouter 교체 시뮬레이터 기준)을 계산한다.
+  // 원본 매물은 직전 검색(search_*/get_page)이 rawItemCache에 넣어둔 것을 쓴다. 에러는 안내 문자열로 반환.
+  async function computeItemHwansan(itemId: string, onlySlot?: string): Promise<unknown> {
+    const entry = rawItemCache.get(itemId);
+    if (!entry) {
+      return '해당 매물의 원본을 찾을 수 없습니다. 먼저 search_weapon / search_armor / get_page 로 이 매물을 조회한 뒤 그 id로 다시 호출하세요.';
+    }
+    const slots = categoryToSlots(entry.category);
+    if (!slots) {
+      return '이 매물은 환산 비교 대상(장비)이 아니거나 카테고리를 알 수 없습니다. search_weapon / search_armor 로 조회한 매물의 id를 사용하세요.';
+    }
+    let targetSlots = slots;
+    if (onlySlot) {
+      targetSlots = slots.filter((s) => slotLabel(s) === onlySlot || s === onlySlot);
+      if (!targetSlots.length) {
+        return `slot "${onlySlot}" 는 이 매물의 착용 부위가 아닙니다. 가능한 부위: ${slots.map(slotLabel).join(', ')}`;
+      }
+    }
+    const name = identity?.characterName;
+    if (!name) {
+      return '현재 캐릭터 이름을 알 수 없어 환산을 계산할 수 없습니다. set_character 로 기준 캐릭터를 지정하세요.';
+    }
+    let data;
+    try {
+      data = await fetchScouter(name);
+    } catch (e) {
+      return `환산 계산기(maplescouter) 호출 실패: ${(e as Error).message}`;
+    }
+    const bySlot: Record<string, number> = {};
+    const unknown = new Set<string>();
+    for (const slot of targetSlots) {
+      try {
+        const r = await swapDelta380(data, slot, entry.raw);
+        if (r) {
+          bySlot[slotLabel(slot)] = r.delta380;
+          for (const u of r.unknown) unknown.add(u);
+        }
+      } catch { /* 개별 부위 실패는 생략 */ }
+    }
+    return {
+      id: itemId,
+      name: entry.raw?.itemName ?? null,
+      hwansan380: data.calculatedData.boss380_stat,
+      bySlot,
+      ...(unknown.size ? { unknown: [...unknown] } : {}),
+    };
   }
 
   server.registerTool(
@@ -303,12 +331,11 @@ export function createServer(bridge: BridgeLike): McpServer {
       const q = { page, limit: limit as GetLimit, sort: sort as Sort };
       const cachedEntry = bodyCache.get(searchKey);
       const sold = cachedEntry?.sold ?? false;
-      const enrich = async (data: any) => {
-        const s = summarizeSearch(data);
-        return sold ? s : await enrichHwansan(s, data?.items ?? [], cachedEntry?.category);
-      };
       const reply = await bridge.request({ type: 'fetch', url: buildPageUrl(searchKey, q, id, sold), method: 'GET' });
-      if (reply.ok) return text(await enrich(reply.data));
+      if (reply.ok) {
+        cacheRawItems((reply.data as any)?.items, cachedEntry?.category);
+        return text(summarizeSearch(reply.data));
+      }
 
       // searchKey 만료 추정 → 캐시된 조건으로 재검색(POST) 후 해당 페이지 재조회 (라이브/시세 각각의 URL로)
       if (reply.code === 'HTTP_ERROR' && reply.status !== 403) {
@@ -320,11 +347,33 @@ export function createServer(bridge: BridgeLike): McpServer {
           if (newKey) {
             bodyCache.set(newKey, cached);
             const retry = await bridge.request({ type: 'fetch', url: buildPageUrl(newKey, q, id, cached.sold), method: 'GET' });
-            if (retry.ok) return text(await enrich(retry.data));
+            if (retry.ok) {
+              cacheRawItems((retry.data as any)?.items, cached.category);
+              return text(summarizeSearch(retry.data));
+            }
           }
         }
       }
       return text(errorText(reply));
+    }
+  );
+
+  server.registerTool(
+    'item_hwansan',
+    {
+      title: '아이템 교체 환산 증감',
+      description:
+        '검색으로 찾은 매물 1개를 현재 캐릭터의 해당 부위 장비와 교체할 때의 환산 주스탯(보스 380) 증감을 계산한다',
+      inputSchema: {
+        itemId: z.string().describe('매물 id (검색 결과의 id 필드, "TRADESN:SUBIDX" 형식)'),
+        slot: z.string().optional().describe('특정 부위만 계산 (예: "반지1", "펜던트2"). 생략 시 착용 가능한 모든 부위'),
+      },
+      annotations: { readOnlyHint: true },
+    },
+    async ({ itemId, slot }) => {
+      const id = await ensureIdentity();
+      if (typeof id === 'string') return text(id);
+      return text(await computeItemHwansan(itemId, slot));
     }
   );
 

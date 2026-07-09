@@ -24,7 +24,6 @@ export async function swapDelta380(
   newItemRaw: any,
   opts: { fetchFn?: typeof fetch } = {}
 ): Promise<{ delta380: number; delta300: number; unknown: string[] } | null> {
-  if (slot === '무기') return null; // weaponAtk 축 의미 미확정 — v1 제외
   const ax = statAxes(data.userStat);
   const cur = data.userEquipData.find((e) => e.slot === slot);
   if (!cur) return null;
@@ -45,6 +44,14 @@ export async function swapDelta380(
   const namesAfter = [...names];
   const newName = String(newItemRaw?.itemName ?? '');
   namesAfter[idx] = newName;
+
+  // 제네시스 무기 해방 효과(최종 데미지 +10%). 해방 여부는 API가 안 주므로 제네시스면 해방으로 간주(sets.ts와 동일 한계).
+  // 실측(2026-07-09 프로브): 스카우터의 genesis 플래그 자체는 계산 무영향이고 finalDmg +10이 효과의 실체.
+  // (경매장에서 제네시스는 교불이라 매물로 뜨진 않지만, 현재 무기가 제네시스인 캐릭터의 교체 방향은 이 -10이 맞다.)
+  if (slot === '무기') {
+    if (/^제네시스 /.test(cur.name)) curStats.finalDmg += 10;
+    if (/^제네시스 /.test(newName)) nextStats.finalDmg += 10;
+  }
   // 매물의 세트 소속은 경매장 toolTip.setEffects(공식 세트명)를 우선 사용, 여명 전환 수는 API set_option에서.
   const apiCounts = apiSetCounts(data);
   const setOpts = {
@@ -63,7 +70,12 @@ export async function swapDelta380(
   }
 
   const baseIgn = Number(data.userStat.stat.ignoreDef ?? 0);
-  const axDelta = toSimulatorDelta(curStats, nextStats, setDelta, ax, baseIgn);
+  // 무기 슬롯은 weaponAtk 절대축(새 무기 표시 공격력) 전달을 활성화. level은 "9레벨 당 스탯" 환산용.
+  const weaponAtkBase = slot === '무기' ? Number(data.userStat.stat.weaponAtk ?? 0) : undefined;
+  const axDelta = toSimulatorDelta(curStats, nextStats, setDelta, ax, baseIgn, {
+    level: Number(data.userStat.stat.level ?? 0),
+    weaponAtkBase,
+  });
   if (!axDelta) {
     const zero = { delta380: 0, delta300: 0, unknown: [...unknown] };
     simCache.set(key, zero);

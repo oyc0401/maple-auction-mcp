@@ -10,6 +10,8 @@ export interface ItemStats {
   flat: Record<Stat4, number>;
   hp: number; hpPct: number;
   atk: number; matk: number;
+  dispAtk: number; dispMatk: number; // 툴팁 표시 공격력/마력(base+주문서+스타포스+추옵 합). 무기 weaponAtk 절대축의 원천
+  perLev: Record<Stat4, number>;     // "캐릭터 기준 9레벨 당 스탯 +n" — 캐릭 레벨을 곱해 깡스탯으로 환산(toSimulatorDelta)
   pct: Record<Stat4, number>; allPct: number;
   atkPct: number; matkPct: number;
   dmgBoss: number;   // 데미지%+보스뎀% (calc상 합산 등가 → bossDmg 축 하나로 전달)
@@ -21,6 +23,7 @@ export interface ItemStats {
 export function emptyItemStats(): ItemStats {
   return {
     flat: { STR: 0, DEX: 0, INT: 0, LUK: 0 }, hp: 0, hpPct: 0, atk: 0, matk: 0,
+    dispAtk: 0, dispMatk: 0, perLev: { STR: 0, DEX: 0, INT: 0, LUK: 0 },
     pct: { STR: 0, DEX: 0, INT: 0, LUK: 0 }, allPct: 0, atkPct: 0, matkPct: 0,
     dmgBoss: 0, iedFactor: 1, critDmg: 0, finalDmg: 0, coolSec: 0, critRate: 0, unknown: [],
   };
@@ -44,6 +47,10 @@ function accumLine(s: ItemStats, line: string | null | undefined) {
     case 'finalDmg': if (pct) s.finalDmg += val; break;
     case 'coolSec': s.coolSec += val; break;
     case 'critRate': if (pct) s.critRate += val; break;
+    case 'perLevSTR': s.perLev.STR += val; break;
+    case 'perLevDEX': s.perLev.DEX += val; break;
+    case 'perLevINT': s.perLev.INT += val; break;
+    case 'perLevLUK': s.perLev.LUK += val; break;
   }
 }
 
@@ -54,6 +61,7 @@ export function fromScouterEquip(e: ScouterEquip): ItemStats {
   const n = (k: string) => Number(t[k] ?? 0);
   s.flat.STR += n('str'); s.flat.DEX += n('dex'); s.flat.INT += n('int'); s.flat.LUK += n('luk');
   s.hp += n('max_hp'); s.atk += n('attack_power'); s.matk += n('magic_power');
+  s.dispAtk = n('attack_power'); s.dispMatk = n('magic_power');
   s.dmgBoss += n('boss_damage') + n('damage');
   s.allPct += n('all_stat'); // 넥슨 total의 all_stat은 %값(추옵 올스탯%)
   const ied = n('ignore_monster_armor');
@@ -71,6 +79,7 @@ export function fromAuctionRaw(raw: any): ItemStats {
   const fs = tt.stat ?? {};
   s.flat.STR += fs.str ?? 0; s.flat.DEX += fs.dex ?? 0; s.flat.INT += fs.int ?? 0; s.flat.LUK += fs.luk ?? 0;
   s.hp += fs.mhp ?? 0; s.atk += fs.pad ?? 0; s.matk += fs.mad ?? 0;
+  s.dispAtk = fs.pad ?? 0; s.dispMatk = fs.mad ?? 0;
   s.dmgBoss += (fs.bdr ?? 0) + (fs.dam ?? 0);
   s.allPct += fs.all ?? 0;
   if (fs.imdr) s.iedFactor *= 1 - fs.imdr / 100;
@@ -111,27 +120,35 @@ export function statAxes(userStat: ScouterData['userStat']): StatAxes {
 const fmt = (v: number) => (Number.isInteger(v) ? String(v) : v.toFixed(5));
 
 // (새 − 현재 + 세트델타) → simulator 축. 전부 0이면 null(POST 불필요).
+// 실측 기반(2026-07-09, 아케인셰이드 체인→제네시스 체인 캡처 payload 재현):
+// - 무기 교체 시 weaponAtk 절대축 = 새 무기의 "표시 공격력"(dispAtk, base+주문서+★+추옵 합. 제네 체인 832).
+//   atk 델타축은 방어구와 동일하게 정상 델타 그대로 둔다(실측 atk=267=Δ247+세트20 — 이중이 아니라 스카우터 방식).
+// - level을 주면 "9레벨 당 스탯 +n"(perLev)을 floor(level/9)×n 깡스탯으로 환산해 축에 가산(실측 mainStat 170=110+60).
 export function toSimulatorDelta(
   cur: ItemStats,
   next: ItemStats,
   setDelta: ItemStats,
   ax: StatAxes,
-  baseIgnoreDef: number
+  baseIgnoreDef: number,
+  extra: { level?: number; weaponAtkBase?: number } = {}
 ): Record<string, string> | null {
   const d = (f: (s: ItemStats) => number) => f(next) - f(cur) + f(setDelta);
   const isMagic = ax.kind === 'standard' && ax.isMagic;
   const atkOf = (s: ItemStats) => (isMagic ? s.matk : s.atk);
   const atkPctOf = (s: ItemStats) => (isMagic ? s.matkPct : s.atkPct);
+  // "9레벨 당 스탯"은 캐릭터 레벨로 깡스탯 환산해 해당 축에 합산
+  const lv9 = Math.floor((extra.level ?? 0) / 9);
+  const flatOf = (s: ItemStats, k: Stat4) => s.flat[k] + lv9 * s.perLev[k];
   // 직업군별 main/sub 축 수치 선택
   const mainOf = (s: ItemStats) =>
-    ax.kind === 'da' ? s.hp : ax.kind === 'xenon' ? s.flat.STR + s.flat.DEX + s.flat.LUK : s.flat[ax.main];
+    ax.kind === 'da' ? s.hp : ax.kind === 'xenon' ? flatOf(s, 'STR') + flatOf(s, 'DEX') + flatOf(s, 'LUK') : flatOf(s, ax.main);
   const mainPctOf = (s: ItemStats) =>
     ax.kind === 'da' ? s.hpPct : ax.kind === 'xenon' ? s.pct.STR + s.pct.DEX + s.pct.LUK : s.pct[ax.main];
   const subOf = (s: ItemStats) =>
-    ax.kind === 'da' ? s.flat.STR : ax.kind === 'xenon' ? 0 : s.flat[ax.sub];
+    ax.kind === 'da' ? flatOf(s, 'STR') : ax.kind === 'xenon' ? 0 : flatOf(s, ax.sub);
   const subPctOf = (s: ItemStats) =>
     ax.kind === 'da' ? s.pct.STR : ax.kind === 'xenon' ? 0 : s.pct[ax.sub];
-  const ssubOf = (s: ItemStats) => (ax.kind === 'standard' && ax.ssub ? s.flat[ax.ssub] : 0);
+  const ssubOf = (s: ItemStats) => (ax.kind === 'standard' && ax.ssub ? flatOf(s, ax.ssub) : 0);
   const ssubPctOf = (s: ItemStats) => (ax.kind === 'standard' && ax.ssub ? s.pct[ax.ssub] : 0);
 
   // 방무: base 실방무에서 현재 아이템 계수를 나눠 빼고 (새 아이템 × 세트델타) 계수를 곱해 %p 차이 산출
@@ -156,6 +173,15 @@ export function toSimulatorDelta(
     ignoreGuard: dIgn,
     criRate: d((s) => s.critRate),
   };
-  if (Object.values(out).every((v) => Math.abs(v) < 1e-9)) return null;
-  return Object.fromEntries(Object.entries(out).map(([k, v]) => [k, fmt(v)]));
+
+  // 무기 교체: weaponAtk 절대축 = 새 무기의 표시 공격력(마법 직업은 표시 마력). atk 델타축은 그대로 둔다.
+  const weaponAtkNext = extra.weaponAtkBase != null ? (isMagic ? next.dispMatk : next.dispAtk) : null;
+
+  const deltasZero = Object.values(out).every((v) => Math.abs(v) < 1e-9);
+  const weaponSame = weaponAtkNext == null || Math.abs(weaponAtkNext - extra.weaponAtkBase!) < 1e-9;
+  if (deltasZero && weaponSame) return null;
+
+  const entries: [string, string][] = Object.entries(out).map(([k, v]) => [k, fmt(v)]);
+  if (weaponAtkNext != null) entries.push(['weaponAtk', fmt(weaponAtkNext)]);
+  return Object.fromEntries(entries);
 }

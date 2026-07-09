@@ -72,6 +72,43 @@ describe('search_items (POST 세션 생성)', () => {
   });
 });
 
+describe('item_hwansan (단일 매물 교체 환산)', () => {
+  // 검색이 rawItemCache를 채우도록 discover→POST(201)→GET(daily-limit)를 처리하는 브리지.
+  const searchBridge = () => fakeBridge((cmd) => {
+    if (cmd.type === 'discover') return { id: '1', ok: true, data: ID };
+    if (cmd.method === 'GET') return { id: '3', ok: true, status: 200, data: { search: { limit: 100, remaining: 90 }, register: { limit: 20, remaining: 20 } } };
+    return { id: '2', ok: true, status: 201, data: okSearch('k') }; // items: [item('a:1')]
+  });
+
+  it('검색으로 캐시된 적 없는 매물 id면 먼저 검색하라고 안내한다', async () => {
+    const c = await client(searchBridge());
+    const r = await c.callTool({ name: 'item_hwansan', arguments: { itemId: 'unknown:9' } });
+    expect(textOf(r)).toContain('원본을 찾을 수 없습니다');
+  });
+
+  it('무기 매물도 카테고리 가드를 통과해 캐릭터 기준을 요구한다(무기 환산 지원)', async () => {
+    const c = await client(searchBridge());
+    await c.callTool({ name: 'search_weapon', arguments: { subCategory: 'WEAPON' } }); // a:1 캐시(category WEAPON)
+    const r = await c.callTool({ name: 'item_hwansan', arguments: { itemId: 'a:1' } });
+    expect(textOf(r)).not.toContain('지원하지 않습니다');
+    expect(textOf(r)).toContain('캐릭터 이름'); // 무기 게이트 제거 → 방어구와 동일 경로
+  });
+
+  it('방어구 매물이면 카테고리 가드를 통과해 캐릭터 기준을 요구한다(네트워크 없음)', async () => {
+    const c = await client(searchBridge());
+    await c.callTool({ name: 'search_armor', arguments: { subCategory: 'ARMOR_ACCESSORY_RING' } }); // a:1 캐시(반지)
+    const r = await c.callTool({ name: 'item_hwansan', arguments: { itemId: 'a:1' } });
+    expect(textOf(r)).toContain('캐릭터 이름');
+  });
+
+  it('착용 부위가 아닌 slot을 주면 가능한 부위를 안내한다(신원 불필요)', async () => {
+    const c = await client(searchBridge());
+    await c.callTool({ name: 'search_armor', arguments: { subCategory: 'ARMOR_ACCESSORY_RING' } });
+    const r = await c.callTool({ name: 'item_hwansan', arguments: { itemId: 'a:1', slot: '모자' } });
+    expect(textOf(r)).toContain('가능한 부위');
+  });
+});
+
 describe('get_page (GET 정렬/페이지네이션)', () => {
   it('지정 정렬·페이지·크기로 GET하고 검색 횟수를 소진하지 않는다', async () => {
     const calls: any[] = [];

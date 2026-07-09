@@ -1,6 +1,6 @@
 {
   "name": "maple-auction-mcp",
-  "version": "0.3.3",
+  "version": "0.4.0",
   "description": "메이플스토리 경매장을 AI로 검색하는 MCP 서버",
   "license": "MIT",
   "repository": {

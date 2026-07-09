@@ -45,6 +45,8 @@ describe('optionDict', () => {
     expect(parseOptionLine('DEX +14')).toEqual({ key: 'DEX', val: 14, pct: false });
     expect(parseOptionLine('스킬 재사용 대기시간 -2초')).toEqual({ key: 'coolSec', val: 2, pct: false });
     expect(parseOptionLine('크리티컬 확률 +9%')).toEqual({ key: 'critRate', val: 9, pct: true });
+    expect(parseOptionLine('캐릭터 기준 9레벨 당 LUK +2')).toEqual({ key: 'perLevLUK', val: 2, pct: false });
+    expect(parseOptionLine('보스 몬스터 공격 시 데미지 +7%')).toEqual({ key: 'boss', val: 7, pct: true }); // 소울 변형 문구
     expect(parseOptionLine('공격 시 7% 확률로 오토스틸')).toEqual({ unknown: '공격 시 7% 확률로 오토스틸' });
     expect(parseOptionLine('')).toBeNull();
   });
@@ -87,6 +89,45 @@ describe('axes', () => {
     expect(sim.criRate).toBe('9');
     // 방무: 실방무 90% 기준, (1-0.9)에 (1-0.3) 곱 → 93% → 델타 +3
     expect(Number(sim.ignoreGuard)).toBeCloseTo(3, 6);
+  });
+  // 실측 재현(2026-07-09 캡처): 22성 아케인셰이드 체인 → 22성 제네시스 체인 교체 payload.
+  // 검증 오라클: weaponAtk 832 / atk 267 / mainStat 170 / subStat 125 / atkPer -6 / bossDmg -40 / ignoreGuard 0 / finalDmg 10.
+  // 라이브 API 교차검증(프로브): 올스탯% 인코딩(allStatPer 3 vs 개별 Per 3/3/3)은 결과 동일(32628),
+  // genesis 플래그는 계산 무영향, finalDmg +10이 제네시스 해방 효과의 실체.
+  it('toSimulatorDelta(무기): 실측 payload(아셰 체인→제네 체인)를 재현한다', () => {
+    const ax = statAxes(idResponse.userStat)!;
+    const cur = fromScouterEquip(equips.find((e: any) => e.slot === '무기'));
+    const raw = {
+      itemName: '제네시스 체인',
+      toolTip: {
+        stat: { luk: 382, dex: 295, str: 0, pad: 832, mad: 0, mhp: 0, bdr: 40, dam: 0, imdr: 20, all: 6 },
+        upgradeInfo: {
+          potential: { entries: [{ text: '공격력 +32' }, { text: '보스 몬스터 데미지 +30%' }, { text: '몬스터 방어율 무시 +40%' }] },
+          additionalPotential: { entries: [{ text: '캐릭터 기준 9레벨 당 LUK +2' }, { text: '공격력 +32' }, { text: '공격력 +9%' }] },
+        },
+        soulWeapon: { optionText: '보스 몬스터 공격 시 데미지 +7%' },
+        setEffects: ['제네시스'],
+      },
+    };
+    const next = fromAuctionRaw(raw);
+    expect(next.unknown).toEqual([]); // perLev·소울 변형 문구까지 전부 파싱
+    next.finalDmg += 10; // swap.ts의 제네시스 해방 보정(무기 슬롯 전용)과 동일
+    const setDelta = { ...emptyItemStats(), atk: 20 }; // 제네=럭키 → 앱솔랩스 5→6피스 (실측 세트 델타)
+    const sim = toSimulatorDelta(cur, next, setDelta, ax, 93.9669, { level: 270, weaponAtkBase: 649 })!;
+    expect(sim.weaponAtk).toBe('832'); // 새 무기 표시 공격력 절대값
+    expect(sim.atk).toBe('267');       // (896-649) + 세트 20 — atk 축은 정상 델타 그대로
+    expect(sim.mainStat).toBe('170');  // (382-272) + 9레벨당 LUK+2 × 30 = 110+60
+    expect(sim.subStat).toBe('125');   // DEX 295-170
+    expect(sim.atkPer).toBe('-6');     // 공% 9-15
+    expect(sim.bossDmg).toBe('-40');   // 77-117 (소울 7% 포함)
+    expect(sim.allStatPer).toBe('3');  // 올스탯% 6-3
+    expect(sim.finalDmg).toBe('10');   // 제네시스 해방 최종뎀 +10%
+    expect(Number(sim.ignoreGuard)).toBeCloseTo(0, 6); // 방무 구성 동일(20%·40%)
+  });
+  it('toSimulatorDelta(무기): 동일 무기면 null (weaponAtk·델타 모두 불변)', () => {
+    const ax = statAxes(idResponse.userStat)!;
+    const w = { ...emptyItemStats(), atk: 649, dispAtk: 649, flat: { STR: 0, DEX: 0, INT: 0, LUK: 100 } };
+    expect(toSimulatorDelta(w, w, emptyItemStats(), ax, 90, { weaponAtkBase: 649 })).toBeNull();
   });
   it('toSimulatorDelta: 현재 아이템 방무 100%(iedFactor 0)여도 NaN 없이 계산된다', () => {
     const ax = statAxes(idResponse.userStat)!;
@@ -180,9 +221,19 @@ describe('swap', () => {
     expect(r?.unknown).toEqual(['피격 시 20% 확률로 38의 데미지 무시']);
     expect(f).not.toHaveBeenCalled();
   });
-  it('무기 슬롯은 v1 미지원 → null', async () => {
-    const r = await swapDelta380(idResponse, '무기', { itemName: 'x', toolTip: {} }, { fetchFn: vi.fn() as any });
-    expect(r).toBeNull();
+  it('무기 슬롯도 교체 환산을 계산한다 — 무기 자체 공격력은 weaponAtk 절대축으로 전달', async () => {
+    clearSwapCache();
+    let sentBody: any;
+    const f = vi.fn(async (_u: any, init: any) => {
+      sentBody = JSON.parse(init.body);
+      return { ok: true, json: async () => ({ boss300_stat: 31000, boss380_stat: 31000 }) } as any;
+    });
+    // 현재 무기(아케인셰이드 체인) 649공 → 새 매물 720공
+    const raw = { _id: 'w-new', itemName: '아케인셰이드 체인', toolTip: { stat: { pad: 720, luk: 150 }, setEffects: ['아케인셰이드'] } };
+    const r = await swapDelta380(idResponse, '무기', raw, { fetchFn: f });
+    expect(f).toHaveBeenCalled();
+    expect(sentBody.simulator.weaponAtk).toBe('720'); // 649 - 649 + 720
+    expect(r!.delta380).toBe(31000 - 30371);
   });
   it('스탯이 다르면 dmg-simulator를 호출해 Δ를 계산한다', async () => {
     clearSwapCache();
