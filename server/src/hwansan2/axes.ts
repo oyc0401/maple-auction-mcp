@@ -81,7 +81,7 @@ export function fromAuctionRaw(raw: any): ItemStats {
   return s;
 }
 
-// 직업별 축 매핑. 이중부스탯(카데나·듀얼블레이더·섀도어): sub=DEX, ssub=STR
+// 직업별 축 매핑. 이중부스탯(카데나·듀얼블레이드·섀도어): sub=DEX, ssub=STR
 // (스카우터 payload의 subStatBase>ssubStatBase 실측과 부합. 깡부스탯 효율은 두 축 동일이라 뒤집혀도 무해,
 //  부스탯 개별 %줄만 영향 — cli 포킹으로 재검증). 제논·데벤져는 stat 블록 구조가 달라 미지원(null).
 const DOUBLE_SUB = new Set(['카데나', '듀얼블레이드', '섀도어']);
