@@ -43,11 +43,6 @@ export const SET_DB: Record<string, Record<number, SetTier>> = {
     3: { atk: 50 },
     4: { boss: 30 },
   },
-  // 마스터 카오스(방어구 세트, 저티어). 실측: set-effect API 3셋/5셋만 정의.
-  '마스터 카오스': {
-    3: { allStat: 5, atk: 3 },
-    5: { allStat: 10, atk: 7 },
-  },
   // ── 장신구 세트 ──
   // 광휘의 보스: 실측(set-effect API) — 2셋 보공15%, 3셋 방무15%, 4셋 크뎀5%.
   '광휘의 보스': {

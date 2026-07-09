@@ -11,5 +11,11 @@ maple_auction.md
 docs/superpowers/
 dev/
 Claude.md
+server/test/fixtures/hwansan2/ms_js/
+server/test/fixtures/hwansan2/api/
+server/test/fixtures/hwansan2/cadena/
+server/test/fixtures/hwansan2/adele/
+
 # playwright MCP 브라우저 로그
 .playwright-mcp/
+.obsidian/
