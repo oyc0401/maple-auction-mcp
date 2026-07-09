@@ -57,6 +57,8 @@ function errorText(reply: Extract<BridgeReply, { ok: false }>): string {
   if (reply.status === 401 || reply.status === 403) {
     return NO_SESSION_MSG + (apiCode != null ? ` (HTTP ${reply.status}, API code ${apiCode})` : '');
   }
+  // 구버전 확장은 상태 코드 없이 nxlogin 로그인 안내를 보낸다 — 그 안내로는 세션이 생기지 않으므로 덮는다.
+  if (reply.error.includes('nxlogin')) return NO_SESSION_MSG;
   // 실측(2026-07-10): 결과가 너무 많으면 422 + code 4040으로 검색 자체를 거부한다 (검색 횟수 소진 없음).
   if (reply.status === 422 && apiCode === 4040) {
     return '검색 결과가 너무 많아 거래소가 검색을 거부했습니다 (검색 횟수 소진 없음). 하위 분류(subCategory)나 키워드로 범위를 좁혀 다시 검색하세요.';

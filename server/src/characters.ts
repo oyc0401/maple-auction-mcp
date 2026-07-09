@@ -1,4 +1,4 @@
-import type { Identity } from '@maple/shared';
+import { NO_SESSION_MSG, type Identity } from '@maple/shared';
 import type { BridgeLike } from './mcp.js';
 import { KNOWN_WORLD_IDS, worldName } from './constants.js';
 
@@ -25,7 +25,7 @@ export async function listCharacters(bridge: BridgeLike): Promise<CharacterInfo[
   }
   if (!accRes.ok) {
     const code = accRes.ok ? '' : `[HTTP ${accRes.status ?? '?'}${accRes.code ? '/' + accRes.code : ''}] `;
-    return `${code}넥슨 계정 조회에 실패했습니다. 사용자에게 크롬에서 https://nxlogin.nexon.com/auth/login 로그인 상태를 확인해달라고 안내하고 대기하세요.`;
+    return `${code}넥슨 계정 조회에 실패했습니다. ${NO_SESSION_MSG}`;
   }
   const accounts = ((accRes.data as any)?.accounts ?? []) as { accountId: number }[];
   if (!accounts.length) return '이 넥슨 계정에 메이플 계정이 없습니다.';
