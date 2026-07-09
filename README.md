@@ -31,20 +31,11 @@ Claude Desktop은 `claude_desktop_config.json`에 추가:
 codex mcp add maple-auction -- npx -y maple-auction-mcp
 ```
 
-## 환산 주스탯 (선택)
+## 환산 주스탯 (자동)
 
-매물을 검색하면 각 무기·방어구·장신구에 **`hwansanDiff`**(현재 착용 장비 대신 낄 때 오르는 환산 주스탯, 음수면 하락)가 함께 표시된다. 전투력과 달리 **보스 데미지·방어율 무시·데미지·세트 효과 변화까지 반영**해 장비 우열을 판단한다. 여러 매물을 세트 맞춰 함께 낄 때의 총 환산은 `compare_combo`로 계산한다.
+방어구·장신구를 검색하면 각 매물에 **`hwansanBySlot`**(부위별로, 현재 착용 장비 대신 낄 때 오르는 환산 주스탯, 음수면 하락)이 함께 표시된다. 전투력과 달리 **보스 데미지·방어율 무시·데미지·세트 효과 변화까지 반영**해 장비 우열을 판단한다.
 
-이 기능은 **넥슨 오픈 API 키**가 있어야 동작한다(없으면 검색은 정상, 환산만 생략).
-
-1. [넥슨 오픈 API](https://openapi.nexon.com/)에서 키 발급
-2. MCP 등록 시 `NEXON_DEVELOPER_KEY` 환경변수로 전달:
-
-```bash
-claude mcp add --scope user maple-auction --env NEXON_DEVELOPER_KEY=발급받은키 -- npx -y maple-auction-mcp
-```
-
-Claude Desktop은 `claude_desktop_config.json`의 해당 서버에 `"env": { "NEXON_DEVELOPER_KEY": "발급받은키" }`를 추가한다.
+maplescouter API 기반으로 별도 설정 없이 자동 동작한다(무기 검색, 제논·데몬어벤져 캐릭터는 아직 미지원).
 
 ## 사용 예
 
