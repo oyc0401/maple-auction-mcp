@@ -1,6 +1,6 @@
-// ===== Maple Auction Bridge — background service worker v0.2.0 =====
-import { BRIDGE_PORT, PROTOCOL_VERSION, type BridgeCommand, type ExtensionHello } from '@maple/shared';
-import { executeFetch, discoverIdentity } from './api.js';
+// ===== Maple Auction Bridge — background service worker =====
+import { BRIDGE_PORT, PROTOCOL_VERSION, type WireFetchCommand, type ExtensionHello } from '@maple/shared';
+import { executeFetch } from './api.js';
 
 // 로드된 코드 버전을 SW 콘솔에 남긴다(예전/지금 코드 구분용). 버전 출처는 manifest.
 console.info(`[maple-bridge] service worker loaded — v${chrome.runtime.getManifest().version}`);
@@ -8,13 +8,10 @@ console.info(`[maple-bridge] service worker loaded — v${chrome.runtime.getMani
 let ws: WebSocket | null = null;
 let keepalive: ReturnType<typeof setInterval> | null = null;
 
-async function handleCommand(cmd: BridgeCommand): Promise<unknown> {
+async function handleCommand(cmd: WireFetchCommand): Promise<unknown> {
   if (cmd.type === 'fetch') return executeFetch(cmd);
-  if (cmd.type === 'discover') {
-    const r = await discoverIdentity();
-    return { ...r, id: cmd.id };
-  }
-  return { id: (cmd as { id: string }).id, ok: false, code: 'NETWORK', error: 'unknown command' };
+  // 알 수 없는 커맨드(미래 프로토콜) — 기계 코드만 돌려주고 해석은 서버가 한다
+  return { id: cmd.id, ok: false, code: 'NETWORK', error: `unknown command: ${(cmd as { type?: string }).type}` };
 }
 
 // 소켓이 열려있을 때만 보낸다. await 사이에 소켓이 CLOSING/CLOSED로 바뀌면
@@ -46,7 +43,7 @@ function connect(): void {
 
   ws.onmessage = async (ev) => {
     try {
-      const cmd = JSON.parse(String(ev.data)) as BridgeCommand;
+      const cmd = JSON.parse(String(ev.data)) as WireFetchCommand;
       const reply = await handleCommand(cmd);
       safeSend(reply);
     } catch {
