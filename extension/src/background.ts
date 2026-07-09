@@ -1,4 +1,4 @@
-// ===== Maple Auction Bridge — background service worker v0.1.3 =====
+// ===== Maple Auction Bridge — background service worker v0.2.0 =====
 import { BRIDGE_PORT, PROTOCOL_VERSION, type BridgeCommand, type ExtensionHello } from '@maple/shared';
 import { executeFetch, discoverIdentity } from './api.js';
 
