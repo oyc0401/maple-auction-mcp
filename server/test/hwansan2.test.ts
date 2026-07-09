@@ -221,6 +221,9 @@ describe('sets — 장신구 세트·API 교차검증', () => {
   it('칠흑 멤버십: 이름으로 세트 소속 인식', () => {
     expect(setBaseOfItem('몽환의 벨트')).toBe('칠흑의 보스');
     expect(setBaseOfItem('커맨더 포스 이어링')).toBe('칠흑의 보스');
+    expect(setBaseOfItem('미트라의 분노 : 전사')).toBe('칠흑의 보스'); // 엠블렘도 칠흑 구성(택1)
+    expect(setBaseOfItem('저주받은 푸른 마도서')).toBe('칠흑의 보스'); // 마도서 4종 패턴
+    expect(setBaseOfItem('그리드 펜던트')).toBeNull(); // 칠흑 아님 (사용자 정정)
   });
   it('여명 전환(dawnCount): 전환분은 보장 대신 여명으로 카운트', () => {
     const names = ['가디언 엔젤 링', '데이브레이크 펜던트', '데아 시두스 이어링'];
