@@ -336,19 +336,44 @@ describe('recent_sold (최근 시세, 검색 횟수 무료)', () => {
 });
 
 describe('get_status', () => {
-  it('연결·identity 상태를 반환한다', async () => {
+  it('세션이 살아있으면 state ready + identity를 반환한다', async () => {
     const c = await client(fakeBridge((cmd) =>
       cmd.type === 'discover' ? { id: '1', ok: true, data: ID } : { id: '2', ok: true }
     ));
     const r = await c.callTool({ name: 'get_status', arguments: {} });
     expect(textOf(r)).toContain('"connected": true');
+    expect(textOf(r)).toContain('"state": "ready"');
     expect(textOf(r)).toContain('"accountId": 1');
   });
 
-  it('확장 미연결이면 안내를 반환한다', async () => {
+  it('확장 미연결이면 state no_extension + 안내를 반환한다', async () => {
     const c = await client({ connected: false, request: async () => ({ id: '', ok: false, code: 'DISCONNECTED', error: '미연결' }) });
     const r = await c.callTool({ name: 'get_status', arguments: {} });
+    expect(textOf(r)).toContain('"state": "no_extension"');
     expect(textOf(r)).toContain('확장');
+  });
+
+  // 세션 단일 활성: 다른 곳에서 새 세션이 생기면 기존 세션이 소리 없이 죽는다.
+  // identity 캐시만 믿고 정상으로 보고하면 안 되고, 무료 GET 실측이 401이면 만료로 보고해야 한다.
+  it('identity가 있어도 라이브 GET이 401이면 state session_expired + 옥션 페이지 안내', async () => {
+    const c = await client(fakeBridge((cmd) => {
+      if (cmd.type === 'discover') return { id: '1', ok: true, data: ID };
+      return { id: '2', ok: false, code: 'HTTP_ERROR', status: 401, error: 'HTTP 401', data: { code: 12 } };
+    }));
+    const r = await c.callTool({ name: 'get_status', arguments: {} });
+    expect(textOf(r)).toContain('"state": "session_expired"');
+    expect(textOf(r)).toContain('auction.maplestory.nexon.com');
+    expect(textOf(r)).toContain('API code 12');
+  });
+
+  it('discover가 실패하면 state no_session + 옥션 페이지 안내', async () => {
+    const c = await client(fakeBridge((cmd) => {
+      if (cmd.type === 'discover') return { id: '1', ok: false, code: 'NO_IDENTITY', status: 401, error: '세션 없음' };
+      return { id: '2', ok: true };
+    }));
+    const r = await c.callTool({ name: 'get_status', arguments: {} });
+    expect(textOf(r)).toContain('"state": "no_session"');
+    expect(textOf(r)).toContain('auction.maplestory.nexon.com');
   });
 });
 

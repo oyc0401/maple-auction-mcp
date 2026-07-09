@@ -46,6 +46,14 @@ export const DISCONNECTED_MSG =
   '사용자에게 "크롬 실행 + Maple Auction Bridge 확장 활성화" 확인을 안내하고 대기하세요. ' +
   '확장 미설치 시 설치 주소: https://chromewebstore.google.com/detail/maple-auction-mcp/mdjabnokhboicgecmpnggabjfimelfjn';
 
+// 실측(2026-07-10) 세션 모델: web-token 세션은 옥션 페이지 로드가 만들고(확장 SW의 POST는 401 {code:5}로 항상 실패),
+// 단일 활성이라 새 세션이 생기면 이전 세션은 즉시 무효(401 {code:12}). 넥슨 SSO 로그인만으로는 세션이 생기지 않는다.
+// 그래서 안내는 nxlogin이 아니라 옥션 페이지로 보낸다 — 페이지가 로그인 리다이렉트와 세션 생성을 모두 처리한다.
+export const NO_SESSION_MSG =
+  '거래소 세션이 없거나 만료되었습니다. 넥슨 로그인만으로는 세션이 생기지 않고, 다른 곳에서 새 세션이 생기면 이전 세션은 무효가 됩니다. ' +
+  '사용자에게 크롬에서 https://auction.maplestory.nexon.com 을 열거나 새로고침하라고 안내하고(로그인 페이지가 나오면 로그인), ' +
+  '완료됐다고 하면 다시 요청하세요.';
+
 export type BridgeErrorCode =
   | 'DISCONNECTED'       // 확장 미연결 (서버가 생성)
   | 'TIMEOUT'            // 확장 응답 없음 (서버가 생성)

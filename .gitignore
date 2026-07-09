@@ -16,6 +16,7 @@ server/test/fixtures/hwansan2/api/
 server/test/fixtures/hwansan2/cadena/
 server/test/fixtures/hwansan2/adele/
 .mcp.json
+mcp-server-dev-ko/
 
 # playwright MCP 브라우저 로그
 .playwright-mcp/

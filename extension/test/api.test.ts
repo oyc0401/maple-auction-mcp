@@ -95,44 +95,38 @@ describe('discoverIdentity', () => {
     if (r.ok) expect(r.data).toEqual({ worldId: 5, accountId: 99188397, characterId: 25631906, characterName: '오유찬' });
   });
 
-  it('계정 조회가 401이면 로그인 안내(NO_IDENTITY)', async () => {
+  it('계정 조회가 401이면 옥션 페이지 접속 안내(NO_IDENTITY) + API code를 덧붙인다', async () => {
     const r = await discoverIdentity(
-      routedFetch([
-        [/auth\/web-token\/session/, { status: 201, json: {} }],
-        [/accounts$/, { status: 401, json: {} }],
-      ])
+      routedFetch([[/accounts$/, { status: 401, json: { code: 12 } }]])
     );
     expect(r.ok).toBe(false);
     if (!r.ok) {
       expect(r.code).toBe('NO_IDENTITY');
-      expect(r.error).toContain('nxlogin.nexon.com');
+      expect(r.error).toContain('auction.maplestory.nexon.com');
+      expect(r.error).toContain('API code 12');
     }
   });
 
-  // 회귀 방지: 정상 로그인(GET /accounts 200) 시 세션을 회전시키는 web-token/session POST를
-  // 절대 쏘지 않아야 한다. (그 POST가 확장 컨텍스트에서 로그아웃을 유발했음)
-  it('계정 조회가 200이면 web-token/session POST를 쏘지 않는다', async () => {
-    const calls: string[] = [];
+  // 회귀 방지: web-token/session POST는 어떤 경우에도 쏘지 않는다.
+  // 실측(2026-07-10) — SW에서는 401 {code:5}로 항상 실패하고, 세션은 단일 활성이라
+  // 성공하더라도 사용자가 열어둔 옥션 탭의 세션을 죽인다.
+  it('계정 조회가 200이어도 401이어도 web-token/session POST를 절대 쏘지 않는다', async () => {
+    const okCalls: string[] = [];
     const r = await discoverIdentity(
       routedFetch(
         [
-          [/auth\/web-token\/session/, { status: 201, json: {} }],
           [/accounts$/, { status: 200, json: { accounts: [{ accountId: 1 }] } }],
           [/gameWorlds\/5\/characters/, { status: 200, json: { characters: [{ characterId: 9, characterName: 'ㄱ', level: 1 }] } }],
         ],
-        calls
+        okCalls
       )
     );
     expect(r.ok).toBe(true);
-    expect(calls.some((u) => /auth\/web-token\/session/.test(u))).toBe(false);
-  });
+    expect(okCalls.some((u) => /auth\/web-token\/session/.test(u))).toBe(false);
 
-  it('계정 조회가 401이면 최후수단으로 web-token/session POST를 쏜다', async () => {
-    const calls: string[] = [];
-    await discoverIdentity(
-      routedFetch([[/accounts$/, { status: 401, json: {} }]], calls)
-    );
-    expect(calls.some((u) => /auth\/web-token\/session/.test(u))).toBe(true);
+    const failCalls: string[] = [];
+    await discoverIdentity(routedFetch([[/accounts$/, { status: 401, json: { code: 12 } }]], failCalls));
+    expect(failCalls.some((u) => /auth\/web-token\/session/.test(u))).toBe(false);
   });
 
   it('캐릭터가 하나도 없으면 NO_IDENTITY', async () => {

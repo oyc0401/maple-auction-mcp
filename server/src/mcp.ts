@@ -1,6 +1,6 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
-import { DISCONNECTED_MSG, type BridgeCommandInput, type BridgeReply, type Identity } from '@maple/shared';
+import { DISCONNECTED_MSG, NO_SESSION_MSG, type BridgeCommandInput, type BridgeReply, type Identity } from '@maple/shared';
 import {
   buildCreateBody,
   buildPageUrl,
@@ -43,10 +43,12 @@ function text(value: unknown) {
 }
 
 function errorText(reply: Extract<BridgeReply, { ok: false }>): string {
-  if (reply.status === 403) {
-    return '넥슨 로그인이 필요합니다. 사용자에게 크롬에서 https://nxlogin.nexon.com/auth/login 에 로그인한 뒤 다시 요청하라고 안내하고 대기하세요.';
-  }
   const apiCode = (reply.data as { code?: number } | null)?.code;
+  // 401/403 = 세션 문제. 세션은 옥션 페이지만 만들 수 있으므로(shared의 NO_SESSION_MSG 주석 참고)
+  // nxlogin이 아니라 옥션 페이지로 안내한다. 구버전 확장이 보낸 낡은 안내문도 여기서 최신 안내로 덮인다.
+  if (reply.status === 401 || reply.status === 403) {
+    return NO_SESSION_MSG + (apiCode != null ? ` (HTTP ${reply.status}, API code ${apiCode})` : '');
+  }
   const suffix = apiCode != null ? ` (API code ${apiCode})` : '';
   return `요청 실패 (${reply.code}): ${reply.error}${suffix}`;
 }
@@ -602,21 +604,33 @@ export function createServer(bridge: BridgeLike): McpServer {
     'get_status',
     {
       title: '연결 상태 확인',
-      description: '크롬 확장 연결·넥슨 계정·현재 검색 기준 캐릭터(월드)·일일 검색 잔여 횟수 확인.',
+      description:
+        '크롬 확장 연결·넥슨 계정·현재 검색 기준 캐릭터(월드)·일일 검색 잔여 횟수 확인. state: no_extension(확장 미연결) / no_session(거래소 세션 없음) / session_expired(세션 만료·회전) / ready.',
       inputSchema: {},
       annotations: { readOnlyHint: true },
     },
     async () => {
       if (!bridge.connected) {
-        return text(DISCONNECTED_MSG);
+        return text({ connected: false, state: 'no_extension', note: DISCONNECTED_MSG });
       }
       const id = await ensureIdentity();
-      if (typeof id === 'string') return text({ connected: true, identity: null, note: id });
+      if (typeof id === 'string') return text({ connected: true, state: 'no_session', identity: null, note: id });
+      // identity는 캐시일 수 있으니 무료 GET으로 세션 생존을 실측한다.
+      // 옥션 페이지가 다른 곳에서 새 세션을 만들면 이 세션은 소리 없이 죽는다(단일 활성).
       const dl = await bridge.request({ type: 'fetch', url: DAILY_LIMIT_URL, method: 'GET' });
+      if (!dl.ok) {
+        return text({
+          connected: true,
+          state: 'session_expired',
+          identity: { ...id, worldName: worldName(id.worldId) },
+          note: errorText(dl),
+        });
+      }
       return text({
         connected: true,
+        state: 'ready',
         identity: { ...id, worldName: worldName(id.worldId) },
-        dailyLimit: dl.ok ? dl.data : undefined,
+        dailyLimit: dl.data,
       });
     }
   );
