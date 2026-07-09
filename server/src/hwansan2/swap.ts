@@ -4,8 +4,13 @@ import { baseSimulator, simulate, type ScouterData } from './scouterClient.js';
 import { fromScouterEquip, fromAuctionRaw, statAxes, toSimulatorDelta } from './axes.js';
 import { countSets, setBaseOfItem, setSwapStats } from './sets.js';
 
-const simCache = new Map<string, { delta380: number; delta300: number; unknown: string[] }>();
-export function clearSwapCache() { simCache.clear(); }
+let simCaches = new WeakMap<object, Map<string, { delta380: number; delta300: number; unknown: string[] }>>();
+export function clearSwapCache() { simCaches = new WeakMap(); }
+function cacheFor(data: object) {
+  let m = simCaches.get(data);
+  if (!m) { m = new Map(); simCaches.set(data, m); }
+  return m;
+}
 
 export async function swapDelta380(
   data: ScouterData,
@@ -20,6 +25,7 @@ export async function swapDelta380(
   if (!cur) return null;
 
   const key = `${slot}:${newItemRaw?._id ?? JSON.stringify(newItemRaw?.toolTip?.stat ?? {})}`;
+  const simCache = cacheFor(data);
   const hit = simCache.get(key);
   if (hit) return hit;
 
@@ -27,7 +33,7 @@ export async function swapDelta380(
   const nextStats = fromAuctionRaw(newItemRaw);
   const counts = countSets(data.userEquipData.map((e) => e.name));
   const setDelta = setSwapStats(counts, setBaseOfItem(cur.name), setBaseOfItem(String(newItemRaw?.itemName ?? '')));
-  const unknown = [...curStats.unknown, ...nextStats.unknown];
+  const unknown = [...new Set([...curStats.unknown, ...nextStats.unknown])];
 
   const baseIgn = Number(data.userStat.stat.ignoreDef ?? 0);
   const axDelta = toSimulatorDelta(curStats, nextStats, setDelta, ax, baseIgn);

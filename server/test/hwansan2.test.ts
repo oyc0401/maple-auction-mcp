@@ -156,7 +156,7 @@ describe('swap', () => {
     const r = await swapDelta380(idResponse, '모자', raw, { fetchFn: f as any });
     expect(r?.delta380).toBe(0);
     expect(r?.delta300).toBe(0);
-    expect(r?.unknown).toEqual(['피격 시 20% 확률로 38의 데미지 무시', '피격 시 20% 확률로 38의 데미지 무시']);
+    expect(r?.unknown).toEqual(['피격 시 20% 확률로 38의 데미지 무시']);
     expect(f).not.toHaveBeenCalled();
   });
   it('무기 슬롯은 v1 미지원 → null', async () => {
@@ -172,5 +172,16 @@ describe('swap', () => {
     // 같은 (부위,매물) 재요청은 캐시
     await swapDelta380(idResponse, '모자', { _id: 'test1', itemName: '테스트 모자', toolTip: { stat: { luk: 500 } } }, { fetchFn: f });
     expect(f).toHaveBeenCalledTimes(1);
+  });
+  it('캐시는 ScouterData 객체별 — 다른 캐릭터 데이터면 재계산한다', async () => {
+    clearSwapCache();
+    const f = vi.fn(async () => ({ ok: true, json: async () => ({ boss300_stat: 1, boss380_stat: 1 }) }) as any);
+    const raw = { _id: 'same-item', itemName: '테스트 모자', toolTip: { stat: { luk: 500 } } };
+    const dataB = structuredClone(idResponse); // 다른 캐릭터를 흉내낸 별개 객체
+    await swapDelta380(idResponse, '모자', raw, { fetchFn: f });
+    await swapDelta380(dataB, '모자', raw, { fetchFn: f });
+    expect(f).toHaveBeenCalledTimes(2); // 객체가 다르면 캐시 미공유
+    await swapDelta380(dataB, '모자', raw, { fetchFn: f });
+    expect(f).toHaveBeenCalledTimes(2); // 같은 객체는 캐시 히트
   });
 });
