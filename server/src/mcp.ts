@@ -21,10 +21,7 @@ import {
 } from './mapping.js';
 import { summarizeSearch, summarizeItem, type SearchSummary } from './summarize.js';
 import { listCharacters, type CharacterInfo } from './characters.js';
-import { fetchCharacterSpec, nexonApiKey, contributionFromRawItem, hwansanDiff, categoryToSlots, slotLabel, slotFromLabel, setSwapDelta, comboSetDelta, normalizeSet, mergeContribution, EMPTY_CONTRIBUTION, type Contribution } from './hwansan/index.js';
-
-// 세트 피스 수 변화를 이름으로 추론 가능한 부위(방어구/무기)만 세트 델타 적용. 장신구는 과대계상 방지 위해 제외.
-const SET_AWARE_SLOTS = new Set(['무기', '보조무기', '모자', '상의', '하의', '한벌옷', '신발', '장갑', '망토']);
+import { fetchScouter, swapDelta380, categoryToSlots, slotLabel } from './hwansan2/index.js';
 import {
   worldName,
   labelList,
@@ -78,7 +75,7 @@ function optionRows(keys: string[], what: string, keyDesc: string) {
 
 // 매물을 반환하는 도구 설명에 공통으로 붙는 응답 해석 안내
 const RESULT_NOTE =
-  ' 응답 매물의 isAmazingHyperUpgradeUsed=true는 놀장(놀라운 장비강화 주문서) 사용 장비: 성 수 대비 스탯이 높아 보이지만 스타포스 최대 15성 제한이 있어 보통 저평가되니 가격 비교 시 주의. powerDiff(전투력 증가량)는 캐릭터 마지막 로그아웃 시점 기준이며 보공/방무가 반영되지 않으니 신뢰하지 말 것. hwansanBySlot(있을 때)는 이 매물을 각 부위의 현재 장비 대신 낄 때 오르는 환산 주스탯(음수면 하락)을 부위별로 명시한 값으로 보공·방무·데미지 비선형까지 반영해 장비 우열 판단은 이걸 우선한다. 어느 부위를 바꾸는지 항상 부위명으로 나온다 — 단일 부위는 {"무기": 120}, 반지·펜던트는 {"반지1": .., "반지2": .., "반지3": .., "반지4": ..}처럼 전 부위 값을 주니 어느 슬롯을 교체할지 직접 고르면 된다. 무기/방어구/장신구 검색 + 넥슨 오픈 API 키가 있을 때만 채워지며, 착용 불가 매물은 생략된다. 방어구·무기 교체로 세트 피스 수가 바뀌면 세트 보너스 변화도 반영된다(장신구 세트, 그리고 DB에 없는 세트는 미반영이라 이때는 같은 세트 내 교체가 가장 정확).';
+  ' 응답 매물의 isAmazingHyperUpgradeUsed=true는 놀장(놀라운 장비강화 주문서) 사용 장비: 성 수 대비 스탯이 높아 보이지만 스타포스 최대 15성 제한이 있어 보통 저평가되니 가격 비교 시 주의. powerDiff(전투력 증가량)는 보공/방무가 반영되지 않으니 신뢰하지 말 것. hwansanBySlot(있을 때)는 이 매물을 각 부위의 현재 장비 대신 낄 때의 환산 주스탯(380) 증감으로, maplescouter 계산 기준(도핑·세트 변화 반영)이라 장비 우열 판단은 이걸 최우선한다. 검색 결과의 hwansan380이 현재 환산이므로 증감률 = hwansanBySlot 값 / hwansan380. 반지·펜던트는 {"반지1": .., "반지2": ..}처럼 전 부위 값을 주니 교체 슬롯을 직접 고르면 된다. 무기 검색과 제논·데몬어벤져 캐릭터는 아직 미지원이라 생략된다. 장신구 세트(칠흑 등) 전환 효과는 미반영이니 같은 세트 내 교체가 가장 정확하다.';
 
 // search_armor / search_weapon 이 공유하는 상세 필터
 const detailFilterSchema = {
@@ -149,41 +146,28 @@ export function createServer(bridge: BridgeLike): McpServer {
   let characters: CharacterInfo[] | null = null;
   const bodyCache = new Map<string, { body: ReturnType<typeof buildCreateBody>; sold: boolean; category?: string }>();
 
-  // 매물 id → { 원본, 후보 부위 }. compare_combo가 검색된 매물을 id로 조회한다(세션 동안 유지).
-  const itemCache = new Map<string, { raw: any; slots: string[] }>();
-  function cacheItems(rawItems: any[], category?: string) {
-    const slots = categoryToSlots(category) ?? [];
-    for (const it of rawItems) if (it?._id) itemCache.set(it._id, { raw: it, slots });
-  }
-
-  // 장비 검색(무기/방어구/장신구)이면 각 매물에 부위별 환산 주스탯 증가량(hwansanBySlot)을 채운다.
-  // 비교 기준 = 해당 검색 카테고리의 현재 착용 부위. 다부위(반지·펜던트)는 전 부위 값을 명시. 넥슨 키·캐릭명 필요.
-  // rawItems는 summary.items와 같은 순서의 원본(잠재 파싱용). 실패는 조용히 생략(검색은 그대로 동작).
+  // 장비 검색(무기 제외)이면 각 매물에 부위별 Δ환산380(hwansanBySlot)을 채운다.
+  // 계산은 maplescouter API(현재 캐릭터 스펙 + 교체 시뮬레이터). 실패는 조용히 생략(검색은 그대로 동작).
   async function enrichHwansan(summary: SearchSummary, rawItems: any[], category?: string): Promise<SearchSummary> {
     const slots = categoryToSlots(category);
-    if (!slots || !nexonApiKey()) return summary;
+    if (!slots || slots[0] === '무기') return summary; // 무기 교체는 v1 미지원(weaponAtk 의미 미확정)
     const name = identity?.characterName;
     if (!name) return summary;
-    const spec = await fetchCharacterSpec(name);
-    if (typeof spec === 'string') return summary;
-    summary.items.forEach((it, i) => {
-      if (it.powerDiff == null || !it.finalStat) return; // 착용 불가 → 생략
-      const raw = rawItems[i];
-      const cand = contributionFromRawItem(raw);
-      const newSet = normalizeSet(raw?.toolTip?.setEffects?.[0]);
-      // 한 부위 교체 시 Δ환산(교체 시 세트 변화(방어구/무기만)도 반영).
-      const diffAt = (slot: string): number => {
-        const cur = spec.equipmentBySlot[slot] ?? EMPTY_CONTRIBUTION;
-        const setDelta = SET_AWARE_SLOTS.has(slot)
-          ? setSwapDelta(spec.setCounts, spec.slotSet[slot] ?? null, newSet)
-          : EMPTY_CONTRIBUTION;
-        return Math.round(hwansanDiff(spec, cur, mergeContribution(cand, setDelta), spec.isMagic));
-      };
-      // 어느 부위를 바꾸는지 항상 명시(추측 없음). 단일 부위는 {무기:..}, 반지·펜던트는 {반지1:.., 반지2:..} 전부.
+    let data;
+    try { data = await fetchScouter(name); } catch { return summary; }
+    summary.hwansan380 = data.calculatedData.boss380_stat;
+    for (let i = 0; i < summary.items.length; i++) {
+      const it = summary.items[i];
+      if (it.powerDiff == null || !it.finalStat) continue; // 착용 불가 → 생략
       const bySlot: Record<string, number> = {};
-      for (const slot of slots) bySlot[slotLabel(slot)] = diffAt(slot);
-      it.hwansanBySlot = bySlot;
-    });
+      for (const slot of slots) {
+        try {
+          const r = await swapDelta380(data, slot, rawItems[i]);
+          if (r) bySlot[slotLabel(slot)] = r.delta380;
+        } catch { /* 개별 실패 생략 */ }
+      }
+      if (Object.keys(bySlot).length) it.hwansanBySlot = bySlot;
+    }
     return summary;
   }
 
@@ -220,7 +204,6 @@ export function createServer(bridge: BridgeLike): McpServer {
     if (!created.ok) return text(errorText(created));
     const data = created.data as any;
     if (data?.searchKey) bodyCache.set(data.searchKey, { body, sold, category: params.category });
-    cacheItems(data.items ?? [], params.category);
     let summary = summarizeSearch(data);
     if (!sold) summary = await enrichHwansan(summary, data.items ?? [], params.category);
     return text({ ...summary, searchRemaining: await searchRemaining() });
@@ -312,7 +295,6 @@ export function createServer(bridge: BridgeLike): McpServer {
       const cachedEntry = bodyCache.get(searchKey);
       const sold = cachedEntry?.sold ?? false;
       const enrich = async (data: any) => {
-        cacheItems(data?.items ?? [], cachedEntry?.category);
         const s = summarizeSearch(data);
         return sold ? s : await enrichHwansan(s, data?.items ?? [], cachedEntry?.category);
       };
@@ -334,88 +316,6 @@ export function createServer(bridge: BridgeLike): McpServer {
         }
       }
       return text(errorText(reply));
-    }
-  );
-
-  server.registerTool(
-    'compare_combo',
-    {
-      title: '조합 환산 비교 (여러 매물 동시 착용)',
-      description:
-        '검색으로 조회했던 매물 여러 개를 동시에 착용한다고 가정하고 현재 장비 대비 오르는 환산 주스탯 총합을 계산한다. 각 매물을 어느 부위에 낄지 직접 지정한다("부위:매물id"). 각 매물은 그 부위의 현재 장비를 대체하며, 묶음 전체가 도달하는 세트 단계로 세트 보너스를 재계산한다(단일 검색으로는 못 보는 세트 전환을 판단 — 예: 아케인셰이드 여러 부위를 함께 사서 세트 완성). 매물은 먼저 search_weapon/search_armor/get_page로 조회돼 있어야 한다. 넥슨 오픈 API 키 필요.',
-      inputSchema: {
-        assignments: z.array(z.string()).min(1).max(12).describe(
-          '"부위:매물id" 배열. 부위는 검색결과 hwansanBySlot의 키를 그대로 쓴다(무기·보조무기·모자·상의·하의·한벌옷·신발·장갑·망토·얼굴장식·눈장식·귀고리·반지1~4·펜던트1/펜던트2·벨트·어깨장식·엠블렘·훈장·뱃지·포켓 아이템). 매물id는 검색결과의 id(예: "반지1:Zx9...W0e:0"). 같은 부위 중복 지정 불가.'
-        ),
-      },
-    },
-    async ({ assignments }) => {
-      if (!nexonApiKey()) return text('NEXON_DEVELOPER_KEY가 설정되어 있지 않아 환산을 계산할 수 없습니다.');
-      const id = await ensureIdentity();
-      if (typeof id === 'string') return text(id);
-      const name = identity?.characterName;
-      if (!name) return text('현재 캐릭터 이름을 확인할 수 없어 환산을 계산할 수 없습니다.');
-      const spec = await fetchCharacterSpec(name);
-      if (typeof spec === 'string') return text(spec);
-
-      // "부위:매물id" 파싱. 매물id 자체가 "{tradeSn}:{subIdx}"라 콜론을 포함하므로 첫 콜론에서만 쪼갠다.
-      const parsed = assignments.map((entry) => {
-        const c = entry.indexOf(':');
-        if (c < 0) return { entry, error: '형식은 "부위:매물id" (예: 반지1:Zx9...W0e:0)' };
-        return { entry, slot: slotFromLabel(entry.slice(0, c).trim()), iid: entry.slice(c + 1).trim() };
-      });
-      const badFmt = parsed.filter((p) => p.error);
-      if (badFmt.length) return text(`형식 오류: ${badFmt.map((p) => p.entry).join(', ')}. "부위:매물id" 형태로 입력하세요.`);
-
-      const missing = parsed.filter((p) => !itemCache.get(p.iid!)).map((p) => p.iid);
-      if (missing.length) {
-        return text(`검색으로 불러오지 않은 매물 id: ${missing.join(', ')}. search_weapon/search_armor/get_page로 먼저 조회한 뒤 다시 시도하세요.`);
-      }
-
-      // 지정 부위가 그 매물의 착용 가능 부위인지 + 같은 부위 중복이 아닌지 검증(추측 없이 사용자가 명시).
-      const used = new Set<string>();
-      for (const p of parsed) {
-        const e = itemCache.get(p.iid!)!;
-        const allowed = e.slots.length ? e.slots : ['무기'];
-        if (!allowed.includes(p.slot!)) {
-          return text(`${p.iid} 매물은 ${slotLabel(p.slot!)} 부위에 착용할 수 없습니다. 가능 부위: ${allowed.map(slotLabel).join(', ')}`);
-        }
-        if (used.has(p.slot!)) return text(`같은 부위(${slotLabel(p.slot!)})에 매물이 둘 이상 지정되었습니다. 한 부위엔 하나만 지정하세요.`);
-        used.add(p.slot!);
-      }
-
-      const assigned = parsed.map((p) => {
-        const e = itemCache.get(p.iid!)!;
-        return { iid: p.iid!, raw: e.raw, slot: p.slot!, cand: contributionFromRawItem(e.raw) };
-      });
-
-      let removed: Contribution = EMPTY_CONTRIBUTION;
-      let added: Contribution = EMPTY_CONTRIBUTION;
-      const changes: { oldSet: string | null; newSet: string | null }[] = [];
-      for (const a of assigned) {
-        removed = mergeContribution(removed, spec.equipmentBySlot[a.slot] ?? EMPTY_CONTRIBUTION);
-        added = mergeContribution(added, a.cand);
-        if (SET_AWARE_SLOTS.has(a.slot)) {
-          changes.push({ oldSet: spec.slotSet[a.slot] ?? null, newSet: normalizeSet(a.raw?.toolTip?.setEffects?.[0]) });
-        }
-      }
-      const setDelta = comboSetDelta(spec.setCounts, changes);
-      const comboHwansanDiff = Math.round(hwansanDiff(spec, removed, mergeContribution(added, setDelta), spec.isMagic));
-
-      const items = assigned.map((a) => ({
-        id: a.iid,
-        name: a.raw.itemName,
-        slot: slotLabel(a.slot),
-        price: Number(a.raw.pricePerItem),
-        soloDiff: Math.round(hwansanDiff(spec, spec.equipmentBySlot[a.slot] ?? EMPTY_CONTRIBUTION, a.cand, spec.isMagic)),
-      }));
-      const totalPrice = items.reduce((s, p) => s + (p.price || 0), 0);
-      return text({
-        comboHwansanDiff,
-        totalPrice,
-        items,
-        note: '각 매물이 지정한 부위의 현재 장비를 대체하고, 묶음이 도달하는 세트 단계로 세트 보너스를 반영한 총 환산 증가량. soloDiff는 각 매물을 단독 교체했을 때의 환산이라, 합보다 comboHwansanDiff가 크면 세트 시너지, 작으면 세트 파괴 손실이다.',
-      });
     }
   );
 
