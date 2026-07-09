@@ -4,6 +4,7 @@ import { fetchScouter, baseSimulator, clearScouterCache } from '../src/hwansan2/
 import { parseOptionLine } from '../src/hwansan2/optionDict.js';
 import { fromScouterEquip, fromAuctionRaw, statAxes, toSimulatorDelta, emptyItemStats } from '../src/hwansan2/axes.js';
 import { countSets, setSwapStats, setBaseOfItem } from '../src/hwansan2/sets.js';
+import { swapDelta380, clearSwapCache } from '../src/hwansan2/swap.js';
 
 const idResponse = JSON.parse(readFileSync(new URL('../src/scouter/id-response', import.meta.url), 'utf8'));
 const okFetch = () => vi.fn(async () => ({ ok: true, status: 201, json: async () => idResponse } as Response));
@@ -123,8 +124,53 @@ describe('sets', () => {
   });
 
   it('럭키 +1은 3피스 이상인 모든 세트에 동시 적용, 2피스엔 미적용', () => {
-    const counts = countSets(['아케인셰이드 체인', '아케인셰이드 슈트', '아케인셰이드 숄더', '앱솔랩스 케이프', '앱솔랩스 슈즈', '카오스 벨룸의 헬름']);
+    const counts = countSets(['아케인셰이드 체인', '아케인셰이드 슈트', '아케인셰이드 숄더', '앱솔랩스 케이프', '앱솔랍스 슈즈', '카오스 벨룸의 헬름']);
     expect(counts['아케인셰이드']).toBe(4);
     expect(counts['앱솔랩스']).toBe(2); // 3피스 미만이라 럭키 미적용
+  });
+});
+
+describe('swap', () => {
+  it('항등 교체: 현재 장비를 경매장 포맷으로 넣으면 POST 없이 Δ0', async () => {
+    clearSwapCache();
+    const f = vi.fn(); // 호출되면 실패
+    const hat = idResponse.userEquipData.find((e: any) => e.slot === '모자');
+    // 경매장 raw 형태로 변환(같은 스탯·잠재·이름)
+    const raw = {
+      itemName: hat.name,
+      toolTip: {
+        stat: {
+          str: Number(hat.totalOption.str), dex: Number(hat.totalOption.dex),
+          int: Number(hat.totalOption.int), luk: Number(hat.totalOption.luk),
+          mhp: Number(hat.totalOption.max_hp), pad: Number(hat.totalOption.attack_power),
+          mad: Number(hat.totalOption.magic_power), bdr: Number(hat.totalOption.boss_damage),
+          dam: Number(hat.totalOption.damage), imdr: Number(hat.totalOption.ignore_monster_armor),
+          all: Number(hat.totalOption.all_stat),
+        },
+        upgradeInfo: {
+          potential: { entries: (hat.potential_option_1 ?? []).filter(Boolean).map((text: string) => ({ text })) },
+          additionalPotential: { entries: (hat.additional_potential_option_1 ?? []).filter(Boolean).map((text: string) => ({ text })) },
+        },
+      },
+    };
+    const r = await swapDelta380(idResponse, '모자', raw, { fetchFn: f as any });
+    expect(r?.delta380).toBe(0);
+    expect(r?.delta300).toBe(0);
+    expect(r?.unknown).toEqual(['피격 시 20% 확률로 38의 데미지 무시', '피격 시 20% 확률로 38의 데미지 무시']);
+    expect(f).not.toHaveBeenCalled();
+  });
+  it('무기 슬롯은 v1 미지원 → null', async () => {
+    const r = await swapDelta380(idResponse, '무기', { itemName: 'x', toolTip: {} }, { fetchFn: vi.fn() as any });
+    expect(r).toBeNull();
+  });
+  it('스탯이 다르면 dmg-simulator를 호출해 Δ를 계산한다', async () => {
+    clearSwapCache();
+    const f = vi.fn(async () => ({ ok: true, json: async () => ({ boss300_stat: 30500, boss380_stat: 30450 }) }) as any);
+    const r = await swapDelta380(idResponse, '모자', { _id: 'test1', itemName: '테스트 모자', toolTip: { stat: { luk: 500 } } }, { fetchFn: f });
+    expect(r!.delta380).toBe(30450 - 30371);
+    expect(r!.delta300).toBe(30500 - 30404);
+    // 같은 (부위,매물) 재요청은 캐시
+    await swapDelta380(idResponse, '모자', { _id: 'test1', itemName: '테스트 모자', toolTip: { stat: { luk: 500 } } }, { fetchFn: f });
+    expect(f).toHaveBeenCalledTimes(1);
   });
 });
