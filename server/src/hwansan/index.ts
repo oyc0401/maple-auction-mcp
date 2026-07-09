@@ -14,3 +14,4 @@ export {
 export { resolveStatModel, isMagicModel, type MainStat, type StatModel } from './jobs.js';
 export { categoryToSlots } from './slots.js';
 export { setSwapDelta, comboSetDelta } from './sets.js';
+export { getBaseline } from './baseline.js';

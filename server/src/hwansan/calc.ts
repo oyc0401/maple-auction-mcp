@@ -33,6 +33,11 @@ export interface CharState {
   damageBossSum: number;
   ignoreDef: number; // 실방무 %
   critRate: number; critDamage: number; finalDamage: number;
+  // simaple식 스탯 분해 (있으면 정확 계산, 없으면 예전 근사로 동작 = 하위호환).
+  // 총합 = 순수(base) × (1 + 스탯%/100) + static(심볼 등 %미반영). 심볼은 스탯%를 안 받으므로 분리 필수.
+  staticStr?: number; staticDex?: number; staticInt?: number; staticLuk?: number; // 심볼 등 %미반영 순수치
+  pctStr?: number; pctDex?: number; pctInt?: number; pctLuk?: number; // 현재 총 주스탯%(장비 합산)
+  atkPct?: number; matkPct?: number; // 현재 총 공격력%/마력%
 }
 
 // ── 옵션 텍스트 파서 ────────────────────────────────────────────────
@@ -185,16 +190,26 @@ function critFactor(critRate: number, critDamage: number): number {
   return p * (0.35 + critDamage / 100) + 1;
 }
 
-export function damageMultiplier(s: CharState): number {
+export function damageMultiplier(s: CharState, bossDefense: number = BOSS_DEFENSE): number {
   const dmgFactor = 1 + s.damageBossSum / 100;
-  const defFactor = Math.max(0, 1 - (BOSS_DEFENSE / 100) * (1 - s.ignoreDef / 100));
+  const defFactor = Math.max(0, 1 - (bossDefense / 100) * (1 - s.ignoreDef / 100));
   const finalFactor = 1 + s.finalDamage / 100;
   return statFactor(s) * s.attack * dmgFactor * critFactor(s.critRate, s.critDamage) * defFactor * finalFactor;
 }
 
-// 한 스탯의 교체 후 최종값: 수치 교체 + %는 최종총합 기준 근사 가산.
-function swapStat(base: number, curNum: number, curPct: number, candNum: number, candPct: number): number {
-  return base - curNum - base * (curPct / 100) + candNum + base * (candPct / 100);
+// simaple식 스탯 교체: 총합 = 순수(base) × (1 + 스탯%/100) + static(심볼 등 %미반영).
+// 아이템의 순수치(flat)는 base에, %는 스탯%에 반영한 뒤 다시 합성한다.
+//  - 순수 스탯은 스탯% 배율만큼 증폭돼서 반영됨 (예전엔 그냥 더해서 과소계산).
+//  - %옵션은 순수 base에만 곱함 (예전엔 심볼 포함 총합에 곱해서 과대계산).
+// static/pct 미제공(=0)이면 base=총합이라 예전 근사와 유사하게 동작(하위호환·테스트 통과).
+function swapStat(
+  total: number, staticVal: number, pct: number,
+  curFlat: number, curPct: number, candFlat: number, candPct: number
+): number {
+  const base = (total - staticVal) / (1 + pct / 100);
+  const newBase = base - curFlat + candFlat;
+  const newPct = pct - curPct + candPct;
+  return newBase * (1 + newPct / 100) + staticVal;
 }
 
 // 현재 장비(cur)를 candidate로 교체한 새 상태. isMagic 여부는 attack에 이미 반영돼 있으므로
@@ -203,28 +218,34 @@ function swapState(s: CharState, cur: Contribution, cand: Contribution, isMagic:
   const curNoWeaponFactor = (1 - s.ignoreDef / 100) / (cur.idaFactor || 1);
   const newIgnore = 100 * (1 - curNoWeaponFactor * cand.idaFactor);
   const atkNum = (c: Contribution) => (isMagic ? c.matk : c.atk);
-  const atkPct = (c: Contribution) => (isMagic ? c.matkPct : c.atkPct);
+  const atkPctOf = (c: Contribution) => (isMagic ? c.matkPct : c.atkPct);
+  const attackPct = isMagic ? (s.matkPct ?? 0) : (s.atkPct ?? 0);
   return {
-    model: s.model,
-    level: s.level,
-    str: swapStat(s.str, cur.str + cur.allStat, cur.strPct + cur.allPct, cand.str + cand.allStat, cand.strPct + cand.allPct),
-    dex: swapStat(s.dex, cur.dex + cur.allStat, cur.dexPct + cur.allPct, cand.dex + cand.allStat, cand.dexPct + cand.allPct),
-    int: swapStat(s.int, cur.int + cur.allStat, cur.intPct + cur.allPct, cand.int + cand.allStat, cand.intPct + cand.allPct),
-    luk: swapStat(s.luk, cur.luk + cur.allStat, cur.lukPct + cur.allPct, cand.luk + cand.allStat, cand.lukPct + cand.allPct),
-    hp: swapStat(s.hp, cur.hp, cur.hpPct, cand.hp, cand.hpPct),
-    attack: swapStat(s.attack, atkNum(cur), atkPct(cur), atkNum(cand), atkPct(cand)),
+    ...s,
+    str: swapStat(s.str, s.staticStr ?? 0, s.pctStr ?? 0, cur.str + cur.allStat, cur.strPct + cur.allPct, cand.str + cand.allStat, cand.strPct + cand.allPct),
+    dex: swapStat(s.dex, s.staticDex ?? 0, s.pctDex ?? 0, cur.dex + cur.allStat, cur.dexPct + cur.allPct, cand.dex + cand.allStat, cand.dexPct + cand.allPct),
+    int: swapStat(s.int, s.staticInt ?? 0, s.pctInt ?? 0, cur.int + cur.allStat, cur.intPct + cur.allPct, cand.int + cand.allStat, cand.intPct + cand.allPct),
+    luk: swapStat(s.luk, s.staticLuk ?? 0, s.pctLuk ?? 0, cur.luk + cur.allStat, cur.lukPct + cur.allPct, cand.luk + cand.allStat, cand.lukPct + cand.allPct),
+    hp: swapStat(s.hp, 0, 0, cur.hp, cur.hpPct, cand.hp, cand.hpPct),
+    attack: swapStat(s.attack, 0, attackPct, atkNum(cur), atkPctOf(cur), atkNum(cand), atkPctOf(cand)),
     damageBossSum: s.damageBossSum - cur.dmgBoss + cand.dmgBoss,
     ignoreDef: newIgnore,
-    critRate: s.critRate,
     critDamage: s.critDamage - cur.critDmg + cand.critDmg,
     finalDamage: s.finalDamage - cur.finalDmg + cand.finalDmg,
   };
 }
 
 // Δ환산: 현재 장비(cur)를 candidate로 교체 시 오르는 환산 주스탯. 음수면 하락.
-export function hwansanDiff(s: CharState, cur: Contribution, cand: Contribution, isMagic: boolean): number {
-  const before = damageMultiplier(s);
+// bossDefense: 환산 기준 보스 방어율(%). 300(기본)/380 등. 사이트와 맞추려면 380.
+export function hwansanDiff(
+  s: CharState,
+  cur: Contribution,
+  cand: Contribution,
+  isMagic: boolean,
+  bossDefense: number = BOSS_DEFENSE
+): number {
+  const before = damageMultiplier(s, bossDefense);
   if (before <= 0) return 0;
-  const after = damageMultiplier(swapState(s, cur, cand, isMagic));
+  const after = damageMultiplier(swapState(s, cur, cand, isMagic), bossDefense);
   return ((after / before - 1) * statFactor(s)) / 4;
 }

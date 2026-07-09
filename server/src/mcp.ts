@@ -21,7 +21,10 @@ import {
 } from './mapping.js';
 import { summarizeSearch, summarizeItem, type SearchSummary } from './summarize.js';
 import { listCharacters, type CharacterInfo } from './characters.js';
-import { fetchCharacterSpec, nexonApiKey, contributionFromRawItem, hwansanDiff, categoryToSlots, setSwapDelta, comboSetDelta, mergeContribution, EMPTY_CONTRIBUTION, type Contribution } from './hwansan/index.js';
+import { fetchCharacterSpec, nexonApiKey, contributionFromRawItem, hwansanDiff, categoryToSlots, setSwapDelta, comboSetDelta, mergeContribution, EMPTY_CONTRIBUTION, getBaseline, type Contribution } from './hwansan/index.js';
+
+// 환산 기준 보스 방어율. 380% = 대부분의 환산 사이트 기본값(하드 보스). 사이트와 숫자를 맞추기 위함.
+const HWANSAN_BOSS_DEFENSE = 380;
 
 // 세트 피스 수 변화를 이름으로 추론 가능한 부위(방어구/무기)만 세트 델타 적용. 장신구는 과대계상 방지 위해 제외.
 const SET_AWARE_SLOTS = new Set(['무기', '보조무기', '모자', '상의', '하의', '한벌옷', '신발', '장갑', '망토']);
@@ -78,7 +81,7 @@ function optionRows(keys: string[], what: string, keyDesc: string) {
 
 // 매물을 반환하는 도구 설명에 공통으로 붙는 응답 해석 안내
 const RESULT_NOTE =
-  ' 응답 매물의 isAmazingHyperUpgradeUsed=true는 놀장(놀라운 장비강화 주문서) 사용 장비: 성 수 대비 스탯이 높아 보이지만 스타포스 최대 15성 제한이 있어 보통 저평가되니 가격 비교 시 주의. powerDiff(전투력 증가량)는 캐릭터 마지막 로그아웃 시점 기준이며 보공/방무가 반영되지 않으니 신뢰하지 말 것. hwansanDiff(있을 때)는 이 매물을 현재 착용 중인 같은 부위 장비 대신 낄 때 오르는 환산 주스탯(음수면 하락)으로 보공·방무·데미지 비선형까지 반영한 값이라 장비 우열 판단은 이걸 우선한다(반지·펜던트 등 다부위는 교체 시 가장 이득인 부위 기준). 무기/방어구/장신구 검색 + 넥슨 오픈 API 키가 있을 때만 채워지며, 착용 불가 매물은 생략된다. 방어구·무기 교체로 세트 피스 수가 바뀌면 세트 보너스 변화도 반영된다(장신구 세트, 그리고 DB에 없는 세트는 미반영이라 이때는 같은 세트 내 교체가 가장 정확).';
+  ' 응답 매물의 isAmazingHyperUpgradeUsed=true는 놀장(놀라운 장비강화 주문서) 사용 장비: 성 수 대비 스탯이 높아 보이지만 스타포스 최대 15성 제한이 있어 보통 저평가되니 가격 비교 시 주의. powerDiff(전투력 증가량)는 캐릭터 마지막 로그아웃 시점 기준이며 보공/방무가 반영되지 않으니 신뢰하지 말 것. hwansanDiff(있을 때)는 이 매물을 현재 착용 중인 같은 부위 장비 대신 낄 때 오르는 환산 주스탯(음수면 하락)으로 보공·방무·데미지 비선형까지 반영한 값이라 장비 우열 판단은 이걸 우선한다(반지·펜던트 등 다부위는 교체 시 가장 이득인 부위 기준). 무기/방어구/장신구 검색 + 넥슨 오픈 API 키가 있을 때만 채워지며, 착용 불가 매물은 생략된다. 방어구·무기 교체로 세트 피스 수가 바뀌면 세트 보너스 변화도 반영된다(장신구 세트, 그리고 DB에 없는 세트는 미반영이라 이때는 같은 세트 내 교체가 가장 정확). 환산은 보스 방어율 380% 기준이다. hwansanBefore/hwansanAfter가 있으면 각각 기존 환산과 이 매물로 교체 후 예상 환산이며(기준점이 설정된 캐릭터만), 사용자에게는 "기존 41,485 → 변경 50,361 (+8,876)"처럼 기존→변경을 함께 보여주는 게 읽기 좋다.';
 
 // search_armor / search_weapon 이 공유하는 상세 필터
 const detailFilterSchema = {
@@ -166,6 +169,7 @@ export function createServer(bridge: BridgeLike): McpServer {
     if (!name) return summary;
     const spec = await fetchCharacterSpec(name);
     if (typeof spec === 'string') return summary;
+    const baseline = getBaseline(name); // 현재 절대 환산(사이트값). 없으면 Δ만 표시.
     summary.items.forEach((it, i) => {
       if (it.powerDiff == null || !it.finalStat) return; // 착용 불가 → 생략
       const raw = rawItems[i];
@@ -177,9 +181,15 @@ export function createServer(bridge: BridgeLike): McpServer {
         const setDelta = SET_AWARE_SLOTS.has(slot)
           ? setSwapDelta(spec.setCounts, spec.slotSet[slot] ?? null, newSet)
           : EMPTY_CONTRIBUTION;
-        return hwansanDiff(spec, cur, mergeContribution(cand, setDelta), spec.isMagic);
+        return hwansanDiff(spec, cur, mergeContribution(cand, setDelta), spec.isMagic, HWANSAN_BOSS_DEFENSE);
       });
-      it.hwansanDiff = Math.round(Math.max(...diffs));
+      const diff = Math.round(Math.max(...diffs));
+      it.hwansanDiff = diff;
+      // 기준점(현재 환산)이 있으면 "기존 → 변경" 절대값도 채운다 (통장 잔고 방식).
+      if (baseline != null) {
+        it.hwansanBefore = baseline;
+        it.hwansanAfter = baseline + diff;
+      }
     });
     return summary;
   }

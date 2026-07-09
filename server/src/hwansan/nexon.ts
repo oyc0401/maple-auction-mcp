@@ -71,11 +71,13 @@ export async function fetchCharacterSpec(characterName: string): Promise<Charact
     const { ocid } = await fetchJson('/id', { character_name: characterName }, key);
     if (!ocid) return `캐릭터를 찾지 못했습니다: ${characterName}`;
 
-    const [basicRes, statRes, equipRes, setRes] = await Promise.all([
+    const [basicRes, statRes, equipRes, setRes, symbolRes] = await Promise.all([
       fetchJson('/character/basic', { ocid }, key),
       fetchJson('/character/stat', { ocid }, key),
       fetchJson('/character/item-equipment', { ocid }, key),
       fetchJson('/character/set-effect', { ocid }, key),
+      // 심볼 = 스탯%를 안 받는 %미반영(static) 스탯. 3분할 계산에 필수. 실패해도 환산은 진행.
+      fetchJson('/character/symbol-equipment', { ocid }, key).catch(() => ({ symbol: [] })),
     ]);
 
     const m = statMap(statRes.final_stat);
@@ -97,6 +99,25 @@ export async function fetchCharacterSpec(characterName: string): Promise<Charact
       const full = base ? resolveFullSet(base, variantSuffix) : null;
       if (full) slotSet[slot] = full;
     }
+    // 심볼(static, %미반영) 합산.
+    let staticStr = 0, staticDex = 0, staticInt = 0, staticLuk = 0;
+    for (const s of (symbolRes.symbol ?? []) as any[]) {
+      staticStr += Number(s.symbol_str ?? 0);
+      staticDex += Number(s.symbol_dex ?? 0);
+      staticInt += Number(s.symbol_int ?? 0);
+      staticLuk += Number(s.symbol_luk ?? 0);
+    }
+    // 현재 총 주스탯%·공%(장비 합산). 올스탯%는 모든 스탯에 반영. (하이퍼/어빌은 주스탯%·공%를 안 줌)
+    let pctStr = 0, pctDex = 0, pctInt = 0, pctLuk = 0, atkPct = 0, matkPct = 0;
+    for (const c of Object.values(bySlot)) {
+      pctStr += c.strPct + c.allPct;
+      pctDex += c.dexPct + c.allPct;
+      pctInt += c.intPct + c.allPct;
+      pctLuk += c.lukPct + c.allPct;
+      atkPct += c.atkPct;
+      matkPct += c.matkPct;
+    }
+
     const weapon = equip.find((it) => it.item_equipment_slot === '무기');
 
     const spec: CharacterSpec = {
@@ -112,6 +133,8 @@ export async function fetchCharacterSpec(characterName: string): Promise<Charact
       critRate: m['크리티컬 확률'] ?? 0,
       critDamage: m['크리티컬 데미지'] ?? 0,
       finalDamage: m['최종 데미지'] ?? 0,
+      staticStr, staticDex, staticInt, staticLuk,
+      pctStr, pctDex, pctInt, pctLuk, atkPct, matkPct,
       currentWeapon: weapon ? contributionFromEquip(weapon) : null,
       equipmentBySlot: bySlot,
       setCounts,
