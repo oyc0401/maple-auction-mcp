@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import { fetchScouter, baseSimulator, clearScouterCache } from '../src/hwansan2/scouterClient.js';
 import { parseOptionLine } from '../src/hwansan2/optionDict.js';
 import { fromScouterEquip, fromAuctionRaw, statAxes, toSimulatorDelta, emptyItemStats } from '../src/hwansan2/axes.js';
-import { countSets, setSwapStatsByNames, setBaseOfItem } from '../src/hwansan2/sets.js';
+import { countSets, parseSetOption, setSwapStatsByNames, setBaseOfItem } from '../src/hwansan2/sets.js';
 import { swapDelta380, clearSwapCache } from '../src/hwansan2/swap.js';
 
 const idResponse = JSON.parse(readFileSync(new URL('../src/scouter/id-response', import.meta.url), 'utf8'));
@@ -204,5 +204,55 @@ describe('swap', () => {
     expect(f).toHaveBeenCalledTimes(2); // 객체가 다르면 캐시 미공유
     await swapDelta380(dataB, '모자', raw, { fetchFn: f });
     expect(f).toHaveBeenCalledTimes(2); // 같은 객체는 캐시 히트
+  });
+});
+
+describe('sets — 장신구 세트·API 교차검증', () => {
+  it('parseSetOption: 스카우터 set_option 문자열 파싱', () => {
+    const c = parseSetOption('루타비스 세트(도적) : 2 | 앱솔랩스 세트(도적) : 5 | 보스 장신구 세트 : 9 | ');
+    expect(c).toEqual({ 루타비스: 2, 앱솔랩스: 5, '보스 장신구': 9 });
+  });
+  it('countSets가 검증 캐릭터 실측 set_option과 정확히 일치한다', () => {
+    const names = idResponse.userEquipData.map((e: any) => e.name);
+    const api = parseSetOption(idResponse.userApiData.info.set_option);
+    const ours = countSets(names);
+    for (const [set, cnt] of Object.entries(api)) expect(ours[set], set).toBe(cnt);
+  });
+  it('칠흑 멤버십: 이름으로 세트 소속 인식', () => {
+    expect(setBaseOfItem('몽환의 벨트')).toBe('칠흑의 보스');
+    expect(setBaseOfItem('커맨더 포스 이어링')).toBe('칠흑의 보스');
+  });
+  it('여명 전환(dawnCount): 전환분은 보장 대신 여명으로 카운트', () => {
+    const names = ['가디언 엔젤 링', '데이브레이크 펜던트', '데아 시두스 이어링'];
+    expect(countSets(names)).toEqual({ '보스 장신구': 3 });
+    expect(countSets(names, { dawnCount: 2 })).toEqual({ '보스 장신구': 1, '여명의 보스': 2 });
+  });
+  it('aliases: 매물의 공식 세트명(setEffects) 강제 지정', () => {
+    const c = countSets(['미지의 신규 반지'], { aliases: { '미지의 신규 반지': '칠흑의 보스' } });
+    expect(c).toEqual({ '칠흑의 보스': 1 });
+  });
+});
+
+describe('axes — 데몬어벤져·제논', () => {
+  it('데벤져: HP가 main 축, STR이 sub 축', () => {
+    const ust = structuredClone(idResponse.userStat);
+    ust.stat.myClass = '데몬어벤져';
+    const ax = statAxes(ust);
+    expect(ax.kind).toBe('da');
+    const next = { ...emptyItemStats(), hp: 3000, hpPct: 6, flat: { STR: 30, DEX: 0, INT: 0, LUK: 0 } };
+    const sim = toSimulatorDelta(emptyItemStats(), next, emptyItemStats(), ax, 90)!;
+    expect(sim.mainStat).toBe('3000');
+    expect(sim.mainStatPer).toBe('6');
+    expect(sim.subStat).toBe('30');
+  });
+  it('제논: STR+DEX+LUK 깡 합산이 main 축', () => {
+    const ust = structuredClone(idResponse.userStat);
+    ust.stat.myClass = '제논';
+    const ax = statAxes(ust);
+    expect(ax.kind).toBe('xenon');
+    const next = { ...emptyItemStats(), flat: { STR: 10, DEX: 20, INT: 5, LUK: 100 } };
+    const sim = toSimulatorDelta(emptyItemStats(), next, emptyItemStats(), ax, 90)!;
+    expect(sim.mainStat).toBe('130'); // INT 제외
+    expect(sim.subStat).toBe('0');
   });
 });

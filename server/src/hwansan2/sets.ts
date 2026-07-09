@@ -19,10 +19,48 @@ const SET_ALIASES: [RegExp, string][] = [
   [/^(하이네스|이글아이|트릭스터|파프니르) /, '루타비스'],
 ];
 
+// 장신구 세트 멤버십 (이름에 세트명이 없어 개별 명시). 보스 장신구 목록은 검증 캐릭터 실측
+// (스카우터 set_option "보스 장신구 세트 : 9"와 착용 9종 교차 확인) + 통용 구성. 여명 4종은
+// 미전환 시 보스 장신구 소속(실측: 가디언 엔젤 링이 보장 9피스에 포함) — 전환분은 dawnCount로 처리.
+const ACCESSORY_MEMBERS = new Map<string, string>([
+  // 보스 장신구
+  ['응축된 힘의 결정석', '보스 장신구'], ['블랙빈 마크', '보스 장신구'], ['아쿠아틱 레터 눈장식', '보스 장신구'],
+  ['파풀라투스 마크', '보스 장신구'], ['데아 시두스 이어링', '보스 장신구'], ['골든 클로버 벨트', '보스 장신구'],
+  ['매커네이터 펜던트', '보스 장신구'], ['도미네이터 펜던트', '보스 장신구'], ['핑크빛 성배', '보스 장신구'],
+  ['크리스탈 웬투스 뱃지', '보스 장신구'], ['로얄 블랙메탈 숄더', '보스 장신구'], ['고귀한 이피아의 반지', '보스 장신구'],
+  // 여명(미전환 시 보스 장신구로 카운트)
+  ['가디언 엔젤 링', '보스 장신구'], ['트와일라이트 마크', '보스 장신구'],
+  ['에스텔라 이어링스', '보스 장신구'], ['데이브레이크 펜던트', '보스 장신구'],
+  // 칠흑
+  ['루즈 컨트롤 마시너리', '칠흑의 보스'], ['마력이 깃든 안대', '칠흑의 보스'], ['블랙 하트', '칠흑의 보스'],
+  ['몽환의 벨트', '칠흑의 보스'], ['고통의 근원', '칠흑의 보스'], ['창세의 뱃지', '칠흑의 보스'],
+  ['커맨더 포스 이어링', '칠흑의 보스'], ['거대한 공포', '칠흑의 보스'], ['저주받은 적의 마도서', '칠흑의 보스'],
+  ['컴플리트 언더컨트롤', '칠흑의 보스'],
+  // 광휘의 보스: 구성 아이템 미실측 — 매물 측은 toolTip.setEffects(공식 세트명)로 인식되고,
+  // 현재 장비 측 누락은 set_option 교차검증(unknown 리포트)으로 드러난다.
+]);
+
+// 여명 전환 가능 아이템(주문서로 보스 장신구 → 여명 세트 전환)
+const DAWN_CONVERTIBLE = new Set(['가디언 엔젤 링', '트와일라이트 마크', '에스텔라 이어링스', '데이브레이크 펜던트']);
+
 export function setBaseOfItem(itemName: string): string | null {
   if (!itemName) return null;
+  for (const [member, base] of ACCESSORY_MEMBERS) if (itemName.includes(member)) return base;
   for (const [re, base] of SET_ALIASES) if (re.test(itemName)) return base;
   return INFERABLE_BASES.find((b) => itemName.includes(b)) ?? null;
+}
+
+// 스카우터 userApiData.info.set_option("루타비스 세트(도적) : 2 | 보스 장신구 세트 : 9 | ") → base별 카운트
+export function parseSetOption(setOption: string | null | undefined): Record<string, number> {
+  const out: Record<string, number> = {};
+  if (!setOption) return out;
+  for (const part of setOption.split('|')) {
+    const m = part.trim().match(/^(.+?)\s*:\s*(\d+)$/);
+    if (!m) continue;
+    const base = normalizeSet(m[1]);
+    if (base) out[base] = Number(m[2]);
+  }
+  return out;
 }
 
 // 럭키 아이템 우선순위(넥슨 오피셜): 카벨모자 > 스칼렛 이어링 > 스칼렛 무기 = 제네시스 무기 > 스칼렛 링 > 스칼렛 견장.
@@ -46,11 +84,18 @@ function luckyOf(names: string[]): string | null {
   return best?.name ?? null;
 }
 
+export interface SetCountOpts {
+  aliases?: Record<string, string>; // 아이템명 → 세트 base 강제 지정 (경매장 매물의 toolTip.setEffects 공식 세트명)
+  dawnCount?: number; //              여명 전환된 피스 수 (set_option의 '여명의 보스' 카운트) — 전환분은 보장 대신 여명으로
+}
+
 // 장비명 목록 → 세트base별 피스 수. 럭키템 1개가 3피스 이상인 모든 세트에 +1.
-export function countSets(equipNames: string[]): Record<string, number> {
+export function countSets(equipNames: string[], opts: SetCountOpts = {}): Record<string, number> {
   const counts: Record<string, number> = {};
+  let dawnLeft = opts.dawnCount ?? 0;
   for (const n of equipNames) {
-    const base = setBaseOfItem(n);
+    let base = opts.aliases?.[n] ?? setBaseOfItem(n);
+    if (base === '보스 장신구' && dawnLeft > 0 && DAWN_CONVERTIBLE.has(n)) { base = '여명의 보스'; dawnLeft--; }
     if (base) counts[base] = (counts[base] ?? 0) + 1;
   }
   if (luckyOf(equipNames)) {
@@ -94,9 +139,9 @@ function bonusAt(set: string, count: number): ItemStats {
 // 교체 전/후 장비명 목록 각각으로 countSets를 돌려 세트 보너스 순변화를 구한다.
 // 럭키템 자체의 교체(획득/상실)나 3피스 경계를 넘는 교체 모두 카운트 diff에 자연히 반영된다
 // (기존 setSwapStats는 oldSet/newSet 1피스 증감만 가정해 럭키 재판정을 놓쳤다 — 삭제).
-export function setSwapStatsByNames(namesBefore: string[], namesAfter: string[]): ItemStats {
-  const countsB = countSets(namesBefore);
-  const countsA = countSets(namesAfter);
+export function setSwapStatsByNames(namesBefore: string[], namesAfter: string[], opts: SetCountOpts = {}): ItemStats {
+  const countsB = countSets(namesBefore, opts);
+  const countsA = countSets(namesAfter, opts);
   const sets = new Set([...Object.keys(countsB), ...Object.keys(countsA)]);
   let delta = emptyItemStats();
   for (const set of sets) {

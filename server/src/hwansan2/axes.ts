@@ -8,7 +8,7 @@ export type Stat4 = 'STR' | 'DEX' | 'INT' | 'LUK';
 
 export interface ItemStats {
   flat: Record<Stat4, number>;
-  hp: number;
+  hp: number; hpPct: number;
   atk: number; matk: number;
   pct: Record<Stat4, number>; allPct: number;
   atkPct: number; matkPct: number;
@@ -20,7 +20,7 @@ export interface ItemStats {
 
 export function emptyItemStats(): ItemStats {
   return {
-    flat: { STR: 0, DEX: 0, INT: 0, LUK: 0 }, hp: 0, atk: 0, matk: 0,
+    flat: { STR: 0, DEX: 0, INT: 0, LUK: 0 }, hp: 0, hpPct: 0, atk: 0, matk: 0,
     pct: { STR: 0, DEX: 0, INT: 0, LUK: 0 }, allPct: 0, atkPct: 0, matkPct: 0,
     dmgBoss: 0, iedFactor: 1, critDmg: 0, finalDmg: 0, coolSec: 0, critRate: 0, unknown: [],
   };
@@ -35,7 +35,7 @@ function accumLine(s: ItemStats, line: string | null | undefined) {
     case 'STR': case 'DEX': case 'INT': case 'LUK':
       pct ? (s.pct[key] += val) : (s.flat[key] += val); break;
     case 'allStat': pct ? (s.allPct += val) : (['STR', 'DEX', 'INT', 'LUK'] as Stat4[]).forEach((k) => (s.flat[k] += val)); break;
-    case 'hp': if (!pct) s.hp += val; break;
+    case 'hp': pct ? (s.hpPct += val) : (s.hp += val); break;
     case 'atk': pct ? (s.atkPct += val) : (s.atk += val); break;
     case 'matk': pct ? (s.matkPct += val) : (s.matk += val); break;
     case 'dmg': case 'boss': if (pct) s.dmgBoss += val; break;
@@ -83,14 +83,20 @@ export function fromAuctionRaw(raw: any): ItemStats {
 
 // 직업별 축 매핑. 이중부스탯(카데나·듀얼블레이드·섀도어): sub=DEX, ssub=STR
 // (스카우터 payload의 subStatBase>ssubStatBase 실측과 부합. 깡부스탯 효율은 두 축 동일이라 뒤집혀도 무해,
-//  부스탯 개별 %줄만 영향 — cli 포킹으로 재검증). 제논·데벤져는 stat 블록 구조가 달라 미지원(null).
+//  부스탯 개별 %줄만 영향). 데벤져는 HP가 주스탯(sub=STR), 제논은 STR+DEX+LUK 합산을 main 축으로 전달
+// (스카우터 서버가 직업을 알고 계산 — 우리는 아이템 수치를 올바른 축에 싣기만 한다).
 const DOUBLE_SUB = new Set(['카데나', '듀얼블레이드', '섀도어']);
 const SUB_OF: Record<Stat4, Stat4> = { STR: 'DEX', DEX: 'STR', INT: 'LUK', LUK: 'DEX' };
 
-export function statAxes(userStat: ScouterData['userStat']):
-  { main: Stat4; sub: Stat4; ssub: Stat4 | null; isMagic: boolean } | null {
+export type StatAxes =
+  | { kind: 'standard'; main: Stat4; sub: Stat4; ssub: Stat4 | null; isMagic: boolean }
+  | { kind: 'da' }     // 데몬어벤져: main=최대HP(깡/%), sub=STR, 물리
+  | { kind: 'xenon' }; // 제논: STR+DEX+LUK 깡 합산 → mainStat, 개별 스탯% 합 → mainStatPer, 물리
+
+export function statAxes(userStat: ScouterData['userStat']): StatAxes {
   const myClass = String(userStat.stat?.myClass ?? '');
-  if (myClass === '제논' || myClass === '데몬어벤져') return null;
+  if (myClass === '데몬어벤져') return { kind: 'da' };
+  if (myClass === '제논') return { kind: 'xenon' };
   const entire = (userStat as any).entireStat ?? {};
   const cand: [Stat4, number][] = [
     ['STR', Number(entire.str ?? 0)], ['DEX', Number(entire.dex ?? 0)],
@@ -98,8 +104,8 @@ export function statAxes(userStat: ScouterData['userStat']):
   ];
   cand.sort((a, b) => b[1] - a[1]);
   const main = cand[0][0];
-  if (DOUBLE_SUB.has(myClass)) return { main, sub: 'DEX', ssub: 'STR', isMagic: false };
-  return { main, sub: SUB_OF[main], ssub: null, isMagic: main === 'INT' };
+  if (DOUBLE_SUB.has(myClass)) return { kind: 'standard', main, sub: 'DEX', ssub: 'STR', isMagic: false };
+  return { kind: 'standard', main, sub: SUB_OF[main], ssub: null, isMagic: main === 'INT' };
 }
 
 const fmt = (v: number) => (Number.isInteger(v) ? String(v) : v.toFixed(5));
@@ -109,12 +115,24 @@ export function toSimulatorDelta(
   cur: ItemStats,
   next: ItemStats,
   setDelta: ItemStats,
-  ax: { main: Stat4; sub: Stat4; ssub: Stat4 | null; isMagic: boolean },
+  ax: StatAxes,
   baseIgnoreDef: number
 ): Record<string, string> | null {
   const d = (f: (s: ItemStats) => number) => f(next) - f(cur) + f(setDelta);
-  const atkOf = (s: ItemStats) => (ax.isMagic ? s.matk : s.atk);
-  const atkPctOf = (s: ItemStats) => (ax.isMagic ? s.matkPct : s.atkPct);
+  const isMagic = ax.kind === 'standard' && ax.isMagic;
+  const atkOf = (s: ItemStats) => (isMagic ? s.matk : s.atk);
+  const atkPctOf = (s: ItemStats) => (isMagic ? s.matkPct : s.atkPct);
+  // 직업군별 main/sub 축 수치 선택
+  const mainOf = (s: ItemStats) =>
+    ax.kind === 'da' ? s.hp : ax.kind === 'xenon' ? s.flat.STR + s.flat.DEX + s.flat.LUK : s.flat[ax.main];
+  const mainPctOf = (s: ItemStats) =>
+    ax.kind === 'da' ? s.hpPct : ax.kind === 'xenon' ? s.pct.STR + s.pct.DEX + s.pct.LUK : s.pct[ax.main];
+  const subOf = (s: ItemStats) =>
+    ax.kind === 'da' ? s.flat.STR : ax.kind === 'xenon' ? 0 : s.flat[ax.sub];
+  const subPctOf = (s: ItemStats) =>
+    ax.kind === 'da' ? s.pct.STR : ax.kind === 'xenon' ? 0 : s.pct[ax.sub];
+  const ssubOf = (s: ItemStats) => (ax.kind === 'standard' && ax.ssub ? s.flat[ax.ssub] : 0);
+  const ssubPctOf = (s: ItemStats) => (ax.kind === 'standard' && ax.ssub ? s.pct[ax.ssub] : 0);
 
   // 방무: base 실방무에서 현재 아이템 계수를 나눠 빼고 (새 아이템 × 세트델타) 계수를 곱해 %p 차이 산출
   const iedNext = next.iedFactor * setDelta.iedFactor;
@@ -122,12 +140,12 @@ export function toSimulatorDelta(
   const dIgn = after - baseIgnoreDef;
 
   const out: Record<string, number> = {
-    mainStat: d((s) => s.flat[ax.main]),
-    subStat: d((s) => s.flat[ax.sub]),
-    ssubStat: ax.ssub ? d((s) => s.flat[ax.ssub!]) : 0,
-    mainStatPer: d((s) => s.pct[ax.main]),
-    subStatPer: d((s) => s.pct[ax.sub]),
-    ssubStatPer: ax.ssub ? d((s) => s.pct[ax.ssub!]) : 0,
+    mainStat: d(mainOf),
+    subStat: d(subOf),
+    ssubStat: d(ssubOf),
+    mainStatPer: d(mainPctOf),
+    subStatPer: d(subPctOf),
+    ssubStatPer: d(ssubPctOf),
     allStatPer: d((s) => s.allPct),
     atk: d(atkOf),
     atkPer: d(atkPctOf),
