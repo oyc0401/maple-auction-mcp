@@ -4,21 +4,15 @@ dist/
 *.zip
 .DS_Store
 .superpowers/
+.codebase-memory/
 .env
+.mcp.json
+Claude.md
+.playwright-mcp/
+.obsidian/
 
 # 내부 작업 노트 (커밋 제외)
 maple_auction.md
 docs/superpowers/
 dev/
-Claude.md
-server/test/fixtures/hwansan2/ms_js/
-server/test/fixtures/hwansan2/api/
-server/test/fixtures/hwansan2/cadena/
-server/test/fixtures/hwansan2/adele/
-.mcp.json
-mcp-server-dev-ko/
 MEMO.md
-
-# playwright MCP 브라우저 로그
-.playwright-mcp/
-.obsidian/
