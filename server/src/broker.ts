@@ -6,8 +6,8 @@ import {
   DISCONNECTED_MSG,
   PROTOCOL_VERSION,
   protocolMismatchMsg,
-  type BridgeCommandInput,
-  type BridgeReply,
+  type WireFetchCommand,
+  type WireReply,
   type BridgeStatus,
 } from '@maple/shared';
 
@@ -35,13 +35,13 @@ export class Broker {
   private wss: WebSocketServer;
   // 확장 연결들(origin chrome-extension://). 프로필마다 하나씩 붙을 수 있어 전부 보유.
   private extensions = new Set<WebSocket>();
-  // discover가 고른 로그인된 확장. 일반 요청은 여기로만.
+  // fanout이 고른 로그인된 확장. 일반 요청은 여기로만.
   private preferred: WebSocket | null = null;
   // 확장별 hello로 보고된 프로토콜 버전. 미보고(hello 도입 전 dev 빌드/수신 전 찰나)는 차단하지 않는다.
   private extVersions = new Map<WebSocket, number>();
   // origin 없는 MCP 클라이언트 연결들(다중 세션).
   private clients = new Set<WebSocket>();
-  private pending = new Map<string, { resolve: (r: BridgeReply) => void; timer: NodeJS.Timeout }>();
+  private pending = new Map<string, { resolve: (r: WireReply) => void; timer: NodeJS.Timeout }>();
   // 서버 소켓 에러 훅. 단독 실행 시 EADDRINUSE 종료 처리에 사용(테스트에선 미설정).
   onServerError?: (err: NodeJS.ErrnoException) => void;
 
@@ -100,7 +100,7 @@ export class Broker {
     const clientId = msg.id;
     if (typeof clientId !== 'string') return;
     const { id: _omit, ...cmd } = msg;
-    const reply = await this.request(cmd as unknown as BridgeCommandInput);
+    const reply = await this.request(cmd as unknown as Omit<WireFetchCommand, 'id'>);
     if (ws.readyState === WebSocket.OPEN) {
       ws.send(JSON.stringify({ ...reply, id: clientId }));
     }
@@ -122,14 +122,14 @@ export class Broker {
   }
 
   // hello로 보고된 버전이 서버와 다르면 불일치 에러, 호환(일치 또는 미보고)이면 null.
-  private protocolError(ws: WebSocket): BridgeReply | null {
+  private protocolError(ws: WebSocket): WireReply | null {
     const v = this.extVersions.get(ws);
     if (v === undefined || v === PROTOCOL_VERSION) return null;
     return { id: '', ok: false, code: 'PROTOCOL_MISMATCH', error: protocolMismatchMsg(v) };
   }
 
   private onExtensionMessage(ws: WebSocket, raw: string): void {
-    let msg: BridgeReply;
+    let msg: WireReply;
     try {
       msg = JSON.parse(raw);
     } catch {
@@ -148,12 +148,12 @@ export class Broker {
     p.resolve(msg);
   }
 
-  request(cmd: BridgeCommandInput, timeoutMs = 15000): Promise<BridgeReply> {
+  request(cmd: Omit<WireFetchCommand, 'id'>, timeoutMs = 15000): Promise<WireReply> {
     if (!this.extConnected) {
       return Promise.resolve({ id: '', ok: false, code: 'DISCONNECTED', error: DISCONNECTED_MSG });
     }
-    // discover는 모든 확장(프로필)에 뿌려 로그인된 쪽을 고른다. 나머지 요청은 그 연결로만.
-    if (cmd.type === 'discover') return this.discover(cmd, timeoutMs);
+    // fanout: 모든 확장(프로필)에 뿌려 첫 성공(=로그인된) 확장을 preferred로 고정. 나머지 요청은 그 연결로만.
+    if (cmd.fanout) return this.fanout(cmd, timeoutMs);
     const target = this.target();
     if (!target) {
       return Promise.resolve({ id: '', ok: false, code: 'DISCONNECTED', error: DISCONNECTED_MSG });
@@ -163,9 +163,9 @@ export class Broker {
     return this.sendTo(target, cmd, timeoutMs);
   }
 
-  // discover를 붙어있는 모든 확장에 보내고, 가장 먼저 identity를 준(=로그인된) 확장을 preferred로 고정한다.
+  // fanout fetch를 붙어있는 모든 확장에 보내고, 가장 먼저 성공 응답을 준(=로그인된) 확장을 preferred로 고정한다.
   // 프로토콜 불일치 확장은 후보에서 제외 — 전부 불일치면 그 안내를 그대로 돌려준다.
-  private async discover(cmd: BridgeCommandInput, timeoutMs: number): Promise<BridgeReply> {
+  private async fanout(cmd: Omit<WireFetchCommand, 'id'>, timeoutMs: number): Promise<WireReply> {
     const open = [...this.extensions].filter((ws) => ws.readyState === WebSocket.OPEN);
     const conns = open.filter((ws) => !this.protocolError(ws));
     if (!conns.length) {
@@ -173,12 +173,12 @@ export class Broker {
       return first ?? { id: '', ok: false, code: 'DISCONNECTED', error: DISCONNECTED_MSG };
     }
     const results = conns.map((ws) => this.sendTo(ws, cmd, timeoutMs).then((r) => ({ ws, r })));
-    const winner = await firstMatch(results, ({ r }) => r.ok && r.data != null);
+    const winner = await firstMatch(results, ({ r }) => r.ok);
     if (winner) {
       this.preferred = winner.ws;
       return winner.r;
     }
-    // 로그인된 확장이 없음: 첫 응답(주로 NO_IDENTITY/TIMEOUT)을 그대로 돌려준다.
+    // 성공한 확장이 없음(전원 미로그인 등): 첫 응답을 그대로 돌려준다.
     const all = await Promise.all(results);
     return all[0].r;
   }
@@ -191,7 +191,7 @@ export class Broker {
     return last;
   }
 
-  private sendTo(ws: WebSocket, cmd: BridgeCommandInput, timeoutMs: number): Promise<BridgeReply> {
+  private sendTo(ws: WebSocket, cmd: Omit<WireFetchCommand, 'id'>, timeoutMs: number): Promise<WireReply> {
     const id = randomUUID();
     return new Promise((resolve) => {
       const timer = setTimeout(() => {

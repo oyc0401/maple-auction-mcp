@@ -1,6 +1,6 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import WebSocket from 'ws';
-import { PROTOCOL_VERSION } from '@maple/shared';
+import { PROTOCOL_VERSION, type WireFetchCommand } from '@maple/shared';
 import { Broker } from '../src/broker.js';
 
 const TEST_PORT = 29972;
@@ -19,19 +19,31 @@ function connectExtension(): Promise<WebSocket> {
   });
 }
 
-function respondAs(ws: WebSocket, opts: { identity?: unknown; fetchTag?: string; onFetch?: () => void }): void {
+// fanout 프로브 (구 discover 대체): 브로커가 모든 확장에 뿌려 첫 성공을 preferred로 고정
+function probe(): Omit<WireFetchCommand, 'id'> {
+  return { type: 'fetch', url: 'https://api.mskr.nexon.com/v1/accounts', method: 'GET', headers: {}, fanout: true };
+}
+
+function fetchCmd(url = 'https://x'): Omit<WireFetchCommand, 'id'> {
+  return { type: 'fetch', url, method: 'GET', headers: {} };
+}
+
+// 가짜 확장: fanout 프로브엔 로그인 여부에 따라 200/401, 일반 fetch엔 tag를 bodyText로 반환
+function respondAs(ws: WebSocket, opts: { loggedIn?: boolean; fetchTag?: string; onFetch?: () => void }): void {
   ws.on('message', (raw) => {
     const cmd = JSON.parse(raw.toString());
     if (cmd.keepalive) return;
-    if (cmd.type === 'discover') {
-      ws.send(JSON.stringify(
-        opts.identity != null
-          ? { id: cmd.id, ok: true, data: opts.identity }
-          : { id: cmd.id, ok: false, code: 'NO_IDENTITY', error: 'no' }
-      ));
+    if (cmd.fanout) {
+      ws.send(
+        JSON.stringify(
+          opts.loggedIn
+            ? { id: cmd.id, ok: true, status: 200, bodyText: '{"accounts":[{"accountId":1}]}' }
+            : { id: cmd.id, ok: false, code: 'HTTP_ERROR', status: 401, error: 'HTTP 401', bodyText: '{"code":5}' }
+        )
+      );
     } else {
       opts.onFetch?.();
-      ws.send(JSON.stringify({ id: cmd.id, ok: true, data: opts.fetchTag ?? 'fetch' }));
+      ws.send(JSON.stringify({ id: cmd.id, ok: true, status: 200, bodyText: opts.fetchTag ?? 'fetch' }));
     }
   });
 }
@@ -39,7 +51,7 @@ function respondAs(ws: WebSocket, opts: { identity?: unknown; fetchTag?: string;
 describe('Broker — 확장 라우팅', () => {
   it('확장 미연결이면 즉시 DISCONNECTED', async () => {
     broker = new Broker(TEST_PORT);
-    const reply = await broker.request({ type: 'discover' });
+    const reply = await broker.request(probe());
     expect(reply.ok).toBe(false);
     if (!reply.ok) expect(reply.code).toBe('DISCONNECTED');
   });
@@ -49,18 +61,18 @@ describe('Broker — 확장 라우팅', () => {
     const ws = await connectExtension();
     ws.on('message', (raw) => {
       const cmd = JSON.parse(raw.toString());
-      ws.send(JSON.stringify({ id: cmd.id, ok: true, status: 200, data: { hello: 1 } }));
+      ws.send(JSON.stringify({ id: cmd.id, ok: true, status: 200, bodyText: '{"hello":1}' }));
     });
-    const reply = await broker.request({ type: 'fetch', url: 'https://x', method: 'GET' });
+    const reply = await broker.request(fetchCmd());
     expect(reply.ok).toBe(true);
-    if (reply.ok) expect(reply.data).toEqual({ hello: 1 });
+    if (reply.ok) expect(reply.bodyText).toBe('{"hello":1}');
     ws.close();
   });
 
   it('응답이 없으면 TIMEOUT', async () => {
     broker = new Broker(TEST_PORT);
     const ws = await connectExtension(); // 메시지 무시
-    const reply = await broker.request({ type: 'discover' }, 200);
+    const reply = await broker.request(probe(), 200);
     expect(reply.ok).toBe(false);
     if (!reply.ok) expect(reply.code).toBe('TIMEOUT');
     ws.close();
@@ -77,43 +89,46 @@ describe('Broker — 확장 라우팅', () => {
     ).rejects.toThrow();
   });
 
-  it('다중 확장 중 로그인된 확장을 discover가 고른다 (마지막 연결 아님)', async () => {
+  it('fanout fetch가 다중 확장 중 첫 성공(로그인된) 확장을 고른다 (마지막 연결 아님)', async () => {
     broker = new Broker(TEST_PORT);
     const loggedIn = await connectExtension();
     const loggedOut = await connectExtension();
-    respondAs(loggedIn, { identity: { worldId: 5, accountId: 1, characterId: 2 } });
+    respondAs(loggedIn, { loggedIn: true });
     respondAs(loggedOut, {});
-    const reply = await broker.request({ type: 'discover' });
+    const reply = await broker.request(probe());
     expect(reply.ok).toBe(true);
-    if (reply.ok) expect(reply.data).toMatchObject({ worldId: 5, characterId: 2 });
+    if (reply.ok) expect(reply.bodyText).toContain('accounts');
     loggedIn.close();
     loggedOut.close();
   });
 
-  it('discover가 고른 확장으로만 이후 fetch를 보낸다', async () => {
+  it('fanout이 고른 확장으로만 이후 fetch를 보낸다', async () => {
     broker = new Broker(TEST_PORT);
     const loggedIn = await connectExtension();
     const loggedOut = await connectExtension();
     let loggedOutGotFetch = false;
-    respondAs(loggedIn, { identity: { worldId: 5, accountId: 1, characterId: 2 }, fetchTag: 'from-logged-in' });
+    respondAs(loggedIn, { loggedIn: true, fetchTag: 'from-logged-in' });
     respondAs(loggedOut, { fetchTag: 'from-logged-out', onFetch: () => (loggedOutGotFetch = true) });
-    await broker.request({ type: 'discover' });
-    const reply = await broker.request({ type: 'fetch', url: 'https://x', method: 'GET' });
-    expect(reply.ok && reply.data).toBe('from-logged-in');
+    await broker.request(probe());
+    const reply = await broker.request(fetchCmd());
+    expect(reply.ok && reply.bodyText).toBe('from-logged-in');
     expect(loggedOutGotFetch).toBe(false);
     loggedIn.close();
     loggedOut.close();
   });
 
-  it('모든 확장이 로그아웃이면 NO_IDENTITY', async () => {
+  it('모든 확장이 미로그인이면 첫 응답(401)을 그대로 돌려준다', async () => {
     broker = new Broker(TEST_PORT);
     const a = await connectExtension();
     const b = await connectExtension();
     respondAs(a, {});
     respondAs(b, {});
-    const reply = await broker.request({ type: 'discover' });
+    const reply = await broker.request(probe());
     expect(reply.ok).toBe(false);
-    if (!reply.ok) expect(reply.code).toBe('NO_IDENTITY');
+    if (!reply.ok) {
+      expect(reply.code).toBe('HTTP_ERROR');
+      expect(reply.status).toBe(401);
+    }
     a.close();
     b.close();
   });
@@ -129,19 +144,19 @@ describe('Broker — 프로토콜 핸드셰이크', () => {
   it('일치하는 hello를 보낸 확장은 정상 라우팅된다', async () => {
     broker = new Broker(TEST_PORT);
     const ws = await connectExtension();
-    respondAs(ws, { identity: { worldId: 5, accountId: 1, characterId: 2 }, fetchTag: 'ok' });
+    respondAs(ws, { loggedIn: true, fetchTag: 'ok' });
     await sendHello(ws, PROTOCOL_VERSION);
-    const reply = await broker.request({ type: 'fetch', url: 'https://x', method: 'GET' });
-    expect(reply.ok && reply.data).toBe('ok');
+    const reply = await broker.request(fetchCmd());
+    expect(reply.ok && reply.bodyText).toBe('ok');
     ws.close();
   });
 
   it('구버전 확장이면 fetch가 PROTOCOL_MISMATCH + 확장 업데이트 안내', async () => {
     broker = new Broker(TEST_PORT);
     const ws = await connectExtension();
-    respondAs(ws, { identity: { worldId: 5, accountId: 1, characterId: 2 } });
+    respondAs(ws, { loggedIn: true });
     await sendHello(ws, PROTOCOL_VERSION - 1);
-    const reply = await broker.request({ type: 'fetch', url: 'https://x', method: 'GET' });
+    const reply = await broker.request(fetchCmd());
     expect(reply.ok).toBe(false);
     if (!reply.ok) {
       expect(reply.code).toBe('PROTOCOL_MISMATCH');
@@ -155,7 +170,7 @@ describe('Broker — 프로토콜 핸드셰이크', () => {
     broker = new Broker(TEST_PORT);
     const ws = await connectExtension();
     await sendHello(ws, PROTOCOL_VERSION + 1);
-    const reply = await broker.request({ type: 'discover' });
+    const reply = await broker.request(probe());
     expect(reply.ok).toBe(false);
     if (!reply.ok) {
       expect(reply.code).toBe('PROTOCOL_MISMATCH');
@@ -164,17 +179,20 @@ describe('Broker — 프로토콜 핸드셰이크', () => {
     ws.close();
   });
 
-  it('discover는 불일치 확장을 제외하고 호환 확장을 고른다', async () => {
+  it('fanout은 불일치 확장을 제외하고 호환 확장을 고른다', async () => {
     broker = new Broker(TEST_PORT);
     const oldExt = await connectExtension();
     const curExt = await connectExtension();
-    respondAs(oldExt, { identity: { worldId: 1, accountId: 9, characterId: 9 } }); // 응답해도 제외돼야 함
-    respondAs(curExt, { identity: { worldId: 5, accountId: 1, characterId: 2 } });
+    let oldGotFetch = false;
+    respondAs(oldExt, { loggedIn: true, fetchTag: 'from-old', onFetch: () => (oldGotFetch = true) }); // 응답해도 제외돼야 함
+    respondAs(curExt, { loggedIn: true, fetchTag: 'from-cur' });
     await sendHello(oldExt, PROTOCOL_VERSION - 1);
     await sendHello(curExt, PROTOCOL_VERSION);
-    const reply = await broker.request({ type: 'discover' });
+    const reply = await broker.request(probe());
     expect(reply.ok).toBe(true);
-    if (reply.ok) expect(reply.data).toMatchObject({ worldId: 5, characterId: 2 });
+    const after = await broker.request(fetchCmd());
+    expect(after.ok && after.bodyText).toBe('from-cur');
+    expect(oldGotFetch).toBe(false);
     oldExt.close();
     curExt.close();
   });
@@ -183,8 +201,8 @@ describe('Broker — 프로토콜 핸드셰이크', () => {
     broker = new Broker(TEST_PORT);
     const ws = await connectExtension();
     respondAs(ws, { fetchTag: 'legacy-ok' });
-    const reply = await broker.request({ type: 'fetch', url: 'https://x', method: 'GET' });
-    expect(reply.ok && reply.data).toBe('legacy-ok');
+    const reply = await broker.request(fetchCmd());
+    expect(reply.ok && reply.bodyText).toBe('legacy-ok');
     ws.close();
   });
 });
@@ -218,20 +236,20 @@ describe('Broker — 멀티 클라이언트', () => {
   it('두 클라이언트가 동시 요청해도 각자 자기 응답만 받는다', async () => {
     broker = new Broker(TEST_PORT);
     const ext = await connectExtension();
-    // 확장은 명령의 url을 그대로 data로 되돌려줌 → 응답 격리 확인
+    // 확장은 명령의 url을 그대로 bodyText로 되돌려줌 → 응답 격리 확인
     ext.on('message', (raw) => {
       const cmd = JSON.parse(raw.toString());
       if (cmd.keepalive) return;
-      ext.send(JSON.stringify({ id: cmd.id, ok: true, data: cmd.url }));
+      ext.send(JSON.stringify({ id: cmd.id, ok: true, status: 200, bodyText: cmd.url }));
     });
     const c1 = await connectClient();
     const c2 = await connectClient();
     const [r1, r2] = await Promise.all([
-      clientRequest(c1, { type: 'fetch', url: 'URL-1', method: 'GET' }),
-      clientRequest(c2, { type: 'fetch', url: 'URL-2', method: 'GET' }),
+      clientRequest(c1, { type: 'fetch', url: 'URL-1', method: 'GET', headers: {} }),
+      clientRequest(c2, { type: 'fetch', url: 'URL-2', method: 'GET', headers: {} }),
     ]);
-    expect(r1.data).toBe('URL-1');
-    expect(r2.data).toBe('URL-2');
+    expect(r1.bodyText).toBe('URL-1');
+    expect(r2.bodyText).toBe('URL-2');
     ext.close(); c1.close(); c2.close();
   });
 
@@ -263,10 +281,10 @@ describe('Broker — 멀티 클라이언트', () => {
     ext.on('message', (raw) => {
       const cmd = JSON.parse(raw.toString());
       if (cmd.keepalive) return;
-      setTimeout(() => ext.send(JSON.stringify({ id: cmd.id, ok: true, data: 'late' })), 80);
+      setTimeout(() => ext.send(JSON.stringify({ id: cmd.id, ok: true, status: 200, bodyText: 'late' })), 80);
     });
     const c = await connectClient();
-    c.send(JSON.stringify({ id: 'x1', type: 'fetch', url: 'u', method: 'GET' }));
+    c.send(JSON.stringify({ id: 'x1', type: 'fetch', url: 'u', method: 'GET', headers: {} }));
     await new Promise((r) => setTimeout(r, 10));
     c.close(); // 응답 오기 전에 끊음
     await new Promise((r) => setTimeout(r, 120)); // 확장 응답이 도착해도 무사
