@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import { fetchScouter, baseSimulator, clearScouterCache } from '../src/hwansan2/scouterClient.js';
 import { parseOptionLine } from '../src/hwansan2/optionDict.js';
 import { fromScouterEquip, fromAuctionRaw, statAxes, toSimulatorDelta, emptyItemStats } from '../src/hwansan2/axes.js';
+import { countSets, setSwapStats, setBaseOfItem } from '../src/hwansan2/sets.js';
 
 const idResponse = JSON.parse(readFileSync(new URL('../src/scouter/id-response', import.meta.url), 'utf8'));
 const okFetch = () => vi.fn(async () => ({ ok: true, status: 201, json: async () => idResponse } as Response));
@@ -90,5 +91,26 @@ describe('axes', () => {
     const next = { ...emptyItemStats(), flat: { STR: 1, DEX: 0, INT: 0, LUK: 0 } };
     const sim = toSimulatorDelta(cur, next, emptyItemStats(), ax, 90)!;
     expect(Number.isFinite(Number(sim.ignoreGuard))).toBe(true);
+  });
+});
+
+describe('sets', () => {
+  const names = idResponse.userEquipData.map((e: any) => e.name);
+  it('countSets: 카데나 장비에서 아케인셰이드 피스를 센다', () => {
+    const counts = countSets(names);
+    expect(counts['아케인셰이드']).toBeGreaterThanOrEqual(1); // 무기 포함
+  });
+  it('럭키 아이템: 3피스 이상 모든 세트에 +1, 1개만 적용', () => {
+    const counts = countSets(['아케인셰이드 체인', '아케인셰이드 슈트', '아케인셰이드 숄더', '카오스 벨룸의 헬름']);
+    expect(counts['아케인셰이드']).toBe(4); // 3피스 + 카벨모자 럭키 +1
+  });
+  it('setSwapStats: 앱솔 4→3 파괴 델타는 음수 방향', () => {
+    const counts = { 앱솔랩스: 4 };
+    const d = setSwapStats(counts, '앱솔랩스', null);
+    expect(d.atk).toBeLessThan(0); // 4셋 옵션 상실
+  });
+  it('setBaseOfItem: 이름 추론', () => {
+    expect(setBaseOfItem('앱솔랩스 나이트케이프')).toBe('앱솔랩스');
+    expect(setBaseOfItem('스칼렛 링')).toBeNull(); // 장신구 세트는 추론 제외(럭키 판정과 별개)
   });
 });
