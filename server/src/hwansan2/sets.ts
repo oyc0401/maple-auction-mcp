@@ -27,6 +27,7 @@ export const LUCKY_ITEMS: { match: RegExp; priority: number }[] = [
   { match: /^(제네시스|데스티니) /, priority: 3 },
   { match: /^스칼렛 링/, priority: 4 },
   { match: /^스칼렛 숄더/, priority: 5 },
+  { match: /^스칼렛 /, priority: 6 }, // 스칼렛 무기 등 그 외 스칼렛 럭키템 (위 개별 항목이 우선)
 ];
 
 function luckyOf(names: string[]): string | null {
