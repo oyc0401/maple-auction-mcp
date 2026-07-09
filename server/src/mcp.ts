@@ -116,18 +116,17 @@ export function createServer(bridge: BridgeLike): McpServer {
   // 방무·공퍼·보공 같은 단축어를 모델에 학습시키는 의미도 있음. (압축 유지)
   // 행동 규칙은 전부 여기에 둔다 — 도구 description에 행동 지시를 넣으면 디렉토리 심사에서 프롬프트 인젝션으로 간주됨.
   // 게임 도메인 지식은 여기가 아니라 maple://knowledge 리소스(지식 노트)로 서빙한다 — 상시 토큰을 아끼고 필요할 때만 로드.
+  // 검색 전략 팁(노작·정렬·시세)은 지식 노트의 "경매장 검색 팁" 절(get_knowledge로 온디맨드 서빙)에 있다.
+  // 여기엔 도구 사용의 최소 규칙만 — 상시 토큰이므로 짧게 유지.
   const instructions = [
     '메이플스토리(KMS) 거래소 검색 MCP.',
-    '게임 도메인 지식(추옵·잠재(이탈)·가위·별칭·타월드 판단 기준)은 get_knowledge 도구(같은 내용의 maple://knowledge 리소스)에 있다. 매물 추천·가치 판단·시세 해석 전에 읽고, 읽지 않은 채 도메인 규칙을 임의 추론하지 말 것.',
-    '[비용 감각]',
-    '- 검색 생성(search_items/search_weapon/search_armor, sold 포함)만 일일 한도(100회)를 1회 소진. 같은 조건 재조회는 재검색 대신 searchKey + get_page(무료).',
-    '- 정작 비싼 건 응답 토큰이다. 필터 없는 검색 결과는 대부분 노작(미강화) 매물 — 잠재등급·스타포스·가격 필터를 걸거나 PRICE_DESC(가격 높은순)로 고스펙부터 훑으면 읽을 양이 준다. limit 40/60은 조건이 확정된 뒤에.',
-    '[도구 사용]',
-    '- 첫 검색 전 get_status로 검색 기준 캐릭터를 확인해 월드·닉네임을 사용자에게 알리고 시작. 다른 월드를 원하면 set_character 후 검색.',
-    '- powerDiff(전투력 증가량)와 ATTACK_POWER_DESC 정렬은 보공/방무 미반영에 마지막 로그아웃 기준이라 신뢰 금지. 정확한 효율은 item_hwansan으로 환산 비교 — 매물·부위당 외부 계산 API 1회씩이니 후보를 먼저 추려 소수만, 부위가 정해졌으면 slot을 지정해 호출 최소화.',
-    '- 매물 id("ynoFBr…:1" 류)는 도구 호출용 내부 값 — 사용자에게 노출하지 말 것. 매물 지칭은 별칭으로 하고(관례는 지식 노트 참고), 별칭↔id 대응은 네가 기억해라.',
-    '- 가위(재거래) 잔여 횟수가 낮은 매물은 사용자에게 꼭 명시(tradeDesc 참고).',
-    '- 추천 리포트 형식: 표에는 스펙·가격·환산·가위·월드만. 타월드는 수수료 포함가를 계산하지 말고 "타월드"로만 표기. 별칭은 표에 넣지 말고 추천 문장에서 사용.',
+    '매물 추천·가치 판단·시세 해석·검색 전략 수립 전에 get_knowledge(같은 내용의 maple://knowledge 리소스)를 읽는다 — 게임 지식(추옵·잠재·가위·별칭·타월드)과 경매장 검색 팁이 있다. 읽지 않은 채 도메인 규칙을 임의 추론하지 말 것.',
+    '- 첫 검색 전 get_status로 검색 기준 캐릭터(월드·닉네임)를 확인해 사용자에게 알린다. 월드 전환은 set_character.',
+    '- 검색 생성(search_items/search_weapon/search_armor, sold 포함)만 일일 한도(100회)를 1회 소진 — 한도는 검색 품질을 깎을 만큼 빡빡하지 않다(잔여는 응답의 searchRemaining). 같은 조건 재조회만 재검색 대신 searchKey + get_page(무료). limit 40/60은 조건이 확정된 뒤에.',
+    '- 정확한 효율 비교는 item_hwansan — 매물·부위당 외부 계산 API 1회이므로 후보를 추린 뒤 소수만, 부위가 정해졌으면 slot을 지정한다.',
+    '- 검색 결과를 보여줄 때 사용한 필터 조건을 함께 표기한다.',
+    '- 가위(재거래) 잔여 횟수가 낮은 매물은 사용자에게 꼭 명시한다(tradeDesc 참고).',
+    '- 매물 id("ynoFBr…:1" 류)는 도구 호출용 내부 값 — 사용자에게 노출하지 말 것. 별칭은 표에 넣지 말고 문장에서 사용.',
   ].join('\n');
 
   const server = new McpServer({ name: 'maple-auction', version: '0.4.0' }, { instructions });
@@ -429,7 +428,7 @@ export function createServer(bridge: BridgeLike): McpServer {
           .enum(SORTS)
           .default('PRICE_PER_ITEM_ASC')
           .describe(
-            '정렬. PRICE_PER_ITEM_ASC=개당 낮은가격, PRICE_DESC=가격 높은순(필터 없는 검색에서 노작·깡통을 건너뛰고 고스펙부터), ATTACK_POWER_DESC=전투력증가 높은순(보공·방무 미반영, 결과 500개 이하일 때만 동작), END_DATE_ASC=종료 임박(급처), REGISTER_DATE_DESC=최신등록(스나이핑)'
+            '정렬. PRICE_PER_ITEM_ASC=개당 낮은가격, PRICE_DESC=가격 높은순, ATTACK_POWER_DESC=전투력증가 높은순(보공·방무 미반영, 결과 500개 이하일 때만 동작), END_DATE_ASC=종료 임박(급처), REGISTER_DATE_DESC=최신등록(스나이핑)'
           ),
       },
       annotations: { readOnlyHint: true, destructiveHint: false },
@@ -579,7 +578,8 @@ export function createServer(bridge: BridgeLike): McpServer {
       inputSchema: {
         itemId: z.string().describe('매물 id (검색 결과 또는 get_wishlist의 id 필드)'),
       },
-      annotations: { readOnlyHint: false, destructiveHint: true },
+      // 찜 해제는 같은 id로 즉시 재추가 가능(데이터 손실 없음) → 파괴적 아님
+      annotations: { readOnlyHint: false, destructiveHint: false },
     },
     async ({ itemId }) => {
       const id = await ensureIdentity();
