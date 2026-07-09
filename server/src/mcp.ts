@@ -1,30 +1,9 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
-import { DISCONNECTED_MSG, NO_SESSION_MSG, type BridgeReply, type Identity } from '@maple/shared';
-import {
-  buildCreateBody,
-  buildPageUrl,
-  parseItemId,
-  buildWishlistGetUrl,
-  buildWishlistBody,
-  buildWishlistDeleteUrl,
-  SEARCH_URL,
-  SOLD_SEARCH_URL,
-  RECENT_SOLD_URL,
-  DAILY_LIMIT_URL,
-  WISHLIST_URL,
-  WISHLIST_MAX,
-  SORTS,
-  type SearchParams,
-  type Sort,
-  type GetLimit,
-} from './mapping.js';
-import { summarizeSearch, summarizeItem, summarizeScouterEquip } from './summarize.js';
-import { listCharacters, discoverIdentity, type CharacterInfo } from './characters.js';
+import { WISHLIST_MAX, SORTS, type SearchParams, type Sort, type GetLimit } from './mapping.js';
 import { loadKnowledge } from './knowledge.js';
-import { fetchScouter, swapDelta380, categoryToSlots, slotLabel } from './hwansan2/index.js';
+import { AuctionService } from './auction.js';
 import {
-  worldName,
   POTENTIAL_OPTION_KEYS,
   EX_OPTION_KEYS,
   SCROLL_OPTION_KEYS,
@@ -47,23 +26,6 @@ export type { BridgeLike } from './nexon.js';
 
 function text(value: unknown) {
   return { content: [{ type: 'text' as const, text: typeof value === 'string' ? value : JSON.stringify(value, null, 1) }] };
-}
-
-function errorText(reply: Extract<BridgeReply, { ok: false }>): string {
-  const apiCode = (reply.data as { code?: number } | null)?.code;
-  // 401/403 = 세션 문제. 세션은 옥션 페이지만 만들 수 있으므로(shared의 NO_SESSION_MSG 주석 참고)
-  // nxlogin이 아니라 옥션 페이지로 안내한다. 구버전 확장이 보낸 낡은 안내문도 여기서 최신 안내로 덮인다.
-  if (reply.status === 401 || reply.status === 403) {
-    return NO_SESSION_MSG + (apiCode != null ? ` (HTTP ${reply.status}, API code ${apiCode})` : '');
-  }
-  // 구버전 확장은 상태 코드 없이 nxlogin 로그인 안내를 보낸다 — 그 안내로는 세션이 생기지 않으므로 덮는다.
-  if (reply.error.includes('nxlogin')) return NO_SESSION_MSG;
-  // 실측(2026-07-10): 결과가 너무 많으면 422 + code 4040으로 검색 자체를 거부한다 (검색 횟수 소진 없음).
-  if (reply.status === 422 && apiCode === 4040) {
-    return '검색 결과가 너무 많아 거래소가 검색을 거부했습니다 (검색 횟수 소진 없음). 하위 분류(subCategory)나 키워드로 범위를 좁혀 다시 검색하세요.';
-  }
-  const suffix = apiCode != null ? ` (API code ${apiCode})` : '';
-  return `요청 실패 (${reply.code}): ${reply.error}${suffix}`;
 }
 
 // ── 공통 필터 zod 스키마 (실측 스펙: docs/API.md) ──────────────────────────────
@@ -154,6 +116,8 @@ export function createServer(bridge: BridgeLike): McpServer {
 
   const server = new McpServer({ name: 'maple-auction', version: '0.5.1' }, { instructions });
 
+  const service = new AuctionService(bridge);
+
   server.registerResource(
     'maple-knowledge',
     'maple://knowledge',
@@ -177,162 +141,6 @@ export function createServer(bridge: BridgeLike): McpServer {
     async () => text(loadKnowledge())
   );
 
-  let identity: (Identity & { characterName?: string }) | null = null;
-  let characters: CharacterInfo[] | null = null;
-  const bodyCache = new Map<string, { body: ReturnType<typeof buildCreateBody>; sold: boolean; category?: string }>();
-  // 동일 조건(body+sold) → 살아있는 searchKey. 같은 조건 재검색을 POST 없이 재사용해 검색 횟수를 구조적으로 아낀다.
-  // (searchKey는 조건만 저장하므로 GET 결과는 항상 실시간 — 재사용해도 낡은 데이터가 아니다)
-  const conditionCache = new Map<string, string>();
-
-  // 원본 매물 캐시(id → 원본 + 검색 카테고리). item_hwansan이 단일 매물의 부위별 Δ환산을
-  // 온디맨드로 계산할 때 쓴다. 검색·페이지 조회가 지날 때마다 채워지고, 상한 초과 시 오래된 것부터 버린다.
-  const rawItemCache = new Map<string, { raw: any; category?: string }>();
-  const RAW_ITEM_CACHE_MAX = 300;
-  function cacheRawItems(items: any[] | undefined, category?: string) {
-    for (const it of items ?? []) {
-      if (!it?._id) continue;
-      rawItemCache.set(it._id, { raw: it, category });
-      if (rawItemCache.size > RAW_ITEM_CACHE_MAX) {
-        const oldest = rawItemCache.keys().next().value;
-        if (oldest !== undefined) rawItemCache.delete(oldest);
-      }
-    }
-  }
-
-  async function ensureIdentity(): Promise<Identity | string> {
-    if (identity) return identity;
-    const found = await discoverIdentity(bridge);
-    if (typeof found !== 'string') {
-      identity = found;
-      return identity;
-    }
-    const env = process.env.MAPLE_IDENTITY;
-    if (env) {
-      identity = JSON.parse(env) as Identity;
-      return identity;
-    }
-    return `계정 정보를 찾지 못했습니다: ${found}`;
-  }
-
-  // 남은 일일 검색 생성 횟수 (GET, 무료). 실패하면 null.
-  async function searchRemaining(): Promise<number | null> {
-    const dl = await bridge.request({ type: 'fetch', url: DAILY_LIMIT_URL, method: 'GET' });
-    return dl.ok ? ((dl.data as any)?.search?.remaining ?? null) : null;
-  }
-
-  // 결과 특성을 사실로 알려주는 note (행동 지시 아님) — 0건 소진, 무필터 장비 검색의 노작 편중.
-  function searchNote(total: number, params: SearchParams): string | undefined {
-    if (total === 0) return '조건에 맞는 매물이 0건 (검색 횟수는 소진됨)';
-    const isEquip = params.category?.startsWith('WEAPON') || params.category?.startsWith('ARMOR');
-    const narrowed =
-      params.potentialGrade != null || params.additionalPotentialGrade != null ||
-      params.potentialOptions?.length || params.additionalPotentialOptions?.length ||
-      params.extraOptions?.length || params.scrollOptions?.length ||
-      params.starforceMin != null || params.starforceMax != null ||
-      params.priceMin != null || params.priceMax != null ||
-      params.remainUpgradeCountMin != null || params.remainUpgradeCountMax != null ||
-      params.cuttableCountMin != null || params.cuttableCountMax != null || params.uncuttable != null ||
-      params.isBindedWhenEquipped != null || params.isExOptExtractable != null || params.isPotentialExtractable != null ||
-      params.seedRingLevelMin != null || params.seedRingLevelMax != null;
-    if (isEquip && !narrowed && total > 200) {
-      return `필터 없는 장비 검색 ${total}건 — 대부분 노작(미강화·잠재 없음) 매물일 수 있음`;
-    }
-    return undefined;
-  }
-
-  // POST: 세션 생성. 정렬·페이지 선택 없이 가격낮은순 10개만 반환한다. 더 보려면 get_page(GET).
-  // sold=true면 판매 완료(시세) 검색. body는 동일하고 URL만 다르다.
-  async function runSearch(params: SearchParams, sold = false) {
-    const id = await ensureIdentity();
-    if (typeof id === 'string') return text(id);
-    const body = buildCreateBody(params, id);
-
-    // 동일 조건의 살아있는 검색이 있으면 POST(소진) 없이 재사용. 만료됐으면 지우고 새로 생성.
-    const condKey = `${sold ? 'sold' : 'live'}:${JSON.stringify(body)}`;
-    const existingKey = conditionCache.get(condKey);
-    if (existingKey) {
-      const reused = await bridge.request({
-        type: 'fetch',
-        url: buildPageUrl(existingKey, { page: 1, limit: 20, sort: 'PRICE_PER_ITEM_ASC' }, id, sold),
-        method: 'GET',
-      });
-      if (reused.ok) {
-        const data = reused.data as any;
-        cacheRawItems(data?.items, params.category);
-        const note = ['동일 조건의 기존 검색을 재사용 (검색 횟수 소진 없음)', searchNote(data?.total, params)].filter(Boolean).join(' / ');
-        return text({ ...summarizeSearch(data), searchRemaining: await searchRemaining(), note });
-      }
-      conditionCache.delete(condKey);
-    }
-
-    const created = await bridge.request({ type: 'fetch', url: sold ? SOLD_SEARCH_URL : SEARCH_URL, method: 'POST', body });
-    if (!created.ok) return text(errorText(created));
-    const data = created.data as any;
-    if (data?.searchKey) {
-      bodyCache.set(data.searchKey, { body, sold, category: params.category });
-      conditionCache.set(condKey, data.searchKey);
-    }
-    cacheRawItems(data?.items, params.category);
-    const note = searchNote(data?.total, params);
-    return text({ ...summarizeSearch(data), searchRemaining: await searchRemaining(), ...(note ? { note } : {}) });
-  }
-
-  // 찜 목록 개수·남은 슬롯을 조회한다(무료 GET). 실패 시 에러 문자열.
-  async function wishlistState(id: Identity): Promise<{ count: number; remaining: number; items: unknown[] } | string> {
-    const reply = await bridge.request({ type: 'fetch', url: buildWishlistGetUrl(id), method: 'GET' });
-    if (!reply.ok) return errorText(reply);
-    const items = ((reply.data as any)?.items ?? []) as unknown[];
-    return { count: items.length, remaining: Math.max(0, WISHLIST_MAX - items.length), items };
-  }
-
-  // 단일 매물의 부위별 Δ환산380(maplescouter 교체 시뮬레이터 기준)을 계산한다.
-  // 원본 매물은 직전 검색(search_*/get_page)이 rawItemCache에 넣어둔 것을 쓴다. 에러는 안내 문자열로 반환.
-  async function computeItemHwansan(itemId: string, onlySlot?: string): Promise<unknown> {
-    const entry = rawItemCache.get(itemId);
-    if (!entry) {
-      return '해당 매물의 원본을 찾을 수 없습니다. 먼저 search_weapon / search_armor / get_page 로 이 매물을 조회한 뒤 그 id로 다시 호출하세요.';
-    }
-    const slots = categoryToSlots(entry.category);
-    if (!slots) {
-      return '이 매물은 환산 비교 대상(장비)이 아니거나 카테고리를 알 수 없습니다. search_weapon / search_armor 로 조회한 매물의 id를 사용하세요.';
-    }
-    let targetSlots = slots;
-    if (onlySlot) {
-      targetSlots = slots.filter((s) => slotLabel(s) === onlySlot || s === onlySlot);
-      if (!targetSlots.length) {
-        return `slot "${onlySlot}" 는 이 매물의 착용 부위가 아닙니다. 가능한 부위: ${slots.map(slotLabel).join(', ')}`;
-      }
-    }
-    const name = identity?.characterName;
-    if (!name) {
-      return '현재 캐릭터 이름을 알 수 없어 환산을 계산할 수 없습니다. set_character 로 기준 캐릭터를 지정하세요.';
-    }
-    let data;
-    try {
-      data = await fetchScouter(name);
-    } catch (e) {
-      return `환산 계산기(maplescouter) 호출 실패: ${(e as Error).message}`;
-    }
-    const bySlot: Record<string, number> = {};
-    const unknown = new Set<string>();
-    for (const slot of targetSlots) {
-      try {
-        const r = await swapDelta380(data, slot, entry.raw);
-        if (r) {
-          bySlot[slotLabel(slot)] = r.delta380;
-          for (const u of r.unknown) unknown.add(u);
-        }
-      } catch { /* 개별 부위 실패는 생략 */ }
-    }
-    return {
-      id: itemId,
-      name: entry.raw?.itemName ?? null,
-      hwansan380: data.calculatedData.boss380_stat,
-      bySlot,
-      ...(unknown.size ? { unknown: [...unknown] } : {}),
-    };
-  }
-
   server.registerTool(
     'user_equip',
     {
@@ -345,40 +153,7 @@ export function createServer(bridge: BridgeLike): McpServer {
       },
       annotations: { readOnlyHint: true, destructiveHint: false },
     },
-    async ({ characterName, slot }) => {
-      let name = characterName;
-      if (!name) {
-        const id = await ensureIdentity();
-        if (typeof id === 'string') return text(id);
-        name = identity?.characterName;
-        if (!name) return text('현재 캐릭터 이름을 알 수 없습니다. characterName을 지정하거나 set_character로 기준 캐릭터를 정하세요.');
-      }
-      let data;
-      try {
-        data = await fetchScouter(name);
-      } catch (e) {
-        return text(`캐릭터 조회 실패(maplescouter): ${(e as Error).message}`);
-      }
-      if (slot) {
-        const e = data.userEquipData.find((x) => x.slot === slot);
-        if (!e) return text(`slot "${slot}" 장비가 없습니다. 가능한 부위: ${data.userEquipData.map((x) => x.slot).join(', ')}`);
-        return text({ character: name, ...summarizeScouterEquip(e) });
-      }
-      const st = data.userStat.stat;
-      return text({
-        character: name,
-        class: st.myClass,
-        level: Number(st.level) || undefined,
-        hwansan380: data.calculatedData.boss380_stat,
-        items: data.userEquipData.map((e) => ({
-          slot: e.slot,
-          name: e.name,
-          star: Number(e.starforce) || undefined,
-          pot: (e.potential_grade as string) || undefined,
-          add: (e.additional_potential_grade as string) || undefined,
-        })),
-      });
-    }
+    async ({ characterName, slot }) => text(await service.userEquip(characterName, slot))
   );
 
   server.registerTool(
@@ -397,7 +172,7 @@ export function createServer(bridge: BridgeLike): McpServer {
       // 일일 검색 횟수를 소진하지만 데이터 변경은 없다 → 읽기로 분류
       annotations: { readOnlyHint: true, destructiveHint: false },
     },
-    async (params) => runSearch(params as SearchParams)
+    async (params) => text(await service.search(params as SearchParams))
   );
 
   server.registerTool(
@@ -414,7 +189,7 @@ export function createServer(bridge: BridgeLike): McpServer {
       },
       annotations: { readOnlyHint: true, destructiveHint: false },
     },
-    async ({ subCategory, sold, ...rest }) => runSearch({ ...(rest as SearchParams), category: subCategory as string }, sold)
+    async ({ subCategory, sold, ...rest }) => text(await service.search({ ...(rest as SearchParams), category: subCategory as string }, sold))
   );
 
   server.registerTool(
@@ -432,7 +207,7 @@ export function createServer(bridge: BridgeLike): McpServer {
       },
       annotations: { readOnlyHint: true, destructiveHint: false },
     },
-    async ({ subCategory, sold, ...rest }) => runSearch({ ...(rest as SearchParams), category: subCategory as string }, sold)
+    async ({ subCategory, sold, ...rest }) => text(await service.search({ ...(rest as SearchParams), category: subCategory as string }, sold))
   );
 
   server.registerTool(
@@ -449,7 +224,7 @@ export function createServer(bridge: BridgeLike): McpServer {
       },
       annotations: { readOnlyHint: true, destructiveHint: false },
     },
-    async ({ subCategory, sold, ...rest }) => runSearch({ ...(rest as SearchParams), category: subCategory as string }, sold)
+    async ({ subCategory, sold, ...rest }) => text(await service.search({ ...(rest as SearchParams), category: subCategory as string }, sold))
   );
 
   server.registerTool(
@@ -471,16 +246,18 @@ export function createServer(bridge: BridgeLike): McpServer {
       annotations: { readOnlyHint: true, destructiveHint: false },
     },
     async ({ subCategory, sold, gender, itemGrade, petGrade, periodOptions, ...rest }) =>
-      runSearch(
-        {
-          ...(rest as SearchParams),
-          category: subCategory as string,
-          gender: gender === '남' ? 'MALE' : gender === '여' ? 'FEMALE' : undefined,
-          royalSpecialType: itemGrade != null ? ROYAL_LABEL_GRADES[itemGrade] : undefined,
-          petGrade: petGrade != null ? PET_GRADES[petGrade] : undefined,
-          cashOptions: periodOptions,
-        },
-        sold
+      text(
+        await service.search(
+          {
+            ...(rest as SearchParams),
+            category: subCategory as string,
+            gender: gender === '남' ? 'MALE' : gender === '여' ? 'FEMALE' : undefined,
+            royalSpecialType: itemGrade != null ? ROYAL_LABEL_GRADES[itemGrade] : undefined,
+            petGrade: petGrade != null ? PET_GRADES[petGrade] : undefined,
+            cashOptions: periodOptions,
+          },
+          sold
+        )
       )
   );
 
@@ -496,7 +273,7 @@ export function createServer(bridge: BridgeLike): McpServer {
       },
       annotations: { readOnlyHint: true, destructiveHint: false },
     },
-    async ({ subCategory, sold, ...rest }) => runSearch({ ...(rest as SearchParams), category: subCategory as string }, sold)
+    async ({ subCategory, sold, ...rest }) => text(await service.search({ ...(rest as SearchParams), category: subCategory as string }, sold))
   );
 
   server.registerTool(
@@ -518,47 +295,7 @@ export function createServer(bridge: BridgeLike): McpServer {
       },
       annotations: { readOnlyHint: true, destructiveHint: false },
     },
-    async ({ searchKey, page, limit, sort }) => {
-      const id = await ensureIdentity();
-      if (typeof id === 'string') return text(id);
-      const q = { page, limit: limit as GetLimit, sort: sort as Sort };
-      const cachedEntry = bodyCache.get(searchKey);
-      const sold = cachedEntry?.sold ?? false;
-      // 실측: 결과 500건 초과면 API가 전투력 정렬을 조용히 무시한다 — 정렬됐다고 믿고 읽는 오판 방지
-      const pageResult = (data: unknown) => {
-        const summary = summarizeSearch(data);
-        const note =
-          sort === 'ATTACK_POWER_DESC' && summary.total > 500
-            ? '결과가 500건을 초과해 전투력 정렬이 적용되지 않음 (다른 정렬로 반환될 수 있음)'
-            : undefined;
-        return text({ ...summary, ...(note ? { note } : {}) });
-      };
-      const reply = await bridge.request({ type: 'fetch', url: buildPageUrl(searchKey, q, id, sold), method: 'GET' });
-      if (reply.ok) {
-        cacheRawItems((reply.data as any)?.items, cachedEntry?.category);
-        return pageResult(reply.data);
-      }
-
-      // searchKey 만료 추정 → 캐시된 조건으로 재검색(POST) 후 해당 페이지 재조회 (라이브/시세 각각의 URL로)
-      if (reply.code === 'HTTP_ERROR' && reply.status !== 403) {
-        const cached = bodyCache.get(searchKey);
-        if (cached) {
-          const searchUrl = cached.sold ? SOLD_SEARCH_URL : SEARCH_URL;
-          const recreated = await bridge.request({ type: 'fetch', url: searchUrl, method: 'POST', body: cached.body });
-          const newKey: string | undefined = recreated.ok ? (recreated.data as any)?.searchKey : undefined;
-          if (newKey) {
-            bodyCache.set(newKey, cached);
-            conditionCache.set(`${cached.sold ? 'sold' : 'live'}:${JSON.stringify(cached.body)}`, newKey);
-            const retry = await bridge.request({ type: 'fetch', url: buildPageUrl(newKey, q, id, cached.sold), method: 'GET' });
-            if (retry.ok) {
-              cacheRawItems((retry.data as any)?.items, cached.category);
-              return pageResult(retry.data);
-            }
-          }
-        }
-      }
-      return text(errorText(reply));
-    }
+    async ({ searchKey, page, limit, sort }) => text(await service.getPage(searchKey, page, limit as GetLimit, sort as Sort))
   );
 
   server.registerTool(
@@ -573,11 +310,7 @@ export function createServer(bridge: BridgeLike): McpServer {
       },
       annotations: { readOnlyHint: true, destructiveHint: false },
     },
-    async ({ itemId, slot }) => {
-      const id = await ensureIdentity();
-      if (typeof id === 'string') return text(id);
-      return text(await computeItemHwansan(itemId, slot));
-    }
+    async ({ itemId, slot }) => text(await service.itemHwansan(itemId, slot))
   );
 
   server.registerTool(
@@ -589,18 +322,7 @@ export function createServer(bridge: BridgeLike): McpServer {
       inputSchema: {},
       annotations: { readOnlyHint: true, destructiveHint: false },
     },
-    async () => {
-      const id = await ensureIdentity();
-      if (typeof id === 'string') return text(id);
-      const body = { worldId: id.worldId, accountId: id.accountId, characterId: id.characterId };
-      const reply = await bridge.request({ type: 'fetch', url: RECENT_SOLD_URL, method: 'POST', body });
-      if (!reply.ok) return text(errorText(reply));
-      try {
-        return text(summarizeSearch(reply.data));
-      } catch {
-        return text(reply.data); // 응답 형태가 검색과 다르면 원본 반환
-      }
-    }
+    async () => text(await service.recentSold())
   );
 
   server.registerTool(
@@ -612,13 +334,7 @@ export function createServer(bridge: BridgeLike): McpServer {
       inputSchema: {},
       annotations: { readOnlyHint: true, destructiveHint: false },
     },
-    async () => {
-      const id = await ensureIdentity();
-      if (typeof id === 'string') return text(id);
-      const st = await wishlistState(id);
-      if (typeof st === 'string') return text(st);
-      return text({ count: st.count, remainingSlots: st.remaining, max: WISHLIST_MAX, items: st.items.map(summarizeItem) });
-    }
+    async () => text(await service.getWishlist())
   );
 
   server.registerTool(
@@ -632,26 +348,7 @@ export function createServer(bridge: BridgeLike): McpServer {
       },
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
     },
-    async ({ itemId }) => {
-      const id = await ensureIdentity();
-      if (typeof id === 'string') return text(id);
-      const { tradeSn, subIdx } = parseItemId(itemId);
-      const reply = await bridge.request({
-        type: 'fetch',
-        url: WISHLIST_URL,
-        method: 'POST',
-        body: buildWishlistBody(id, tradeSn, subIdx),
-      });
-      if (!reply.ok) return text(errorText(reply));
-      const st = await wishlistState(id);
-      return text({
-        added: true,
-        tradeSn,
-        subIdx,
-        remainingSlots: typeof st === 'string' ? undefined : st.remaining,
-        max: WISHLIST_MAX,
-      });
-    }
+    async ({ itemId }) => text(await service.addWishlist(itemId))
   );
 
   server.registerTool(
@@ -666,25 +363,7 @@ export function createServer(bridge: BridgeLike): McpServer {
       // 찜 해제는 같은 id로 즉시 재추가 가능(데이터 손실 없음) → 파괴적 아님
       annotations: { readOnlyHint: false, destructiveHint: false },
     },
-    async ({ itemId }) => {
-      const id = await ensureIdentity();
-      if (typeof id === 'string') return text(id);
-      const { tradeSn, subIdx } = parseItemId(itemId);
-      const reply = await bridge.request({
-        type: 'fetch',
-        url: buildWishlistDeleteUrl(id, tradeSn, subIdx),
-        method: 'DELETE',
-      });
-      if (!reply.ok) return text(errorText(reply));
-      const st = await wishlistState(id);
-      return text({
-        removed: true,
-        tradeSn,
-        subIdx,
-        remainingSlots: typeof st === 'string' ? undefined : st.remaining,
-        max: WISHLIST_MAX,
-      });
-    }
+    async ({ itemId }) => text(await service.removeWishlist(itemId))
   );
 
   server.registerTool(
@@ -696,21 +375,7 @@ export function createServer(bridge: BridgeLike): McpServer {
       inputSchema: {},
       annotations: { readOnlyHint: true, destructiveHint: false },
     },
-    async () => {
-      const result = await listCharacters(bridge);
-      if (typeof result === 'string') return text(result);
-      characters = result;
-      const current = identity?.characterId;
-      return text(
-        result.map((c) => ({
-          world: c.worldName,
-          name: c.characterName,
-          level: c.level,
-          characterId: c.characterId,
-          current: c.characterId === current || undefined,
-        }))
-      );
-    }
+    async () => text(await service.listCharacters())
   );
 
   server.registerTool(
@@ -726,29 +391,7 @@ export function createServer(bridge: BridgeLike): McpServer {
       // 서버 내부 검색 기준만 바꾼다(넥슨 데이터 변경 없음) — 읽기는 아니지만 파괴적이지 않고 재실행 안전
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
     },
-    async ({ characterName, characterId }) => {
-      if (!characterName && !characterId) return text('characterName 또는 characterId를 지정하세요.');
-      if (!characters) {
-        const result = await listCharacters(bridge);
-        if (typeof result === 'string') return text(result);
-        characters = result;
-      }
-      const matches = characters.filter(
-        (c) => (characterId ? c.characterId === characterId : true) && (characterName ? c.characterName === characterName : true)
-      );
-      if (!matches.length) {
-        return text(`일치하는 캐릭터가 없습니다. list_characters로 목록을 확인하세요.`);
-      }
-      if (matches.length > 1) {
-        return text({
-          note: '이름이 여러 캐릭터와 일치합니다. characterId로 지정하세요.',
-          candidates: matches.map((c) => ({ world: c.worldName, name: c.characterName, level: c.level, characterId: c.characterId })),
-        });
-      }
-      const c = matches[0];
-      identity = { worldId: c.worldId, accountId: c.accountId, characterId: c.characterId, characterName: c.characterName };
-      return text({ switched: { world: c.worldName, name: c.characterName, level: c.level, characterId: c.characterId } });
-    }
+    async ({ characterName, characterId }) => text(await service.setCharacter(characterName, characterId))
   );
 
   server.registerTool(
@@ -760,30 +403,7 @@ export function createServer(bridge: BridgeLike): McpServer {
       inputSchema: {},
       annotations: { readOnlyHint: true, destructiveHint: false },
     },
-    async () => {
-      if (!bridge.connected) {
-        return text({ connected: false, state: 'no_extension', note: DISCONNECTED_MSG });
-      }
-      const id = await ensureIdentity();
-      if (typeof id === 'string') return text({ connected: true, state: 'no_session', identity: null, note: id });
-      // identity는 캐시일 수 있으니 무료 GET으로 세션 생존을 실측한다.
-      // 옥션 페이지가 다른 곳에서 새 세션을 만들면 이 세션은 소리 없이 죽는다(단일 활성).
-      const dl = await bridge.request({ type: 'fetch', url: DAILY_LIMIT_URL, method: 'GET' });
-      if (!dl.ok) {
-        return text({
-          connected: true,
-          state: 'session_expired',
-          identity: { ...id, worldName: worldName(id.worldId) },
-          note: errorText(dl),
-        });
-      }
-      return text({
-        connected: true,
-        state: 'ready',
-        identity: { ...id, worldName: worldName(id.worldId) },
-        dailyLimit: dl.data,
-      });
-    }
+    async () => text(await service.status())
   );
 
   return server;
