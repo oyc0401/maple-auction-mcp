@@ -1,8 +1,10 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
+import { readFileSync } from 'node:fs';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import type { BridgeCommandInput, BridgeReply } from '@maple/shared';
 import { createServer, type BridgeLike } from '../src/mcp.js';
+import { fetchScouter, clearScouterCache } from '../src/hwansan2/scouterClient.js';
 
 const ID = { worldId: 5, accountId: 1, characterId: 2 };
 
@@ -106,6 +108,58 @@ describe('item_hwansan (단일 매물 교체 환산)', () => {
     await c.callTool({ name: 'search_armor', arguments: { subCategory: 'ARMOR_ACCESSORY_RING' } });
     const r = await c.callTool({ name: 'item_hwansan', arguments: { itemId: 'a:1', slot: '모자' } });
     expect(textOf(r)).toContain('가능한 부위');
+  });
+});
+
+describe('user_equip (캐릭터 착용 장비 조회)', () => {
+  const idResponse = JSON.parse(readFileSync(new URL('../src/scouter/id-response', import.meta.url), 'utf8'));
+  // 스카우터 캐시를 fixture로 시딩 → 도구 핸들러의 fetchScouter(name)가 네트워크 없이 캐시 히트
+  async function seedScouter(name: string) {
+    clearScouterCache();
+    const f = vi.fn(async () => ({ ok: true, status: 200, json: async () => idResponse } as Response));
+    await fetchScouter(name, { fetchFn: f as any });
+  }
+  const noopBridge = () => fakeBridge(() => ({ id: '1', ok: true, data: ID }));
+
+  it('slot 생략 시 24부위 요약 + 환산380을 반환한다', async () => {
+    await seedScouter('오유찬');
+    const c = await client(noopBridge());
+    const r = await c.callTool({ name: 'user_equip', arguments: { characterName: '오유찬' } });
+    const parsed = JSON.parse(textOf(r));
+    expect(parsed.character).toBe('오유찬');
+    expect(parsed.hwansan380).toBe(30371);
+    expect(parsed.items).toHaveLength(24);
+    const weapon = parsed.items.find((i: any) => i.slot === '무기');
+    expect(weapon).toMatchObject({ name: '아케인셰이드 체인', star: 17, pot: '레전드리', add: '유니크' });
+  });
+
+  it('slot 지정 시 스탯·잠재·에디·소울 상세를 반환한다', async () => {
+    await seedScouter('오유찬');
+    const c = await client(noopBridge());
+    const r = await c.callTool({ name: 'user_equip', arguments: { characterName: '오유찬', slot: '무기' } });
+    const parsed = JSON.parse(textOf(r));
+    expect(parsed.name).toBe('아케인셰이드 체인');
+    expect(parsed.starforce).toBe(17);
+    expect(parsed.stat).toContain('공격력+649');
+    expect(parsed.potential).toContain('레전드리:');
+    expect(parsed.potential).toContain('몬스터 방어율 무시 +40%');
+    expect(parsed.additional).toContain('공격력 +9%');
+    expect(parsed.soul).toContain('보스 몬스터 데미지 +7%');
+    expect(parsed.cuttable).toBe(3);
+  });
+
+  it('없는 slot이면 가능한 부위를 안내한다', async () => {
+    await seedScouter('오유찬');
+    const c = await client(noopBridge());
+    const r = await c.callTool({ name: 'user_equip', arguments: { characterName: '오유찬', slot: '날개' } });
+    expect(textOf(r)).toContain('가능한 부위');
+    expect(textOf(r)).toContain('무기');
+  });
+
+  it('characterName 생략 + 신원에 이름이 없으면 지정을 안내한다', async () => {
+    const c = await client(noopBridge()); // discover가 characterName 없이 응답
+    const r = await c.callTool({ name: 'user_equip', arguments: {} });
+    expect(textOf(r)).toContain('characterName');
   });
 });
 

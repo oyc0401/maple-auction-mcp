@@ -115,6 +115,52 @@ export function summarizeItem(item: any): ItemSummary {
   };
 }
 
+// 스카우터(userEquipData) 합산 스탯 중 노출할 키와 라벨. %성 옵션은 라벨에 % 표기.
+const EQUIP_STAT_LABELS: [key: string, label: string][] = [
+  ['str', 'STR'], ['dex', 'DEX'], ['int', 'INT'], ['luk', 'LUK'],
+  ['all_stat', '올스탯%'], ['max_hp', 'HP'], ['max_hp_rate', 'HP%'],
+  ['attack_power', '공격력'], ['magic_power', '마력'],
+  ['boss_damage', '보공%'], ['damage', '뎀%'], ['ignore_monster_armor', '방무%'],
+  ['equipment_level_decrease', '착제감'],
+];
+
+// 착용 장비 합산 스탯 한 줄: "LUK+272 DEX+170 공격력+649 보공%+40" (0은 생략, 전부 0이면 null)
+function equipStatLine(total?: Record<string, string | number>): string | null {
+  if (!total) return null;
+  const parts = EQUIP_STAT_LABELS
+    .map(([k, label]) => {
+      const v = Number(total[k] ?? 0);
+      return v ? `${label}+${v}` : null;
+    })
+    .filter(Boolean);
+  return parts.length ? parts.join(' ') : null;
+}
+
+// 잠재/에디 줄 배열: "레전드리: 줄 / 줄" (등급 없으면 null)
+function scouterPotentialLine(grade: unknown, lines: (string | null)[] | undefined): string | null {
+  const g = typeof grade === 'string' && grade ? grade : null;
+  const body = (lines ?? []).filter(Boolean).join(' / ');
+  if (!g || !body) return null;
+  return `${g}: ${body}`;
+}
+
+// maplescouter userEquipData 항목 1개 → 착용 장비 상세 요약 (user_equip slot 지정 응답)
+export function summarizeScouterEquip(e: any): Record<string, unknown> {
+  const out: Record<string, unknown> = {
+    slot: e.slot,
+    name: e.name,
+    starforce: Number(e.starforce) || 0,
+    scroll: Number(e.scroll_upgrade) ? `강화 ${Number(e.scroll_upgrade)}회` : null,
+    stat: equipStatLine(e.totalOption),
+    potential: scouterPotentialLine(e.potential_grade, e.potential_option_1),
+    additional: scouterPotentialLine(e.additional_potential_grade, e.additional_potential_option_1),
+    soul: e.soul_name ? `${e.soul_name}${e.soul_option ? ` / ${e.soul_option}` : ''}` : null,
+  };
+  if (e.cuttable_count != null && String(e.cuttable_count) !== '') out.cuttable = Number(e.cuttable_count);
+  if (Number(e.ring_level)) out.ringLevel = Number(e.ring_level);
+  return out;
+}
+
 export function summarizeSearch(resp: any): SearchSummary {
   if (resp == null || typeof resp !== 'object') {
     throw new Error('거래소 응답이 비어 있거나 형식이 올바르지 않습니다.');

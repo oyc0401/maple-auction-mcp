@@ -19,7 +19,7 @@ import {
   type Sort,
   type GetLimit,
 } from './mapping.js';
-import { summarizeSearch, summarizeItem } from './summarize.js';
+import { summarizeSearch, summarizeItem, summarizeScouterEquip } from './summarize.js';
 import { listCharacters, type CharacterInfo } from './characters.js';
 import { fetchScouter, swapDelta380, categoryToSlots, slotLabel } from './hwansan2/index.js';
 import {
@@ -250,6 +250,54 @@ export function createServer(bridge: BridgeLike): McpServer {
       ...(unknown.size ? { unknown: [...unknown] } : {}),
     };
   }
+
+  server.registerTool(
+    'user_equip',
+    {
+      title: '캐릭터 착용 장비 조회',
+      description:
+        '닉네임으로 임의 캐릭터가 현재 착용 중인 장비를 조회한다(마지막 로그아웃 기준, 외부 계산기 경유·10분 캐시). slot 생략 시 24부위 요약 목록 + 환산380, 지정 시 스탯·잠재·에디·소울 상세. 경매장 매물과의 교체 손익은 item_hwansan.',
+      inputSchema: {
+        characterName: z.string().optional().describe('조회할 캐릭터 닉네임. 생략 시 현재 검색 기준 캐릭터'),
+        slot: z.string().optional().describe('부위 (예: "무기", "반지1", "펜던트2"). 생략 시 전체 목록'),
+      },
+      annotations: { readOnlyHint: true },
+    },
+    async ({ characterName, slot }) => {
+      let name = characterName;
+      if (!name) {
+        const id = await ensureIdentity();
+        if (typeof id === 'string') return text(id);
+        name = identity?.characterName;
+        if (!name) return text('현재 캐릭터 이름을 알 수 없습니다. characterName을 지정하거나 set_character로 기준 캐릭터를 정하세요.');
+      }
+      let data;
+      try {
+        data = await fetchScouter(name);
+      } catch (e) {
+        return text(`캐릭터 조회 실패(maplescouter): ${(e as Error).message}`);
+      }
+      if (slot) {
+        const e = data.userEquipData.find((x) => x.slot === slot);
+        if (!e) return text(`slot "${slot}" 장비가 없습니다. 가능한 부위: ${data.userEquipData.map((x) => x.slot).join(', ')}`);
+        return text({ character: name, ...summarizeScouterEquip(e) });
+      }
+      const st = data.userStat.stat;
+      return text({
+        character: name,
+        class: st.myClass,
+        level: Number(st.level) || undefined,
+        hwansan380: data.calculatedData.boss380_stat,
+        items: data.userEquipData.map((e) => ({
+          slot: e.slot,
+          name: e.name,
+          star: Number(e.starforce) || undefined,
+          pot: (e.potential_grade as string) || undefined,
+          add: (e.additional_potential_grade as string) || undefined,
+        })),
+      });
+    }
+  );
 
   server.registerTool(
     'search_items',
