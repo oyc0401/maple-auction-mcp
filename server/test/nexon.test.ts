@@ -1,14 +1,17 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import type { WireReply } from '@maple/shared';
 import { NexonBridge, nexonHeaders, type WireTransport } from '../src/nexon.js';
 
 function transport(reply: WireReply): WireTransport & { last: () => Record<string, unknown> } {
-  const req = vi.fn(async () => reply);
+  const calls: unknown[] = [];
   return {
     connected: true,
-    request: req,
-    last: () => req.mock.calls[0][0] as Record<string, unknown>,
-  } as unknown as WireTransport & { last: () => Record<string, unknown> };
+    request: async (cmd) => {
+      calls.push(cmd);
+      return reply;
+    },
+    last: () => calls[0] as Record<string, unknown>,
+  };
 }
 
 describe('nexonHeaders', () => {

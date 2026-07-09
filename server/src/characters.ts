@@ -1,5 +1,5 @@
 import { NO_SESSION_MSG, type Identity } from '@maple/shared';
-import type { BridgeLike } from './mcp.js';
+import type { BridgeLike } from './nexon.js';
 import { KNOWN_WORLD_IDS, worldName } from './constants.js';
 
 const AUTH_BASE = 'https://api.mskr.nexon.com/v1';
@@ -17,11 +17,12 @@ export async function listCharacters(bridge: BridgeLike): Promise<CharacterInfo[
   // 여기서 끝나 web-token/session POST 를 아예 타지 않는다.
   // 그 POST 는 세션 토큰을 회전시키는데, 확장(chrome-extension:// 오리진)에서 쏘면 새 쿠키가
   // 크로스사이트/파티션 컨텍스트에서 유실돼 기존 로그인이 풀린다(로그아웃). 그래서 최후수단으로만 쓴다.
-  let accRes = await bridge.request({ type: 'fetch', url: `${AUTH_BASE}/accounts`, method: 'GET' });
+  // 첫 /accounts 조회는 fanout — 브로커가 모든 확장(프로필)에 뿌려 로그인된 확장을 preferred로 고정한다.
+  let accRes = await bridge.request({ type: 'fetch', url: `${AUTH_BASE}/accounts`, method: 'GET', fanout: true });
   if (!accRes.ok && accRes.status === 401) {
     // 세션 미형성(401)일 때만 토큰 교환을 시도한다.
     await bridge.request({ type: 'fetch', url: `${AUTH_BASE}/auth/web-token/session`, method: 'POST' });
-    accRes = await bridge.request({ type: 'fetch', url: `${AUTH_BASE}/accounts`, method: 'GET' });
+    accRes = await bridge.request({ type: 'fetch', url: `${AUTH_BASE}/accounts`, method: 'GET', fanout: true });
   }
   if (!accRes.ok) {
     const code = accRes.ok ? '' : `[HTTP ${accRes.status ?? '?'}${accRes.code ? '/' + accRes.code : ''}] `;
@@ -64,4 +65,12 @@ export async function listCharacters(bridge: BridgeLike): Promise<CharacterInfo[
   if (!found.length) return '이 넥슨 계정에서 메이플 캐릭터를 찾지 못했습니다.';
   found.sort((a, b) => b.level - a.level);
   return found;
+}
+
+// 구 확장 discover의 서버측 대체: 계정의 전 캐릭터 중 최고 레벨을 기본 검색 기준으로 고른다.
+// (listCharacters가 레벨 내림차순 정렬을 보장하므로 첫 항목이 최고 레벨)
+export async function discoverIdentity(bridge: BridgeLike): Promise<CharacterInfo | string> {
+  const chars = await listCharacters(bridge);
+  if (typeof chars === 'string') return chars;
+  return chars[0];
 }

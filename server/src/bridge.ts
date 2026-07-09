@@ -5,20 +5,21 @@ import { randomUUID } from 'node:crypto';
 import {
   BRIDGE_PORT,
   DISCONNECTED_MSG,
-  type BridgeCommandInput,
-  type BridgeReply,
+  type WireFetchCommand,
+  type WireReply,
   type BridgeServerMessage,
 } from '@maple/shared';
 
-// 브로커에 붙는 얇은 WS 클라이언트. 확장 선택/discover는 브로커가 담당한다.
+// 브로커에 붙는 얇은 WS 클라이언트. 확장 선택(fanout)은 브로커가 담당한다.
 // 브로커가 없으면 한 번 자동 스폰하고 재접속한다.
+// WireTransport 구현체 — 내부 API 변환은 NexonBridge가 한다.
 export class Bridge {
   private port: number;
   private ws: WebSocket | null = null;
   private extPresent = false;
   private spawned = false;
   private closed = false;
-  private pending = new Map<string, { resolve: (r: BridgeReply) => void; timer: NodeJS.Timeout }>();
+  private pending = new Map<string, { resolve: (r: WireReply) => void; timer: NodeJS.Timeout }>();
   private ready: Promise<void>;
   private resolveReady!: () => void;
 
@@ -91,7 +92,7 @@ export class Bridge {
     p.resolve(msg);
   }
 
-  async request(cmd: BridgeCommandInput, timeoutMs = 15000): Promise<BridgeReply> {
+  async request(cmd: Omit<WireFetchCommand, 'id'>, timeoutMs = 15000): Promise<WireReply> {
     // 콜드 스타트 오탐 방지: 최초 접속을 잠깐 기다린다(최대 2s).
     await Promise.race([this.ready, new Promise((r) => setTimeout(r, 2000))]);
     if (!this.connected) {

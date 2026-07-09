@@ -16,7 +16,7 @@ afterEach(async () => {
   await broker?.close();
 });
 
-// 로그인된 확장처럼 동작: discover엔 identity, fetch엔 요청 url을 그대로 되돌려줌.
+// 로그인된 확장처럼 동작: fanout 프로브엔 200, 일반 fetch엔 요청 url을 그대로 되돌려줌.
 function connectLoggedInExtension(): Promise<WebSocket> {
   return new Promise((resolve, reject) => {
     const ws = new WebSocket(`ws://127.0.0.1:${TEST_PORT}`, { origin: 'chrome-extension://x' });
@@ -25,10 +25,10 @@ function connectLoggedInExtension(): Promise<WebSocket> {
     ws.on('message', (raw) => {
       const cmd = JSON.parse(raw.toString());
       if (cmd.keepalive) return;
-      if (cmd.type === 'discover') {
-        ws.send(JSON.stringify({ id: cmd.id, ok: true, data: { worldId: 5, accountId: 1, characterId: 2 } }));
+      if (cmd.fanout) {
+        ws.send(JSON.stringify({ id: cmd.id, ok: true, status: 200, bodyText: '{"accounts":[{"accountId":1}]}' }));
       } else {
-        ws.send(JSON.stringify({ id: cmd.id, ok: true, data: cmd.url }));
+        ws.send(JSON.stringify({ id: cmd.id, ok: true, status: 200, bodyText: cmd.url }));
       }
     });
   });
@@ -49,18 +49,19 @@ describe('멀티 세션 통합', () => {
     expect(a.connected).toBe(true);
     expect(b.connected).toBe(true);
 
-    // 각 세션이 discover로 identity를 받는다 (브로커가 preferred 고정)
-    const [da, db] = await Promise.all([a.request({ type: 'discover' }), b.request({ type: 'discover' })]);
-    expect(da.ok && (da.data as any).worldId).toBe(5);
-    expect(db.ok && (db.data as any).worldId).toBe(5);
+    // 각 세션이 fanout 프로브로 로그인 확인을 받는다 (브로커가 preferred 고정)
+    const probe = { type: 'fetch', url: 'https://a.nexon.com/accounts', method: 'GET', headers: {}, fanout: true } as const;
+    const [da, db] = await Promise.all([a.request(probe), b.request(probe)]);
+    expect(da.ok && da.bodyText).toContain('accounts');
+    expect(db.ok && db.bodyText).toContain('accounts');
 
     // 동시 fetch — 각자 자기 url만 되돌려받아야 함 (응답 격리)
     const [ra, rb] = await Promise.all([
-      a.request({ type: 'fetch', url: 'SESSION-A', method: 'GET' }),
-      b.request({ type: 'fetch', url: 'SESSION-B', method: 'GET' }),
+      a.request({ type: 'fetch', url: 'SESSION-A', method: 'GET', headers: {} }),
+      b.request({ type: 'fetch', url: 'SESSION-B', method: 'GET', headers: {} }),
     ]);
-    expect(ra.ok && ra.data).toBe('SESSION-A');
-    expect(rb.ok && rb.data).toBe('SESSION-B');
+    expect(ra.ok && ra.bodyText).toBe('SESSION-A');
+    expect(rb.ok && rb.bodyText).toBe('SESSION-B');
 
     ext.close();
   });
@@ -76,8 +77,8 @@ describe('멀티 세션 통합', () => {
 
     // B는 여전히 동작
     expect(b.connected).toBe(true);
-    const rb = await b.request({ type: 'fetch', url: 'STILL-ALIVE', method: 'GET' });
-    expect(rb.ok && rb.data).toBe('STILL-ALIVE');
+    const rb = await b.request({ type: 'fetch', url: 'STILL-ALIVE', method: 'GET', headers: {} });
+    expect(rb.ok && rb.bodyText).toBe('STILL-ALIVE');
     // 확장도 브로커에 그대로 붙어있음
     expect(broker.extConnected).toBe(true);
 

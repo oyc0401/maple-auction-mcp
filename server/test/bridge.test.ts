@@ -31,14 +31,14 @@ describe('Bridge (client)', () => {
     ext.on('message', (raw) => {
       const cmd = JSON.parse(raw.toString());
       if (cmd.keepalive) return;
-      ext.send(JSON.stringify({ id: cmd.id, ok: true, data: { pong: cmd.url } }));
+      ext.send(JSON.stringify({ id: cmd.id, ok: true, status: 200, bodyText: cmd.url }));
     });
     bridge = new Bridge(TEST_PORT);
     await settle();
     expect(bridge.connected).toBe(true);
-    const reply = await bridge.request({ type: 'fetch', url: 'https://x', method: 'GET' });
+    const reply = await bridge.request({ type: 'fetch', url: 'https://x', method: 'GET', headers: {} });
     expect(reply.ok).toBe(true);
-    if (reply.ok) expect(reply.data).toEqual({ pong: 'https://x' });
+    if (reply.ok) expect(reply.bodyText).toBe('https://x');
     ext.close();
   });
 
@@ -47,7 +47,7 @@ describe('Bridge (client)', () => {
     bridge = new Bridge(TEST_PORT);
     await settle();
     expect(bridge.connected).toBe(false);
-    const reply = await bridge.request({ type: 'discover' });
+    const reply = await bridge.request({ type: 'fetch', url: 'https://x', method: 'GET', headers: {} });
     expect(reply.ok).toBe(false);
     if (!reply.ok) expect(reply.code).toBe('DISCONNECTED');
   });

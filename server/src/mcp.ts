@@ -1,6 +1,6 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
-import { DISCONNECTED_MSG, NO_SESSION_MSG, type BridgeCommandInput, type BridgeReply, type Identity } from '@maple/shared';
+import { DISCONNECTED_MSG, NO_SESSION_MSG, type BridgeReply, type Identity } from '@maple/shared';
 import {
   buildCreateBody,
   buildPageUrl,
@@ -20,7 +20,7 @@ import {
   type GetLimit,
 } from './mapping.js';
 import { summarizeSearch, summarizeItem, summarizeScouterEquip } from './summarize.js';
-import { listCharacters, type CharacterInfo } from './characters.js';
+import { listCharacters, discoverIdentity, type CharacterInfo } from './characters.js';
 import { loadKnowledge } from './knowledge.js';
 import { fetchScouter, swapDelta380, categoryToSlots, slotLabel } from './hwansan2/index.js';
 import {
@@ -41,10 +41,9 @@ import {
   JOB_CLASSES,
 } from './constants.js';
 
-export interface BridgeLike {
-  readonly connected: boolean;
-  request(cmd: BridgeCommandInput, timeoutMs?: number): Promise<BridgeReply>;
-}
+// 내부 API 계약은 nexon.ts 소유 (변환 계층과 함께) — 기존 소비처를 위해 re-export.
+import type { BridgeLike } from './nexon.js';
+export type { BridgeLike } from './nexon.js';
 
 function text(value: unknown) {
   return { content: [{ type: 'text' as const, text: typeof value === 'string' ? value : JSON.stringify(value, null, 1) }] };
@@ -202,9 +201,9 @@ export function createServer(bridge: BridgeLike): McpServer {
 
   async function ensureIdentity(): Promise<Identity | string> {
     if (identity) return identity;
-    const reply = await bridge.request({ type: 'discover' });
-    if (reply.ok && reply.data) {
-      identity = reply.data as Identity & { characterName?: string };
+    const found = await discoverIdentity(bridge);
+    if (typeof found !== 'string') {
+      identity = found;
       return identity;
     }
     const env = process.env.MAPLE_IDENTITY;
@@ -212,9 +211,7 @@ export function createServer(bridge: BridgeLike): McpServer {
       identity = JSON.parse(env) as Identity;
       return identity;
     }
-    return reply.ok
-      ? '계정 정보를 찾지 못했습니다.'
-      : `계정 정보를 찾지 못했습니다: ${errorText(reply)}`;
+    return `계정 정보를 찾지 못했습니다: ${found}`;
   }
 
   // 남은 일일 검색 생성 횟수 (GET, 무료). 실패하면 null.
