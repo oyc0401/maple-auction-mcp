@@ -186,10 +186,3 @@ export const WEAPON_CATEGORY_LABELS: Record<string, string> = {
   WEAPON_SUB: '보조무기 전체',
 } as const;
 export const WEAPON_CATEGORY_KEYS = Object.keys(WEAPON_CATEGORY_LABELS);
-
-// enum 설명용: "키(라벨)" 나열
-export function labelList(labels: Record<string, string>): string {
-  return Object.entries(labels)
-    .map(([k, v]) => `${k}(${v})`)
-    .join(', ');
-}
