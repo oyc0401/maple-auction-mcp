@@ -31,11 +31,24 @@ Claude Desktop은 `claude_desktop_config.json`에 추가:
 codex mcp add maple-auction -- npx -y maple-auction-mcp
 ```
 
-### Gemini CLI
+### Antigravity CLI
 
-```bash
-gemini mcp add --scope user maple-auction npx -y maple-auction-mcp
+Antigravity CLI는 등록 명령어가 없어 설정 파일 `~/.gemini/config/mcp_config.json`(없으면 생성)에 직접 추가합니다:
+
+```json
+{
+  "mcpServers": {
+    "maple-auction": {
+      "command": "npx",
+      "args": ["-y", "maple-auction-mcp"]
+    }
+  }
+}
 ```
+
+Windows는 `"command": "cmd", "args": ["/c", "npx", "-y", "maple-auction-mcp"]` 형태로 넣어주세요. 등록 확인은 CLI에서 `/mcp` 입력. (구버전 CLI는 `~/.gemini/antigravity-cli/mcp_config.json`을 읽습니다.)
+
+> Gemini CLI는 2026-06-18부로 개인 계정 지원이 종료되어 Antigravity CLI로 대체되었습니다.
 
 ## 환산 주스탯 (자동)
 
