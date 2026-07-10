@@ -31,6 +31,12 @@ Claude Desktop은 `claude_desktop_config.json`에 추가:
 codex mcp add maple-auction -- npx -y maple-auction-mcp
 ```
 
+### Gemini CLI
+
+```bash
+gemini mcp add --scope user maple-auction npx -y maple-auction-mcp
+```
+
 ## 환산 주스탯 (자동)
 
 방어구·장신구를 검색하면 각 매물에 **`hwansanBySlot`**(부위별로, 현재 착용 장비 대신 낄 때 오르는 환산 주스탯, 음수면 하락)이 함께 표시된다. 전투력과 달리 **보스 데미지·방어율 무시·데미지·세트 효과 변화까지 반영**해 장비 우열을 판단한다.

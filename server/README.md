@@ -31,6 +31,12 @@ Claude Desktop은 `claude_desktop_config.json`에 추가:
 codex mcp add maple-auction -- npx -y maple-auction-mcp
 ```
 
+### Gemini CLI
+
+```bash
+gemini mcp add --scope user maple-auction npx -y maple-auction-mcp
+```
+
 ## 사용 예
 
 > 앱솔랩스 스피어 에디공 21% 이상 매물 찾아줘
