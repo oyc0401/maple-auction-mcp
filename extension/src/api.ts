@@ -5,10 +5,14 @@ import type { WireFetchCommand, WireReply } from '@maple/shared';
 // 여기 남는 것은 바뀌지 않는 보안 불변식뿐 — 그래서 웹스토어 재심사가 필요 없다.
 //
 // 보안 불변식:
-// 1. https + *.nexon.com만 실행 (manifest host_permissions와 동일 범위, 확대 금지)
+// 1. https + 허용 호스트만 실행 (manifest host_permissions와 동일 범위, 그 외 확대 금지):
+//    - *.nexon.com    — 거래소 API. 넥슨 로그인 세션 쿠키로 호출
+//    - *.maplescouter.com — 공개 환산 계산기. 서버 직접 fetch가 Cloudflare 봇 차단(403)되어 브라우저 경유가 필요
 // 2. 쿠키 비접촉 — credentials:'include'로 브라우저가 붙일 뿐, 값을 읽거나 전송하지 않는다
 // 3. 헤더는 서버가 구성 — Cookie/Origin/Referer 등 금지 헤더는 브라우저 fetch가 원천 차단
 // 4. 응답은 상태 코드 + 원문 텍스트만 — 해석(JSON 파싱·안내문)은 서버 몫
+
+const ALLOWED_HOSTS = ['nexon.com', 'maplescouter.com'];
 
 function allowed(url: string): boolean {
   let u: URL;
@@ -18,7 +22,7 @@ function allowed(url: string): boolean {
     return false;
   }
   if (u.protocol !== 'https:') return false;
-  return u.hostname === 'nexon.com' || u.hostname.endsWith('.nexon.com');
+  return ALLOWED_HOSTS.some((h) => u.hostname === h || u.hostname.endsWith(`.${h}`));
 }
 
 export async function executeFetch(cmd: WireFetchCommand, fetchFn: typeof fetch = fetch): Promise<WireReply> {

@@ -2,7 +2,7 @@
 
 **Maple Auction MCP** 크롬 확장 프로그램
 
-- 시행일: 2026년 7월 8일
+- 시행일: 2026년 7월 11일
 - 문의: oycshare@gmail.com
 
 ## 개요
@@ -20,15 +20,17 @@ Maple Auction MCP(이하 "본 확장")는 메이플스토리 경매장(거래소
 | 넥슨 로그인 세션 쿠키 | 브라우저가 `*.nexon.com` API 요청 시 자동으로 첨부 (`credentials: include`). 본 확장은 쿠키 값을 직접 읽거나 저장하지 않습니다. |
 | 넥슨 계정 ID, 게임 캐릭터 정보(월드, 캐릭터 ID·이름·레벨) | 경매장 API 호출에 필요한 사용자 캐릭터를 식별하기 위해 넥슨 API로부터 조회 |
 | 경매장(거래소) 검색 요청 및 결과 | MCP 서버의 요청을 대신 수행하고 결과를 반환 |
+| 캐릭터 닉네임(공개 정보) | 환산(스탯 효율) 계산을 위해 공개 계산기 `maplescouter.com`에 조회. 넥슨 로그인 쿠키·계정 ID는 이 요청에 전송되지 않습니다. |
 
 ## 2. 정보의 전송 범위
 
 처리된 모든 정보는 다음 두 곳 사이에서만 이동합니다.
 
-1. **넥슨 공식 서버** (`https://*.nexon.com`) — API 호출 대상
-2. **사용자 본인의 컴퓨터에서 실행 중인 로컬 MCP 서버** (`127.0.0.1`, 로컬 WebSocket)
+1. **넥슨 공식 서버** (`https://*.nexon.com`) — 경매장·계정 API 호출 대상
+2. **환산 계산기** (`https://*.maplescouter.com`) — 공개 스탯 계산 서비스. 캐릭터 닉네임만 전송하며 넥슨 로그인 쿠키·계정 ID는 보내지 않습니다. (이 서비스는 Cloudflare 봇 차단으로 브라우저를 통해서만 호출 가능하여 본 확장이 경유합니다.)
+3. **사용자 본인의 컴퓨터에서 실행 중인 로컬 MCP 서버** (`127.0.0.1`, 로컬 WebSocket)
 
-개발자 서버, 분석(analytics) 서비스, 광고 네트워크 등 **외부 제3자에게 전송되는 정보는 일절 없습니다.**
+개발자 서버, 분석(analytics) 서비스, 광고 네트워크 등 **외부로 전송되는 정보는 일절 없습니다.**
 
 ## 3. 정보의 저장
 
@@ -42,6 +44,7 @@ Maple Auction MCP(이하 "본 확장")는 메이플스토리 경매장(거래소
 | 권한 | 사유 |
 |---|---|
 | `host_permissions: https://*.nexon.com/*` | 사용자의 로그인 세션으로 넥슨 경매장·계정 API를 호출하기 위해 필요 |
+| `host_permissions: https://*.maplescouter.com/*` | 환산(스탯 효율) 계산기 API를 호출하기 위해 필요. Cloudflare 봇 차단으로 서버 직접 호출이 불가하여 브라우저를 경유합니다 |
 | `alarms` | 로컬 MCP 서버와의 WebSocket 연결이 끊어졌을 때 주기적으로 재연결하기 위해 필요 |
 
 ## 5. 판매 및 제3자 제공
@@ -66,16 +69,16 @@ Maple Auction MCP(이하 "본 확장")는 메이플스토리 경매장(거래소
 
 # Privacy Policy (English)
 
-**Maple Auction MCP** Chrome Extension — Effective July 8, 2026
+**Maple Auction MCP** Chrome Extension — Effective July 11, 2026
 
 Maple Auction MCP is a local bridge for a MapleStory auction-house search MCP server. It calls Nexon APIs using the Nexon login session already present in your browser, and relays the results only to an MCP server running on your own machine (`127.0.0.1`).
 
-**This extension does not collect, transmit, or store any personal data to the developer or any third party.**
+**This extension does not collect, transmit, or store any personal data to the developer.**
 
 - **Data handled (in memory only):** Nexon account ID, game character info (world, character ID/name/level), and auction search requests/results. Login cookies are attached automatically by the browser (`credentials: include`); the extension never reads or stores cookie values.
-- **Data flow:** exclusively between official Nexon servers (`https://*.nexon.com`) and your local MCP server (`127.0.0.1` via local WebSocket). No analytics, no ads, no developer servers.
+- **Data flow:** between official Nexon servers (`https://*.nexon.com`), the public stat calculator (`https://*.maplescouter.com`, which receives only a character nickname — no Nexon cookies or account ID; proxied via the browser because it is Cloudflare bot-protected), and your local MCP server (`127.0.0.1` via local WebSocket). No analytics, no ads, no developer servers.
 - **Storage:** none. The extension uses no `chrome.storage`, `localStorage`, or IndexedDB; all data is discarded after each request.
-- **Permissions:** `https://*.nexon.com/*` (call Nexon APIs with your session), `alarms` (periodic reconnection to the local WebSocket).
+- **Permissions:** `https://*.nexon.com/*` (call Nexon APIs with your session), `https://*.maplescouter.com/*` (call the stat calculator), `alarms` (periodic reconnection to the local WebSocket).
 - **No sale or sharing** of user data, ever.
 
 Contact: oycshare@gmail.com

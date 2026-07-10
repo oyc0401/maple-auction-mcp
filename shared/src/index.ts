@@ -21,12 +21,15 @@ export interface Identity {
 }
 
 // ── 내부 계층 (서버 코드 ↔ NexonBridge) ─────────────────────────────
-// body는 객체, 헤더 없음. NexonBridge가 와이어로 변환한다.
+// body는 객체. 헤더는 보통 NexonBridge가 넥슨용으로 구성하지만,
+// 다른 호스트(maplescouter 환산 계산기)는 headers를 명시해 넥슨 헤더 주입을 덮는다.
 export interface BridgeCommandInput {
   type: 'fetch';
   url: string;
   method: 'GET' | 'POST' | 'DELETE';
   body?: unknown;
+  // 지정하면 NexonBridge의 기본 넥슨 헤더 대신 이 헤더를 그대로 싣는다 (비넥슨 호스트용).
+  headers?: Record<string, string>;
   // 브로커가 모든 확장(프로필)에 뿌려 첫 성공 응답을 preferred로 고정 (구 discover 대체)
   fanout?: boolean;
 }
@@ -76,6 +79,18 @@ export const NO_SESSION_MSG =
   '거래소 세션이 없거나 만료되었습니다. 넥슨 로그인만으로는 세션이 생기지 않고, 다른 곳에서 새 세션이 생기면 이전 세션은 무효가 됩니다. ' +
   '사용자에게 크롬에서 https://auction.maplestory.nexon.com 을 열거나 새로고침하라고 안내하고(로그인 페이지가 나오면 로그인), ' +
   '완료됐다고 하면 다시 요청하세요.';
+
+// maplescouter(환산 계산기)는 Cloudflare 봇 차단으로 서버 직접 fetch를 403으로 막는다(실측 2026-07-11).
+// 그래서 넥슨 API처럼 브라우저 확장을 경유해 호출한다 — 그래도 403이면 브라우저에 CF 통과 쿠키가 없다는 뜻.
+export const SCOUTER_BLOCKED_MSG =
+  'maplescouter 환산 계산기가 Cloudflare 봇 차단(403)으로 응답하지 않습니다. 이 호출은 브라우저 확장을 경유하지만, ' +
+  '브라우저에 Cloudflare 통과 기록이 없으면 여전히 차단됩니다. 사용자에게 크롬에서 https://maplescouter.com 을 한 번 열어(캐릭터 검색 1회) ' +
+  'Cloudflare를 통과한 뒤 다시 요청하라고 안내하고 대기하세요.';
+
+// 서버는 scouter를 확장으로 보내지만, 구버전 확장은 maplescouter 허용목록이 없어 FORBIDDEN_URL로 거부한다.
+export const SCOUTER_EXT_OUTDATED_MSG =
+  '크롬 확장이 구버전이라 환산 계산기(maplescouter) 호출을 실행하지 못했습니다(허용 호스트에 maplescouter 없음). ' +
+  '사용자에게 크롬 웹스토어에서 Maple Auction MCP 확장 업데이트(chrome://extensions → 개발자 모드 → 업데이트)를 안내하고 대기하세요.';
 
 export type BridgeErrorCode =
   | 'DISCONNECTED'       // 확장 미연결 (서버가 생성)

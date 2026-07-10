@@ -20,9 +20,12 @@ function okFetch(body = '{"hello":1}', status = 200) {
 describe('허용목록 (보안 불변식)', () => {
   it.each([
     'http://api.mskr.nexon.com/v1/accounts', // https 아님
+    'http://api.maplescouter.com/api/id', // https 아님
     'https://evil.example.com/steal',
     'https://evil-nexon.com/x', // .nexon.com으로 끝나지 않음
     'https://nexon.com.evil.io/x',
+    'https://maplescouter.com.evil.io/x', // .maplescouter.com으로 끝나지 않음
+    'https://evil-maplescouter.com/x',
     '::not-a-url::',
   ])('%s 는 FORBIDDEN_URL로 거부하고 fetch를 호출하지 않는다', async (url) => {
     const f = okFetch();
@@ -31,13 +34,15 @@ describe('허용목록 (보안 불변식)', () => {
     expect(f).not.toHaveBeenCalled();
   });
 
-  it.each(['https://nexon.com/x', 'https://api.mskr.nexon.com/v1/accounts'])(
-    '%s 는 허용한다',
-    async (url) => {
-      const r = await executeFetch(cmd({ url }), okFetch());
-      expect(r.ok).toBe(true);
-    }
-  );
+  it.each([
+    'https://nexon.com/x',
+    'https://api.mskr.nexon.com/v1/accounts',
+    'https://maplescouter.com/x',
+    'https://api.maplescouter.com/api/id?name=x', // 환산 계산기 (CF 우회용)
+  ])('%s 는 허용한다', async (url) => {
+    const r = await executeFetch(cmd({ url }), okFetch());
+    expect(r.ok).toBe(true);
+  });
 });
 
 describe('범용 실행기', () => {

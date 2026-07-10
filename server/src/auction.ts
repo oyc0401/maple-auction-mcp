@@ -19,6 +19,7 @@ import {
 import { summarizeSearch, summarizeItem, summarizeScouterEquip } from './summarize.js';
 import { listCharacters as listAccountCharacters, discoverIdentity, type CharacterInfo } from './characters.js';
 import { fetchScouter, swapDelta380, categoryToSlots, slotLabel } from './hwansan2/index.js';
+import { bridgeScouterFetch, scouterErrorText } from './scouterTransport.js';
 import { worldName } from './constants.js';
 import type { BridgeLike } from './nexon.js';
 
@@ -53,8 +54,12 @@ export class AuctionService {
   // 원본 매물 캐시(id → 원본 + 검색 카테고리). item_hwansan이 단일 매물의 부위별 Δ환산을
   // 온디맨드로 계산할 때 쓴다. 검색·페이지 조회가 지날 때마다 채워지고, 상한 초과 시 오래된 것부터 버린다.
   private readonly rawItemCache = new Map<string, { raw: any; category?: string }>();
+  // maplescouter는 CF가 서버 직접 fetch를 막으므로(실측) 넥슨 호출과 동일하게 브라우저 확장을 경유시킨다.
+  private readonly scouterFetch: typeof fetch;
 
-  constructor(private bridge: BridgeLike) {}
+  constructor(private bridge: BridgeLike) {
+    this.scouterFetch = bridgeScouterFetch(bridge);
+  }
 
   private cacheRawItems(items: any[] | undefined, category?: string) {
     for (const it of items ?? []) {
@@ -217,15 +222,15 @@ export class AuctionService {
     }
     let data;
     try {
-      data = await fetchScouter(name);
+      data = await fetchScouter(name, { fetchFn: this.scouterFetch });
     } catch (e) {
-      return `환산 계산기(maplescouter) 호출 실패: ${(e as Error).message}`;
+      return scouterErrorText(e);
     }
     const bySlot: Record<string, number> = {};
     const unknown = new Set<string>();
     for (const slot of targetSlots) {
       try {
-        const r = await swapDelta380(data, slot, entry.raw);
+        const r = await swapDelta380(data, slot, entry.raw, { fetchFn: this.scouterFetch });
         if (r) {
           bySlot[slotLabel(slot)] = r.delta380;
           for (const u of r.unknown) unknown.add(u);
@@ -251,9 +256,9 @@ export class AuctionService {
     }
     let data;
     try {
-      data = await fetchScouter(name);
+      data = await fetchScouter(name, { fetchFn: this.scouterFetch });
     } catch (e) {
-      return `캐릭터 조회 실패(maplescouter): ${(e as Error).message}`;
+      return scouterErrorText(e);
     }
     if (slot) {
       const e = data.userEquipData.find((x) => x.slot === slot);

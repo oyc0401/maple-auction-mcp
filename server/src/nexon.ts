@@ -51,7 +51,9 @@ export class NexonBridge implements BridgeLike {
       type: 'fetch',
       url: cmd.url,
       method: cmd.method,
-      headers: nexonHeaders(hasBody),
+      // 비넥슨 호스트(maplescouter)는 cmd.headers를 명시해 넥슨 헤더 주입을 덮는다.
+      // 빈 객체는 override로 취급하지 않는다 — 넥슨 호출이 실수로 headers:{}를 넘겨도 426 게이트에 걸리지 않게.
+      headers: cmd.headers && Object.keys(cmd.headers).length ? cmd.headers : nexonHeaders(hasBody),
       ...(hasBody ? { body: JSON.stringify(cmd.body) } : {}),
       ...(cmd.fanout ? { fanout: true } : {}),
     };

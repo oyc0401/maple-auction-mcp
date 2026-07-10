@@ -52,6 +52,25 @@ describe('NexonBridge — 내부 → 와이어 변환', () => {
     await new NexonBridge(t).request({ type: 'fetch', url: 'https://a.nexon.com/x', method: 'GET', fanout: true });
     expect(t.last().fanout).toBe(true);
   });
+
+  it('cmd.headers가 있으면 넥슨 헤더 대신 그대로 싣는다 (비넥슨 호스트용)', async () => {
+    const t = transport({ id: 'x', ok: true, status: 200, bodyText: '{}' });
+    await new NexonBridge(t).request({
+      type: 'fetch',
+      url: 'https://api.maplescouter.com/api/id?name=x',
+      method: 'GET',
+      headers: { 'api-key': 'k', 'Content-Type': 'application/json' },
+    });
+    const wire = t.last();
+    expect((wire.headers as Record<string, string>)['api-key']).toBe('k');
+    expect((wire.headers as Record<string, string>)['x-platform']).toBeUndefined(); // 넥슨 헤더 미주입
+  });
+
+  it('빈 headers({})는 override로 보지 않고 넥슨 헤더를 싣는다 (426 게이트 보호)', async () => {
+    const t = transport({ id: 'x', ok: true, status: 200, bodyText: '{}' });
+    await new NexonBridge(t).request({ type: 'fetch', url: 'https://a.nexon.com/x', method: 'GET', headers: {} });
+    expect((t.last().headers as Record<string, string>)['x-platform']).toBe('PC_WEB');
+  });
 });
 
 describe('NexonBridge — 와이어 → 내부 변환', () => {
