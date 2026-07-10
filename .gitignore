@@ -11,6 +11,7 @@ Claude.md
 AGENTS.md
 .playwright-mcp/
 .obsidian/
+.claude/
 
 # 내부 작업 노트 (커밋 제외)
 maple_auction.md
