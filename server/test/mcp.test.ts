@@ -90,7 +90,8 @@ describe('search_items (POST 세션 생성)', () => {
   });
 });
 
-describe('item_hwansan (단일 매물 교체 환산)', () => {
+// [환산 비활성 2026-07-11] maplescouter 이용 중단으로 도구 비노출. 넥슨 오픈 API 재구현 시 되살림.
+describe.skip('item_hwansan (단일 매물 교체 환산)', () => {
   // 검색이 rawItemCache를 채우도록 신원 체인→POST(201)→GET(daily-limit)를 처리하는 브리지.
   const searchBridge = () => fakeBridge((cmd) => {
     const idr = identityFetch(cmd);
@@ -128,7 +129,8 @@ describe('item_hwansan (단일 매물 교체 환산)', () => {
   });
 });
 
-describe('user_equip (캐릭터 착용 장비 조회)', () => {
+// [환산 비활성 2026-07-11] maplescouter 이용 중단으로 도구 비노출. 넥슨 오픈 API 재구현 시 되살림.
+describe.skip('user_equip (캐릭터 착용 장비 조회)', () => {
   const idResponse = JSON.parse(readFileSync(new URL('../src/scouter/id-response', import.meta.url), 'utf8'));
   // 스카우터 캐시를 fixture로 시딩 → 도구 핸들러의 fetchScouter(name)가 네트워크 없이 캐시 히트
   async function seedScouter(name: string) {

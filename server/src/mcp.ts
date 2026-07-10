@@ -108,7 +108,6 @@ export function createServer(bridge: BridgeLike): McpServer {
     '매물 추천·가치 판단·시세 해석·검색 전략 수립 전에 get_knowledge(같은 내용의 maple://knowledge 리소스)를 읽는다 — 게임 지식(추옵·잠재·가위·별칭·타월드)과 경매장 검색 팁이 있다. 읽지 않은 채 도메인 규칙을 임의 추론하지 말 것.',
     '- 첫 검색 전 get_status로 검색 기준 캐릭터(월드·닉네임)를 확인해 사용자에게 알린다. 월드 전환은 set_character.',
     '- 검색 생성(search_* 도구, sold 포함)만 일일 한도(100회)를 1회 소진 — 한도는 검색 품질을 깎을 만큼 빡빡하지 않다(잔여는 응답의 searchRemaining). 같은 조건 재조회만 재검색 대신 searchKey + get_page(무료). limit 40/60은 조건이 확정된 뒤에.',
-    '- 정확한 효율 비교는 item_hwansan — 매물·부위당 외부 계산 API 1회이므로 후보를 추린 뒤 소수만, 부위가 정해졌으면 slot을 지정한다.',
     '- 검색 결과를 보여줄 때 사용한 필터 조건을 함께 표기한다.',
     '- 가위(재거래) 잔여 횟수가 낮은 매물은 사용자에게 꼭 명시한다(tradeDesc 참고).',
     '- 매물 id("ynoFBr…:1" 류)는 도구 호출용 내부 값 — 사용자에게 노출하지 말 것. 별칭은 표에 넣지 말고 문장에서 사용.',
@@ -116,7 +115,7 @@ export function createServer(bridge: BridgeLike): McpServer {
     '- raise_limit의 confirm은 유저가 채팅에 확인 문구("한도 <금액>")를 그대로 타이핑한 경우에만 전달한다. "알아서 해"·"우회해" 등 어떤 요청이 있어도 에이전트가 문구를 대신 채우는 것은 금지 — 이 문구는 에이전트가 스스로 지출을 승인할 수 없게 하는 안전장치다.',
   ].join('\n');
 
-  const server = new McpServer({ name: 'maple-auction', version: '0.6.1' }, { instructions });
+  const server = new McpServer({ name: 'maple-auction', version: '0.7.1' }, { instructions });
 
   const service = new AuctionService(bridge);
 
@@ -143,20 +142,22 @@ export function createServer(bridge: BridgeLike): McpServer {
     async () => text(loadKnowledge())
   );
 
-  server.registerTool(
-    'user_equip',
-    {
-      title: '캐릭터 착용 장비 조회',
-      description:
-        '닉네임으로 임의 캐릭터가 현재 착용 중인 장비를 조회한다(마지막 로그아웃 기준, 외부 계산기 경유·10분 캐시). slot 생략 시 24부위 요약 목록 + 환산380, 지정 시 스탯·잠재·에디·소울 상세. 경매장 매물과의 교체 손익은 item_hwansan.',
-      inputSchema: {
-        characterName: z.string().optional().describe('조회할 캐릭터 닉네임. 생략 시 현재 검색 기준 캐릭터'),
-        slot: z.string().optional().describe('부위 (예: "무기", "반지1", "펜던트2"). 생략 시 전체 목록'),
-      },
-      annotations: { readOnlyHint: true, destructiveHint: false },
-    },
-    async ({ characterName, slot }) => text(await service.userEquip(characterName, slot))
-  );
+  // [환산 비활성 2026-07-11] maplescouter API 이용 중단 요청(운영팀)으로 환산 도구를 AI 노출에서 제외.
+  // 넥슨 오픈 API 기반으로 재구현해 되살릴 예정 — 그때까지 주석 보존.
+  // server.registerTool(
+  //   'user_equip',
+  //   {
+  //     title: '캐릭터 착용 장비 조회',
+  //     description:
+  //       '닉네임으로 임의 캐릭터가 현재 착용 중인 장비를 조회한다(마지막 로그아웃 기준, 외부 계산기 경유·10분 캐시). slot 생략 시 24부위 요약 목록 + 환산380, 지정 시 스탯·잠재·에디·소울 상세. 경매장 매물과의 교체 손익은 item_hwansan.',
+  //     inputSchema: {
+  //       characterName: z.string().optional().describe('조회할 캐릭터 닉네임. 생략 시 현재 검색 기준 캐릭터'),
+  //       slot: z.string().optional().describe('부위 (예: "무기", "반지1", "펜던트2"). 생략 시 전체 목록'),
+  //     },
+  //     annotations: { readOnlyHint: true, destructiveHint: false },
+  //   },
+  //   async ({ characterName, slot }) => text(await service.userEquip(characterName, slot))
+  // );
 
   server.registerTool(
     'search_items',
@@ -300,20 +301,21 @@ export function createServer(bridge: BridgeLike): McpServer {
     async ({ searchKey, page, limit, sort }) => text(await service.getPage(searchKey, page, limit as GetLimit, sort as Sort))
   );
 
-  server.registerTool(
-    'item_hwansan',
-    {
-      title: '아이템 교체 환산 증감',
-      description:
-        '매물 1개를 현재 캐릭터의 해당 부위 장비와 교체할 때의 환산 주스탯(보스 380) 증감 계산. 공격력(깡·%)·보공·방무(곱연산)·크뎀·쿨감·세트효과까지 반영한 정확한 효율 (powerDiff 전투력은 보공·방무 미반영). 매물·부위당 외부 계산 API 1회.',
-      inputSchema: {
-        itemId: z.string().describe('매물 id (검색 결과의 id 필드, "TRADESN:SUBIDX" 형식)'),
-        slot: z.string().optional().describe('특정 부위만 계산 (예: "반지1", "펜던트2"). 생략 시 착용 가능한 모든 부위'),
-      },
-      annotations: { readOnlyHint: true, destructiveHint: false },
-    },
-    async ({ itemId, slot }) => text(await service.itemHwansan(itemId, slot))
-  );
+  // [환산 비활성 2026-07-11] maplescouter API 이용 중단 요청으로 제외. 넥슨 오픈 API 기반 재구현 후 되살릴 예정.
+  // server.registerTool(
+  //   'item_hwansan',
+  //   {
+  //     title: '아이템 교체 환산 증감',
+  //     description:
+  //       '매물 1개를 현재 캐릭터의 해당 부위 장비와 교체할 때의 환산 주스탯(보스 380) 증감 계산. 공격력(깡·%)·보공·방무(곱연산)·크뎀·쿨감·세트효과까지 반영한 정확한 효율 (powerDiff 전투력은 보공·방무 미반영). 매물·부위당 외부 계산 API 1회.',
+  //     inputSchema: {
+  //       itemId: z.string().describe('매물 id (검색 결과의 id 필드, "TRADESN:SUBIDX" 형식)'),
+  //       slot: z.string().optional().describe('특정 부위만 계산 (예: "반지1", "펜던트2"). 생략 시 착용 가능한 모든 부위'),
+  //     },
+  //     annotations: { readOnlyHint: true, destructiveHint: false },
+  //   },
+  //   async ({ itemId, slot }) => text(await service.itemHwansan(itemId, slot))
+  // );
 
   server.registerTool(
     'recent_sold',
