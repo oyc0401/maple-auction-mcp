@@ -429,6 +429,18 @@ describe('get_status', () => {
     expect(textOf(r)).toContain('"accountId": 1');
   });
 
+  it('ready면 메소·메포(maplePoint) 잔액을 함께 반환한다', async () => {
+    const c = await client(fakeBridge((cmd) => {
+      const idr = identityFetch(cmd);
+      if (idr) return idr;
+      if (cmd.url.includes('/balance')) return { id: 'b', ok: true, status: 200, data: { meso: '1553441601', maplePoint: 1361 } };
+      return { id: '2', ok: true, status: 200, data: { search: { remaining: 99 } } };
+    }));
+    const r = await c.callTool({ name: 'get_status', arguments: {} });
+    const p = JSON.parse(textOf(r));
+    expect(p.balance).toEqual({ meso: 1553441601, maplePoint: 1361 });
+  });
+
   it('확장 미연결이면 state no_extension + 안내를 반환한다', async () => {
     const c = await client({ connected: false, request: async () => ({ id: '', ok: false, code: 'DISCONNECTED', error: '미연결' }) });
     const r = await c.callTool({ name: 'get_status', arguments: {} });
@@ -613,6 +625,7 @@ describe('buy_item', () => {
       if (idr) return idr;
       calls.push(cmd);
       if (cmd.url.includes('/trade/purchase')) return { id: 'p', ok: true, status: 200, data: null };
+      if (cmd.url.includes('/balance')) return { id: 'b', ok: true, status: 200, data: { meso: '999', maplePoint: 5 } };
       if (cmd.method === 'GET') return { id: 'g', ok: true, status: 200, data: { search: { limit: 100, remaining: 99 } } };
       return { id: 's', ok: true, status: 201, data: { items: [raw], page: 1, limit: 20, total: 1, totalPages: 1, hasNext: false, searchKey: 'k' } };
     }));
@@ -620,12 +633,13 @@ describe('buy_item', () => {
     return { c, calls };
   }
 
-  it('한도 이내면 구매를 실행하고 올바른 body·x-transaction-key로 fetch한다', async () => {
+  it('한도 이내면 구매를 실행하고 올바른 body·x-transaction-key로 fetch하며 잔액을 반환한다', async () => {
     const { c, calls } = await searchThenClient(500);
     const r = await c.callTool({ name: 'buy_item', arguments: { itemId: 'ENC:3', quantity: 2 } });
     const parsed = JSON.parse(textOf(r));
     expect(parsed.bought).toBe(true);
     expect(parsed.total).toBe(1000);
+    expect(parsed.balance).toEqual({ meso: 999, maplePoint: 5 });
     const purchase = calls.find((x) => x.url.includes('/trade/purchase'));
     expect(purchase.method).toBe('POST');
     expect(purchase.body.tradeSn).toBe('ENC'); // 검색 id 앞부분(encryptedItemId)을 tradeSn 필드로

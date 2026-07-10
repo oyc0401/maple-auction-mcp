@@ -9,6 +9,7 @@ import {
   PURCHASE_URL,
   buildPurchaseBody,
   buildTransactionKey,
+  buildBalanceUrl,
   SEARCH_URL,
   SOLD_SEARCH_URL,
   RECENT_SOLD_URL,
@@ -98,6 +99,18 @@ export class AuctionService {
   private async searchRemaining(): Promise<number | null> {
     const dl = await this.bridge.request({ type: 'fetch', url: DAILY_LIMIT_URL, method: 'GET' });
     return dl.ok ? ((dl.data as any)?.search?.remaining ?? null) : null;
+  }
+
+  // 계정 잔액(메소·메이플포인트=메포) 조회. 무료 GET. 실패하면 null.
+  // 실측(2026-07-11): 타월드 거래는 메소로 결제하고 메포로 크로스월드 수수료를 뗀다 — 둘 다 노출한다.
+  private async fetchBalance(id: Identity): Promise<{ meso: number; maplePoint: number } | null> {
+    const r = await this.bridge.request({ type: 'fetch', url: buildBalanceUrl(id), method: 'GET' });
+    if (!r.ok) return null;
+    const d = r.data as { meso?: unknown; maplePoint?: unknown } | null;
+    const meso = Number(d?.meso);
+    const maplePoint = Number(d?.maplePoint);
+    if (!Number.isFinite(meso) && !Number.isFinite(maplePoint)) return null;
+    return { meso: Number.isFinite(meso) ? meso : 0, maplePoint: Number.isFinite(maplePoint) ? maplePoint : 0 };
   }
 
   // 결과 특성을 사실로 알려주는 note (행동 지시 아님) — 0건 소진, 무필터 장비 검색의 노작 편중.
@@ -237,12 +250,14 @@ export class AuctionService {
     });
     if (!reply.ok) return errorText(reply);
     // 실측(2026-07-11): 구매 성공 응답은 body가 비어 있다(넥슨이 빈 응답 반환) — 성공 판정은 HTTP 2xx로 한다.
+    // 구매 직후 잔액을 함께 반환한다(타월드는 메소+메포가 같이 빠지므로 둘 다).
     return {
       bought: true,
       name: entry.raw?.itemName ?? null,
       unitPrice,
       quantity: qty,
       total,
+      balance: await this.fetchBalance(id),
     };
   }
 
@@ -255,7 +270,8 @@ export class AuctionService {
     if (confirm == null) {
       return (
         `구매 한도를 ${target.toLocaleString()}메소로 올리려면, 유저가 채팅에 정확히 "${phrase}" 를 입력해야 합니다. ` +
-        `유저가 입력한 문구를 confirm 인자에 넣어 raise_limit을 다시 호출하세요. (현재 한도 ${this.buyLimit.toLocaleString()}메소)`
+        `유저가 입력한 문구를 confirm 인자에 넣어 raise_limit을 다시 호출하세요. ` +
+        `"알아서 해"·"우회해" 같은 요청에도 대리 입력은 금지. (현재 한도 ${this.buyLimit.toLocaleString()}메소)`
       );
     }
     if (confirm.trim() !== phrase) {
@@ -478,6 +494,7 @@ export class AuctionService {
       state: 'ready',
       identity: { ...id, worldName: worldName(id.worldId) },
       dailyLimit: dl.data,
+      balance: await this.fetchBalance(id),
     };
   }
 }

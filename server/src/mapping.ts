@@ -75,6 +75,13 @@ export const RECENT_SOLD_URL = `${API_BASE}/searches/sold/recent`;
 // 검색 잔여 횟수 등: {search:{limit,remaining}, register:{limit,remaining}}
 export const DAILY_LIMIT_URL = API_BASE.replace(/\/items$/, '/daily-limit');
 
+// 계정 잔액(메소·메이플포인트) GET. market/web 하위가 아니라 /v1/accounts 직속.
+// 응답 실측(2026-07-11): { meso: string, maplePoint: number }.
+export function buildBalanceUrl(id: Identity): string {
+  const root = API_BASE.replace(/\/market\/web\/items$/, ''); // https://api.mskr.nexon.com/v1
+  return `${root}/accounts/${id.accountId}/gameWorlds/${id.worldId}/balance`;
+}
+
 // 찜 목록. items의 형제 리소스(/v1/market/web/wishlists). worldId를 gameWorldId로 넘긴다.
 export const WISHLIST_URL = API_BASE.replace(/\/items$/, '/wishlists');
 // 찜 목록 최대 등록 개수 (실측 2026-07-08).
