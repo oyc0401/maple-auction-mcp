@@ -51,7 +51,7 @@ export class NexonBridge implements BridgeLike {
       type: 'fetch',
       url: cmd.url,
       method: cmd.method,
-      headers: nexonHeaders(hasBody),
+      headers: { ...nexonHeaders(hasBody), ...(cmd.headers ?? {}) },
       ...(hasBody ? { body: JSON.stringify(cmd.body) } : {}),
       ...(cmd.fanout ? { fanout: true } : {}),
     };

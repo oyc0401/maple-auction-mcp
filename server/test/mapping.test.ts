@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildCreateBody, buildPageUrl, SEARCH_URL } from '../src/mapping.js';
+import { buildCreateBody, buildPageUrl, SEARCH_URL, PURCHASE_URL, buildPurchaseBody, buildTransactionKey } from '../src/mapping.js';
 
 const id = { worldId: 5, accountId: 99188397, characterId: 25631906 };
 
@@ -182,5 +182,29 @@ describe('buildPageUrl (GET 페이지 조회)', () => {
 describe('SEARCH_URL', () => {
   it('POST 엔드포인트', () => {
     expect(SEARCH_URL).toBe('https://api.mskr.nexon.com/v1/market/web/items/searches/tool-tip');
+  });
+});
+
+describe('구매 빌더', () => {
+  it('PURCHASE_URL은 trade/purchase 엔드포인트', () => {
+    expect(PURCHASE_URL).toBe('https://api.mskr.nexon.com/v1/market/web/trade/purchase');
+  });
+
+  it('buildPurchaseBody는 buyer 필드로 매핑한다', () => {
+    expect(buildPurchaseBody(id, 'ENCID', 3, 2)).toEqual({
+      tradeSn: 'ENCID',
+      subIdx: 3,
+      buyerAccountId: 99188397,
+      buyerWorldId: 5,
+      buyerCharacterId: 25631906,
+      quantity: 2,
+    });
+  });
+
+  it('buildTransactionKey는 w/d/ 접두 + 28자 절단 + base36 카운터', () => {
+    const key = buildTransactionKey(99188397, 1752249999999, 5);
+    expect(key.startsWith('w/d/')).toBe(true);
+    expect(key.length).toBeLessThanOrEqual(28);
+    expect(key).toContain('-05');
   });
 });

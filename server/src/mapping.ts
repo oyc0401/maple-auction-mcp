@@ -226,3 +226,26 @@ export function buildWishlistDeleteUrl(id: Identity, tradeSn: string, subIdx: nu
   });
   return `${WISHLIST_URL}?${qs}`;
 }
+
+// 구매(체결) POST. items의 형제 리소스(/v1/market/web/trade/purchase).
+export const PURCHASE_URL = API_BASE.replace(/\/items$/, '/trade/purchase');
+
+// 구매 POST body. 검색 id 앞부분(encryptedItemId)을 tradeSn 필드로 넘긴다(wishlist와 동일 관례).
+export function buildPurchaseBody(id: Identity, tradeSn: string, subIdx: number, quantity: number) {
+  return {
+    tradeSn,
+    subIdx,
+    buyerAccountId: id.accountId,
+    buyerWorldId: id.worldId,
+    buyerCharacterId: id.characterId,
+    quantity,
+  };
+}
+
+// x-transaction-key: 클라이언트 생성 멱등키. 웹 실측 형식 `w/d/{ts36}-{accountId}-{ctr36}`, 28자 절단.
+export function buildTransactionKey(accountId: number, now: number, counter: number): string {
+  const ts = Math.floor(now).toString(36);
+  const ctr = (counter % 1296).toString(36).padStart(2, '0');
+  const s = `w/d/${ts}-${accountId}-${ctr}`;
+  return s.length > 28 ? s.slice(0, 28) : s;
+}

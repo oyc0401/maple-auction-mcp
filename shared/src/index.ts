@@ -27,6 +27,8 @@ export interface BridgeCommandInput {
   url: string;
   method: 'GET' | 'POST' | 'DELETE';
   body?: unknown;
+  // 요청별 추가 헤더 (예: 구매의 x-transaction-key). nexonHeaders 위에 병합된다.
+  headers?: Record<string, string>;
   // 브로커가 모든 확장(프로필)에 뿌려 첫 성공 응답을 preferred로 고정 (구 discover 대체)
   fanout?: boolean;
 }

@@ -310,3 +310,7 @@ export const WEAPON_CATEGORY_LABELS: Record<string, string> = {
   WEAPON_SUB: '보조무기 전체',
 } as const;
 export const WEAPON_CATEGORY_KEYS = Object.keys(WEAPON_CATEGORY_LABELS);
+
+// 구매 한도 (메소). env·설정 오버라이드 없음 — AI 우회 경로 차단.
+// 세션 상향(raise_limit)은 AuctionService 메모리에만 존재하며 프로세스 재시작 시 이 값으로 복귀.
+export const BUY_LIMIT_MESO = 100_000_000;
