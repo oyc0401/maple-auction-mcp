@@ -113,7 +113,7 @@ export function createServer(bridge: BridgeLike): McpServer {
     '- 매물 id("ynoFBr…:1" 류)는 도구 호출용 내부 값 — 사용자에게 노출하지 말 것. 별칭은 표에 넣지 말고 문장에서 사용.',
   ].join('\n');
 
-  const server = new McpServer({ name: 'maple-auction', version: '0.7.2' }, { instructions });
+  const server = new McpServer({ name: 'maple-auction', version: '0.7.3' }, { instructions });
 
   const service = new AuctionService(bridge);
 
