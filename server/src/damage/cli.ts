@@ -4,7 +4,7 @@
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { fetchCharacterRaw, aggregateCharacter, type RawBundle } from './nexon.js';
 import { emptyUserStat, type UserStat, type MainStat } from './statSheet.js';
-import { collectGear, collectSet, collectSymbol, collectHyper, collectAbility, collectBaseAP, collectUnion, collectArtifact, collectTitle, collectMapleWarrior } from './collect.js';
+import { collectGear, collectSet, collectSymbol, collectHyper, collectAbility, collectBaseAP, collectUnion, collectArtifact, collectChampion, collectPropensity, collectTitle, collectMapleWarrior } from './collect.js';
 import { collectSkillPassive } from './skillPassive.js';
 import { collectLinkSkills } from './linkSkill.js';
 import { collectHexaStat } from './hexaStat.js';
@@ -52,6 +52,8 @@ const src: [string, UserStat][] = [
   ['link', mainOf((u) => bundle.link && collectLinkSkills(u, bundle.link))],
   ['union', mainOf((u) => raw.union && collectUnion(u, raw.union))],
   ['artifact', mainOf((u) => bundle.artifact && collectArtifact(u, bundle.artifact))],
+  ['champion', mainOf((u) => bundle.champion && collectChampion(u, bundle.champion))],
+  ['성향', mainOf((u) => bundle.propensity && collectPropensity(u, bundle.propensity))],
   ['skill', mainOf((u) => collectSkillPassive(u, raw.class, raw.skills ?? {}))],
   ['hexa', mainOf((u) => raw.hexa && collectHexaStat(u, raw.hexa, raw.mainKey, raw.mainKey === 'INT', raw.class === '제논' ? 'xenon' : raw.class === '데몬어벤져' ? 'deven' : 'normal'))],
 ];
@@ -102,7 +104,7 @@ const rows: [string, number, number][] = [
   ['데미지', round2(us.damage), m['데미지'] ?? 0],
   ['보스 몬스터 데미지', round2(us.bossDmg), m['보스 몬스터 데미지'] ?? 0],
   ['방어율 무시', iedRecon, m['방어율 무시'] ?? 0],
-  ['크리티컬 확률', us.critRate, m['크리티컬 확률'] ?? 0],
+  ['크리티컬 확률', us.critRate + 5, m['크리티컬 확률'] ?? 0], // 베이스 크확 5% (모든 캐릭터, API 필드에 포함 — 티엘 실측). 크뎀은 베이스 0.
   ['크리티컬 데미지', round2(us.critDmg), m['크리티컬 데미지'] ?? 0],
   ['최종 데미지', round2(100 * (us.finalDmg.reduce((a, v) => a * (1 + v / 100), 1) - 1)), m['최종 데미지'] ?? 0],
 ];

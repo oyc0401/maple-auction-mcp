@@ -4,7 +4,7 @@
 // 레이트리밋이 약해 순차 호출 + 429 지수 백오프. 캐릭터당 프로세스 생존 동안 캐시.
 import { emptyUserStat, type UserStat } from './statSheet.js';
 import {
-  collectGear, collectSet, collectSymbol, collectHyper, collectAbility, collectBaseAP, collectUnion, collectArtifact, collectTitle, collectMapleWarrior,
+  collectGear, collectSet, collectSymbol, collectHyper, collectAbility, collectBaseAP, collectUnion, collectArtifact, collectChampion, collectPropensity, collectTitle, collectMapleWarrior,
 } from './collect.js';
 import { collectJobPassive } from './jobPassive.js';
 import { collectLinkSkills } from './linkSkill.js';
@@ -67,6 +67,7 @@ export function clearNexonCache() { cache.clear(); }
 export interface RawBundle {
   stat: any; basic: any;
   equip: any; setEff: any; symbol: any; hyper: any; ability: any; link: any; union: any; artifact: any;
+  champion: any; propensity: any;
   skills: SkillsByGrade; hexa: any;
 }
 
@@ -96,6 +97,8 @@ export async function fetchCharacterRaw(characterName: string): Promise<{ raw: R
   const link = await opt('링크스킬', '/character/link-skill');
   const union = await opt('유니온', '/user/union-raider'); // 유니온은 /user/ 경로 (character 아님)
   const artifact = await opt('유니온 아티팩트', '/user/union-artifact');
+  const champion = await opt('유니온 챔피언', '/user/union-champion'); // 챔피언 뱃지 (resting 포함)
+  const propensity = await opt('성향', '/character/propensity');      // 카리스마=방무, 통찰력=크확
   // 스킬 패시브: 0~5차만(하이퍼패시브·6차 액티브 제외, 6차 HEXA는 hexamatrix-stat). best-effort.
   const skills: SkillsByGrade = {};
   for (const grade of ['0', '1', '2', '3', '4', '5']) {
@@ -104,12 +107,12 @@ export async function fetchCharacterRaw(characterName: string): Promise<{ raw: R
   }
   const hexa = await opt('HEXA스탯', '/character/hexamatrix-stat');
 
-  return { raw: { stat, basic, equip, setEff, symbol, hyper, ability, link, union, artifact, skills, hexa }, warnings };
+  return { raw: { stat, basic, equip, setEff, symbol, hyper, ability, link, union, artifact, champion, propensity, skills, hexa }, warnings };
 }
 
 // 원본 응답 묶음 → UserStat 집계 + 검증 오라클. API 호출 없음(디스크 캐시 재집계 가능).
 export function aggregateCharacter(characterName: string, bundle: RawBundle, warnings: string[]): CharacterCollected {
-  const { stat, basic, equip, setEff, symbol, hyper, ability, link, union, artifact, skills, hexa } = bundle;
+  const { stat, basic, equip, setEff, symbol, hyper, ability, link, union, artifact, champion, propensity, skills, hexa } = bundle;
   const m = statMap(stat.final_stat);
   const level = Number(basic?.character_level ?? 0);
   const us = emptyUserStat();
@@ -123,6 +126,8 @@ export function aggregateCharacter(characterName: string, bundle: RawBundle, war
   if (link) collectLinkSkills(us, link);
   if (union) collectUnion(us, union);
   if (artifact) collectArtifact(us, artifact);
+  if (champion) collectChampion(us, champion);
+  if (propensity) collectPropensity(us, propensity);
   collectJobPassive(us, stat.character_class ?? '');
   const mainKey = mainStatKey(m);
   const cls = stat.character_class ?? '';

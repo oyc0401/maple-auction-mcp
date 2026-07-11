@@ -118,3 +118,21 @@ export function collectUnion(us: UserStat, raider: any): void {
 export function collectArtifact(us: UserStat, artifact: any): void {
   for (const e of artifact?.union_artifact_effect ?? []) accumIncrease(us, e?.name, false);
 }
+
+// ── 유니온 챔피언 뱃지 (/user/union-champion) ──────────────────────
+// champion_badge_total_info[].stat = "올스탯 100, 최대 HP/MP 5000 증가" 류 — 상시 패시브, 넥슨 resting 포함
+// (티엘 실측: 보공 25가 잔차와 정확히 일치). 올스탯은 스탯% 받는 flat으로 가정.
+// 챔피언의 가호(코인 소모 30분 버프)는 별개 — 수치가 API에 없어 미수집(잔차로 추적 중).
+export function collectChampion(us: UserStat, champion: any): void {
+  for (const e of champion?.champion_badge_total_info ?? []) accumIncrease(us, e?.stat, false);
+}
+
+// ── 성향 (/character/propensity) ───────────────────────────────────
+// 카리스마 → 몬스터 방어율 무시(100렙 10%), 통찰력 → 크리티컬 확률(100렙 10%). 레벨×0.1.
+// (의지=HP·상태이상내성, 감성=버프지속 등은 데미지 무관이라 생략 — 데벤 HP 계산 붙일 때 의지 추가.)
+export function collectPropensity(us: UserStat, propensity: any): void {
+  const charisma = num(propensity?.charisma_level);
+  const insight = num(propensity?.insight_level);
+  if (charisma) us.ignoreDef.push(charisma * 0.1);
+  if (insight) us.critRate += insight * 0.1;
+}
