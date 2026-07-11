@@ -31,6 +31,7 @@ export interface UserStat {
   // ── 데미지 계열 (가산) ─────────────────
   damage: number;    // 데미지 %
   bossDmg: number;   // 보스 몬스터 데미지 %
+  statusDmg: number; // 상태이상 추가 데미지 % (넥슨 별도 필드 — 어빌·인텐시브 링크. 보스전 상시로 D 계산에 합산)
 
   // ── 곱연산 계열 (계수 목록) ────────────
   ignoreDef: number[];   // 몬스터 방어율 무시 % (각 소스별) → ∏(1−v/100)
@@ -57,6 +58,7 @@ export function emptyUserStat(): UserStat {
     matkPct: 0,
     damage: 0,
     bossDmg: 0,
+    statusDmg: 0,
     ignoreDef: [],
     finalDmg: [],
     critRate: 0,

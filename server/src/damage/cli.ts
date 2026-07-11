@@ -64,6 +64,7 @@ const fmtAll = (u: UserStat): string => {
   if (u.atk) p.push(`공+${u.atk}`); if (u.matk) p.push(`마+${u.matk}`);
   if (u.atkPct) p.push(`공%+${u.atkPct}`); if (u.matkPct) p.push(`마%+${u.matkPct}`);
   if (u.damage) p.push(`뎀+${u.damage}`); if (u.bossDmg) p.push(`보공+${u.bossDmg}`);
+  if (u.statusDmg) p.push(`상태이상뎀+${u.statusDmg}`);
   if (u.ignoreDef.length) p.push(`방무[${u.ignoreDef.join(',')}]`);
   if (u.finalDmg.length) p.push(`최종[${u.finalDmg.join(',')}]`);
   if (u.critRate) p.push(`크확+${u.critRate}`); if (u.critDmg) p.push(`크뎀+${u.critDmg}`);
@@ -104,6 +105,7 @@ const rows: [string, number, number][] = [
   ['공격력flat수집', us.atk, NaN], ['공격력%수집', us.atkPct, NaN], // 참고 출력(API에 직접 대응값 없음)
   ['데미지', round2(us.damage), m['데미지'] ?? 0],
   ['보스 몬스터 데미지', round2(us.bossDmg), m['보스 몬스터 데미지'] ?? 0],
+  ['상태이상 추가 데미지', round2(us.statusDmg), m['상태이상 추가 데미지'] ?? 0],
   ['방어율 무시', iedRecon, m['방어율 무시'] ?? 0],
   ['크리티컬 확률', us.critRate + 5, m['크리티컬 확률'] ?? 0], // 베이스 크확 5% (모든 캐릭터, API 필드에 포함 — 티엘 실측). 크뎀은 베이스 0.
   ['크리티컬 데미지', round2(us.critDmg), m['크리티컬 데미지'] ?? 0],

@@ -17,7 +17,7 @@ interface Pick { find: string; as?: string; mult?: number; base?: number; cond?:
 const LINK: Record<string, Pick[]> = {
   '소울 컨트랙트': [{ find: '데미지', as: '데미지', cond: true }],               // 엔버(10초 버프 — 실전 상시)
   '판단': [{ find: '크리티컬 데미지' }],                                        // 키네시스 (무조건)
-  '인텐시브 인썰트': [{ find: '상태 이상에 걸린 몬스터 공격 시 데미지', as: '데미지', cond: true }], // 카데나(보스=상태이상 적용분만)
+  '인텐시브 인썰트': [{ find: '상태 이상에 걸린 몬스터 공격 시 데미지' }], // 카데나 — 넥슨 "상태이상 추가 데미지" 필드행(statusDmg), resting 포함
   '데몬스 퓨리': [{ find: '보스 몬스터 공격 시 데미지', as: '보스 몬스터 데미지' }], // 보공 스탯 자체 → 무조건
   '와일드 레이지': [{ find: '데미지', as: '데미지' }],                           // 무조건 (resting 포함 실측 확인)
   '무아': [{ find: '중첩당 데미지', as: '데미지', mult: 5, base: 1, cond: true }], // 발동1 + 5중첩×중첩치
@@ -35,7 +35,11 @@ const LINK: Record<string, Pick[]> = {
 };
 
 export function collectLinkSkills(us: UserStat, link: any, includeConditional = false): void {
-  const skills = link?.character_link_skill ?? link?.character_link_skill_info ?? [];
+  // 전수받은 링크 + 본인 링크(character_owned_link_skill — 단일 객체) 모두 처리.
+  // 본인 링크는 character_link_skill 목록에 안 나오지만 본인에게 적용된다(오유찬 상태이상 추가 데미지 실측).
+  const transferred = link?.character_link_skill ?? link?.character_link_skill_info ?? [];
+  const owned = link?.character_owned_link_skill;
+  const skills = [...transferred, ...(owned ? [owned].flat() : [])];
   for (const s of skills) {
     const rule = LINK[s.skill_name];
     if (!rule) continue;

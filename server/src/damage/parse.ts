@@ -37,6 +37,9 @@ export function apply(us: UserStat, name: string, val: number, pct: boolean, noP
     case '공격력/마력':   // 유니온 "공격력/마력 N 증가"
       if (pct) { us.atkPct += val; us.matkPct += val; } else { us.atk += val; us.matk += val; } break;
     case '데미지': if (pct) us.damage += val; break;
+    case '상태 이상에 걸린 대상 공격 시 데미지':   // 어빌리티 표기
+    case '상태 이상에 걸린 몬스터 공격 시 데미지': // 인텐시브 인썰트(링크) 표기
+      if (pct) us.statusDmg += val; break;       // 넥슨 "상태이상 추가 데미지" 별도 필드행
     case '보스 몬스터 데미지':
     case '보스 데미지':
     case '보스 몬스터 공격 시 데미지':
