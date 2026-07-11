@@ -260,7 +260,7 @@ export class AuctionService {
     if (typeof collected === 'string') return collected;
     const { cs, swaps } = this.combatOf(collected);
 
-    const bySlot: Record<string, { boss300: number; boss380: number }> = {};
+    const bySlot: Record<string, number> = {};
     const unknown = new Set<string>();
     for (const slot of targetSlots) {
       const key = `${slot}:${itemId}`;
@@ -270,7 +270,7 @@ export class AuctionService {
         swaps.set(key, r);
       }
       if (r) {
-        bySlot[slotLabel(slot)] = { boss300: r.delta300, boss380: r.delta380 };
+        bySlot[slotLabel(slot)] = r.delta380;
         for (const u of r.unknown) unknown.add(u);
       }
     }
@@ -278,7 +278,7 @@ export class AuctionService {
       id: itemId,
       name: entry.raw?.itemName ?? null,
       character: name,
-      deltaPct: bySlot, // 부위별 최종 데미지 증감률 % (보스 방어율 300/380 기준)
+      deltaPct: bySlot, // 부위별 최종 데미지 증감률 % (보스 방어율 380% 기준)
       ...(cs.notes.length ? { notes: cs.notes } : {}),
       ...(unknown.size ? { unknown: [...unknown] } : {}),
     };

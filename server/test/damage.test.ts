@@ -5,7 +5,7 @@ import { swapDamageDelta, fromNexonEquip } from '../src/damage/delta.js';
 import { fromAuctionRaw } from '../src/hwansan2/axes.js';
 
 // 최소 캐릭터 번들: 카데나(LUK 주스탯·이중부스탯), 반지1 + 무기.
-// 방무를 실캐릭 수준(~82%)으로 확보해 반지 방무(10%)를 빼도 300/380 방무팩터가 양수를 유지하게 한다.
+// 방무를 실캐릭 수준(~82%)으로 확보해 반지 방무(10%)를 빼도 380 방무팩터가 양수를 유지하게 한다.
 const ringEquip = {
   item_equipment_slot: '반지1', item_name: '테스트 링',
   item_total_option: { luk: '100', str: '10', attack_power: '20' },
@@ -83,7 +83,6 @@ describe('damage/delta — 교체 증감률', () => {
   it('동일 스탯 매물로 교체하면 증감률 0%', () => {
     const r = swapDamageDelta(collected, cs, '반지1', sameRingRaw);
     expect(r).not.toBeNull();
-    expect(r!.delta300).toBe(0);
     expect(r!.delta380).toBe(0);
   });
 
@@ -94,17 +93,15 @@ describe('damage/delta — 교체 증감률', () => {
     worse.toolTip.stat.pad = 0;
     const up = swapDamageDelta(collected, cs, '반지1', better)!;
     const down = swapDamageDelta(collected, cs, '반지1', worse)!;
-    expect(up.delta300).toBeGreaterThan(0);
-    expect(down.delta300).toBeLessThan(0);
     expect(up.delta380).toBeGreaterThan(0);
+    expect(down.delta380).toBeLessThan(0);
   });
 
-  it('방무 잠재가 사라지면 380 기준 감소폭이 300보다 크다 (방무 곱연산·고방 보스 민감)', () => {
+  it('방무 잠재가 사라지면 380 기준 증감률이 음수다 (방무 곱연산)', () => {
     const noIed = structuredClone(sameRingRaw);
     noIed.toolTip.upgradeInfo.potential!.entries = [{ text: 'LUK +9%' }];
     const r = swapDamageDelta(collected, cs, '반지1', noIed)!;
-    expect(r.delta300).toBeLessThan(0);
-    expect(r.delta380).toBeLessThan(r.delta300);
+    expect(r.delta380).toBeLessThan(0);
   });
 
   it('없는 부위면 null', () => {
@@ -117,7 +114,7 @@ describe('damage/delta — 교체 증감률', () => {
     const r = swapDamageDelta(collected, cs, '반지1', weird)!;
     expect(r.unknown).toContain('이상한 옵션 +3%');
     expect(r.unknown).not.toContain('방어력 +100');
-    expect(r.delta300).toBe(0); // 둘 다 D에 영향 없음
+    expect(r.delta380).toBe(0); // 둘 다 D에 영향 없음
   });
 });
 
@@ -141,8 +138,8 @@ describe('damage — 제논·데몬어벤져 축', () => {
     onePctRaw.toolTip.upgradeInfo.potential!.entries.push({ text: 'STR +6%' });
     const all = swapDamageDelta(col, xcs, '반지1', allPctRaw)!;
     const one = swapDamageDelta(col, xcs, '반지1', onePctRaw)!;
-    expect(all.delta300).toBeGreaterThan(one.delta300);
-    expect(one.delta300).toBeGreaterThan(0);
+    expect(all.delta380).toBeGreaterThan(one.delta380);
+    expect(one.delta380).toBeGreaterThan(0);
   });
 
   it('데몬어벤져: HP 축 — 최대 HP 매물이 D를 올리고, 미검증 노트를 단다', () => {
@@ -153,6 +150,6 @@ describe('damage — 제논·데몬어벤져 축', () => {
     const hpRaw = structuredClone(sameRingRaw) as any;
     hpRaw.toolTip.stat.mhp = 3000;
     const r = swapDamageDelta(col, dcs, '반지1', hpRaw)!;
-    expect(r.delta300).toBeGreaterThan(0);
+    expect(r.delta380).toBeGreaterThan(0);
   });
 });

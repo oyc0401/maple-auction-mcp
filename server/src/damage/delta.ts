@@ -71,8 +71,7 @@ function applyNet(base: UserStat, net: ItemStats, level: number): UserStat {
 }
 
 export interface SwapResult {
-  delta300: number; // 보스 방어율 300% 기준 증감률 % (예: +2.31)
-  delta380: number;
+  delta380: number; // 보스 방어율 380% 기준 증감률 % (예: +2.31)
   unknown: string[];
 }
 
@@ -120,5 +119,5 @@ export function swapDamageDelta(
     const after = damageOf(cs, { bossDef, critRateDelta: net.critRate }, usAfter);
     return before > 0 ? round2((after / before - 1) * 100) : 0;
   };
-  return { delta300: deltaAt(3.0), delta380: deltaAt(3.8), unknown: [...unknown] };
+  return { delta380: deltaAt(3.8), unknown: [...unknown] };
 }
