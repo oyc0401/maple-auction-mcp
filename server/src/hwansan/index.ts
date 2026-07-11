@@ -4,6 +4,7 @@ export {
   contributionFromRawItem,
   contributionFromEquip,
   hwansanDiff,
+  finalDamagePercent,
   damageMultiplier,
   BOSS_DEFENSE,
   EMPTY_CONTRIBUTION,

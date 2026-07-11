@@ -10,6 +10,7 @@
 // 무기/방어구의 올스탯%/공% 값은 작아 오차가 미미하다. 방무·보공·데미지 비선형은 현재 총합에서 정확히 평가된다.
 
 import type { StatModel } from './jobs.js';
+import { applyStandardBuffs } from './buffs.js';
 
 // 환산 기준 보스 방어율(%). maplescouter monster_guard 고정값.
 export const BOSS_DEFENSE = 300;
@@ -227,4 +228,16 @@ export function hwansanDiff(s: CharState, cur: Contribution, cand: Contribution,
   if (before <= 0) return 0;
   const after = damageMultiplier(swapState(s, cur, cand, isMagic));
   return ((after / before - 1) * statFactor(s)) / 4;
+}
+
+// 최종뎀 % 증가: 현재 장비(cur)를 candidate로 교체 시 총 딜(최종적으로 나가는 데미지)이 몇 % 오르나.
+// maplescouter "최종뎀 상승량"과 값을 맞추기 위해, 표준 버프(도핑)를 반영한 상태에서 델타를 계산한다.
+// 환산 주스탯(hwansanDiff)과 달리 스플라인 변환이 필요 없어 maplescouter 딜상승률과 직접 비교된다.
+// ⚠️ 버프 반영은 현재 캡틴/챌린저스 기준(buffs.ts 참고). 공격력 아이템은 근사.
+export function finalDamagePercent(s: CharState, cur: Contribution, cand: Contribution, isMagic: boolean): number {
+  const buffed = applyStandardBuffs(s);
+  const before = damageMultiplier(buffed);
+  if (before <= 0) return 0;
+  const after = damageMultiplier(swapState(buffed, cur, cand, isMagic));
+  return (after / before - 1) * 100;
 }
