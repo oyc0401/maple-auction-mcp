@@ -30,7 +30,7 @@ const LINK: Record<string, Pick[]> = {
   '데들리 인스팅트': [{ find: '크리티컬 확률' }],                                // 팬텀 (무조건)
   '임피리컬 널리지': [{ find: '데미지', as: '데미지', mult: 3, cond: true }, { find: '방어율 무시', mult: 3, cond: true }], // 약점 파악 3중첩
   '시프 커닝': [{ find: '데미지', as: '데미지', cond: true }],                   // 상태 이상 적용 시 버프
-  '파이렛 블레스': [{ find: '올스텟', as: '올스탯' }, { find: '올스탯', as: '올스탯' }], // 해적3 → 올스탯 flat (무조건)
+  '파이렛 블레스': [{ find: '힘', as: '올스탯', mult: 3 }], // 캡틴 본인 해적 링크 — 효과 "힘/민/지/운 30"=올스탯30, 최대3중첩(꽈숩노 실측 올90=30×3). 챌린저스는 본인 링크만 적용(타직업 링크 불가). 무조건 상시.
   '시그너스 블레스': [{ find: '공격력과 마력' }],                               // 공/마 (무조건)
 };
 
@@ -41,7 +41,8 @@ export function collectLinkSkills(us: UserStat, link: any, includeConditional = 
   const owned = link?.character_owned_link_skill;
   const skills = [...transferred, ...(owned ? [owned].flat() : [])];
   for (const s of skills) {
-    const rule = LINK[s.skill_name];
+    // 본인 링크는 "파이렛 블레스(캡틴)"처럼 직업 접미사가 붙는다 → 접미사 떼고도 매칭.
+    const rule = LINK[s.skill_name] ?? LINK[String(s.skill_name ?? '').replace(/\([^)]*\)\s*$/, '').trim()];
     if (!rule) continue;
     const eff = String(s.skill_effect ?? '');
     for (const p of rule) {
