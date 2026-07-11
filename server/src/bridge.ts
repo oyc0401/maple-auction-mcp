@@ -1,5 +1,6 @@
 import { WebSocket } from 'ws';
 import { spawn } from 'node:child_process';
+import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
 import {
@@ -65,7 +66,14 @@ export class Bridge {
 
   private spawnBroker(): void {
     try {
-      const brokerPath = fileURLToPath(new URL('./broker.js', import.meta.url));
+      // 번들 실행(dist)에선 형제 broker.js. tsx로 소스(src)를 직접 실행하는 개발 환경엔 .js가 없어
+      // 스폰이 조용히 실패하고 포트가 영영 안 열린다 — dist/broker.js로 폴백 (실측 2026-07-11).
+      let brokerPath = fileURLToPath(new URL('./broker.js', import.meta.url));
+      if (!existsSync(brokerPath)) brokerPath = fileURLToPath(new URL('../dist/broker.js', import.meta.url));
+      if (!existsSync(brokerPath)) {
+        process.stderr.write('[bridge] broker.js를 찾지 못했습니다 — `node build.mjs`로 빌드하세요\n');
+        return;
+      }
       spawn(process.execPath, [brokerPath], { detached: true, stdio: 'ignore' }).unref();
     } catch (err) {
       process.stderr.write(`[bridge] broker spawn 실패: ${(err as Error).message}\n`);
