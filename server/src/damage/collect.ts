@@ -36,9 +36,17 @@ export function collectGear(us: UserStat, itemEquipment: any[] | undefined, leve
 
 // ── 세트효과 (set-effect[]) ────────────────────────────────────────
 // 세트효과는 누적: total_set_count 이하 모든 티어의 옵션이 동시 적용. set_option_full의 각 티어 텍스트를 파싱.
+// ⚠️ 일부 세트는 넥슨 API가 실제 인게임 최대 세트수보다 큰 "팬텀 티어"를 포함한다.
+//   도전자의 장비 세트(챌린저스): 인게임 최대 7세트(유저 세트창 7/7 실측 2026-07-12)인데
+//   API는 도전자 방어구7+무기1=8개를 세어 total_set_count 8 + 6세트를 복제한 8세트(방무10%)를 준다.
+//   → 캡 없이 8세트를 세면 방무 10%가 잉여로 잡혀 잔차. 알려진 세트는 최대 세트수로 캡한다.
+const SET_MAX_COUNT: [namePrefix: string, max: number][] = [
+  ['도전자의 장비 세트', 7],
+];
 export function collectSet(us: UserStat, setEffect: any[] | undefined): void {
   for (const s of setEffect ?? []) {
-    const count = num(s.total_set_count);
+    const cap = SET_MAX_COUNT.find(([p]) => String(s.set_name ?? '').startsWith(p))?.[1];
+    const count = cap != null ? Math.min(num(s.total_set_count), cap) : num(s.total_set_count);
     for (const tier of s.set_option_full ?? []) {
       if (num(tier.set_count) <= count) accumPlus(us, tier.set_option);
     }
@@ -136,4 +144,33 @@ export function collectChampion(us: UserStat, champion: any): void {
 export function collectPropensity(us: UserStat, propensity: any): void {
   const charisma = num(propensity?.charisma_level);
   if (charisma) us.ignoreDef.push(charisma * 0.1);
+}
+
+// ── 챌린저스 서버 상시 버프 (모든 챌린저스 캐릭터 고정 = resting 포함) ────────
+// 넥슨 API에 개별 항목이 없어 인게임 버프 툴팁 실측값을 하드코딩(챌린저스 서버 한정, 고정값).
+//   올스탯100·공마80·보공70·방무70·크확30·크뎀40
+// 올스탯은 스탯% 받는 flat(allFlat)으로 가정 — 잔차로 검증한다.
+export function collectChallenger(us: UserStat): void {
+  us.allFlat += 100;
+  us.atk += 80;
+  us.matk += 80;
+  us.bossDmg += 70;
+  us.ignoreDef.push(70);
+  us.critRate += 30;
+  us.critDmg += 40;
+}
+
+// ── 버닝 BEYOND 이벤트 버프 (캐릭터마다 설정이 다름 = 고정 불가) ─────────────
+// 유저가 이벤트에서 고른 항목/수치에 따라 달라진다. API에 없고 사람마다 다르므로
+// 챌린저스에 합치지 말 것. 캐릭터별 설정값을 인자로 받아 반영(모르면 미적용→잔차로 노출).
+export interface BurningBeyond { allStat?: number; atk?: number; matk?: number; bossDmg?: number; ignoreDef?: number; critRate?: number; critDmg?: number; }
+export function collectBurning(us: UserStat, b?: BurningBeyond): void {
+  if (!b) return;
+  us.allFlat += b.allStat ?? 0;
+  us.atk += b.atk ?? 0;
+  us.matk += b.matk ?? 0;
+  us.bossDmg += b.bossDmg ?? 0;
+  if (b.ignoreDef) us.ignoreDef.push(b.ignoreDef);
+  us.critRate += b.critRate ?? 0;
+  us.critDmg += b.critDmg ?? 0;
 }

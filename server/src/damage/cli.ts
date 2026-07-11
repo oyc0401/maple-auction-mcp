@@ -4,7 +4,7 @@
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { fetchCharacterRaw, aggregateCharacter, type RawBundle } from './nexon.js';
 import { emptyUserStat, type UserStat, type MainStat } from './statSheet.js';
-import { collectGear, collectSet, collectSymbol, collectHyper, collectAbility, collectBaseAP, collectUnion, collectArtifact, collectChampion, collectPropensity, collectTitle, collectMapleWarrior } from './collect.js';
+import { collectGear, collectSet, collectSymbol, collectHyper, collectAbility, collectBaseAP, collectUnion, collectArtifact, collectChampion, collectPropensity, collectTitle, collectMapleWarrior, collectChallenger } from './collect.js';
 import { collectSkillPassive } from './skillPassive.js';
 import { collectLinkSkills } from './linkSkill.js';
 import { collectHexaStat } from './hexaStat.js';
@@ -54,6 +54,7 @@ const src: [string, UserStat][] = [
   ['artifact', mainOf((u) => bundle.artifact && collectArtifact(u, bundle.artifact))],
   ['champion', mainOf((u) => bundle.champion && collectChampion(u, bundle.champion))],
   ['성향', mainOf((u) => bundle.propensity && collectPropensity(u, bundle.propensity))],
+  ['챌린저스', mainOf((u) => collectChallenger(u))],
   ['skill', mainOf((u) => collectSkillPassive(u, raw.class, raw.skills ?? {}))],
   ['hexa', mainOf((u) => raw.hexa && collectHexaStat(u, raw.hexa, raw.mainKey, raw.mainKey === 'INT', raw.class === '제논' ? 'xenon' : raw.class === '데몬어벤져' ? 'deven' : 'normal'))],
 ];
