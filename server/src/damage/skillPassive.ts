@@ -93,6 +93,7 @@ const BOWMASTER: JobRules = {
     '어드밴스드 파이널 어택': { picks: [{ find: '공격력' }] },
     '아머 피어싱': { picks: [{ find: '방어율 무시' }, { find: '최종 데미지' }] },
     '어드밴스드 퀴버': { picks: [{ find: '최종 데미지' }] }, // [패시브 효과 : 최종 데미지 6%]
+    '샤프 아이즈': { picks: [{ find: '크리티컬 확률' }, { find: '크리티컬 데미지' }] }, // 본체 버프, 상시 — 크뎀 잔차 0 실측(티엘). 쓸샤와 배타.
   },
 };
 
@@ -117,12 +118,18 @@ function collectFifthBrackets(us: UserStat, grade5: SkillEntry[]): void {
 }
 
 export function collectSkillPassive(us: UserStat, job: string, skills: SkillsByGrade): void {
+  // 쓸만한 X(5차)는 본체 X 스킬과 중첩 불가(유저 확인 2026-07-11) — 본체 보유 시 쓸만한 규칙을 스킵.
+  // 예: 보마는 샤프 아이즈(4차)를 쓰므로 쓸만한 샤프 아이즈(10/8)가 아닌 본체(20/15)만 적용.
+  const owned = new Set<string>();
+  for (const arr of Object.values(skills)) for (const s of arr) owned.add(s.skill_name);
   for (const rules of [COMMON, JOB_RULES[job]]) {
     if (!rules) continue;
     for (const [grade, byName] of Object.entries(rules)) {
       for (const s of skills[grade] ?? []) {
         const rule = byName[s.skill_name];
-        if (rule) pickInto(us, s.skill_effect, rule.picks);
+        if (!rule) continue;
+        if (s.skill_name.startsWith('쓸만한 ') && owned.has(s.skill_name.slice('쓸만한 '.length))) continue;
+        pickInto(us, s.skill_effect, rule.picks);
       }
     }
   }
