@@ -4,7 +4,6 @@
 import type { UserStat, MainStat } from './statSheet.js';
 import type { CharacterCollected, RawBundle } from './nexon.js';
 import { aggregateCharacter } from './nexon.js';
-import { hasJobRules } from './skillPassive.js';
 
 // 직업별 스탯 축 (구 hwansan2/axes.ts statAxes 이식 — scouter 타입 의존 제거).
 // 이중부스탯(카데나·듀얼블레이드·섀도어): sub=DEX, ssub=STR. 데벤=HP축, 제논=3스탯 합.
@@ -36,7 +35,7 @@ export interface CombatStats {
   us: UserStat;           // 전투(cond 포함) 합산 버킷
   critRateTotal: number;  // us.critRate + 베이스 5 (크리인포 전환의 입력)
   critReinforce: boolean; // 크리티컬 리인포스 보유 (5차)
-  notes: string[];        // 계산 주의사항 (스킬 DB 미지원 등)
+  notes: string[];        // 계산 주의사항 (미검증 축 등)
 }
 
 const BASE_CRIT_RATE = 5;  // 모든 캐릭터 기본 크확 (넥슨 크확 필드 포함 실측)
@@ -55,7 +54,6 @@ export function buildCombatStats(collected: CharacterCollected): CombatStats {
   const critRateTotal = us.critRate + BASE_CRIT_RATE;
 
   const notes: string[] = [];
-  if (!hasJobRules(myClass)) notes.push(`직업 스킬 DB 미지원(${myClass}) — 스킬 패시브 미반영으로 계산`);
   if (axes.kind !== 'standard') notes.push('제논·데몬어벤져 축은 미검증 — 증감률 참고용');
 
   return { myClass, level: collected.final.level, axes, us, critRateTotal, critReinforce, notes };

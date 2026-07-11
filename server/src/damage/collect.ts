@@ -160,10 +160,15 @@ export function collectChallenger(us: UserStat): void {
   us.critDmg += 40;
 }
 
-// ── 버닝 BEYOND 이벤트 버프 (캐릭터마다 설정이 다름 = 고정 불가) ─────────────
-// 유저가 이벤트에서 고른 항목/수치에 따라 달라진다. API에 없고 사람마다 다르므로
-// 챌린저스에 합치지 말 것. 캐릭터별 설정값을 인자로 받아 반영(모르면 미적용→잔차로 노출).
+// ── 버닝 BEYOND / 하이퍼 버닝 MAX 이벤트 버프 ─────────────────────────────────
+// 옵트인(지정 캐릭터만) + 상호배타. 효과가 "스킬창에 표시되지 않음" → /skill API에 수치 없음.
+// 수치는 인게임 버프 툴팁 실측 고정(BURNING_TOOLTIP, 두 스킬 동일) — 이벤트 개편 시 갱신 필요.
+// 스킬 보유 여부(hasBurning)로만 게이팅하고 잔차로 검증한다. 챌린저스 상시버프와 별개 소스라 합치지 말 것.
 export interface BurningBeyond { allStat?: number; atk?: number; matk?: number; bossDmg?: number; ignoreDef?: number; critRate?: number; critDmg?: number; }
+export const BURNING_TOOLTIP: BurningBeyond = { allStat: 30, atk: 30, matk: 30, bossDmg: 20, ignoreDef: 20 };
+export function hasBurning(skills: Record<string, { skill_name?: string }[]> | undefined): boolean {
+  return (skills?.['0'] ?? []).some((s) => s.skill_name === '버닝 BEYOND' || s.skill_name === '하이퍼 버닝 MAX');
+}
 export function collectBurning(us: UserStat, b?: BurningBeyond): void {
   if (!b) return;
   us.allFlat += b.allStat ?? 0;

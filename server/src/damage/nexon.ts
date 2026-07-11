@@ -4,9 +4,8 @@
 // 레이트리밋이 약해 순차 호출 + 429 지수 백오프. 캐릭터당 프로세스 생존 동안 캐시.
 import { emptyUserStat, type UserStat } from './statSheet.js';
 import {
-  collectGear, collectSet, collectSymbol, collectHyper, collectAbility, collectBaseAP, collectUnion, collectArtifact, collectChampion, collectPropensity, collectTitle, collectMapleWarrior, collectChallenger, collectBurning,
+  collectGear, collectSet, collectSymbol, collectHyper, collectAbility, collectBaseAP, collectUnion, collectArtifact, collectChampion, collectPropensity, collectTitle, collectMapleWarrior, collectChallenger, collectBurning, hasBurning, BURNING_TOOLTIP,
 } from './collect.js';
-import { collectJobPassive } from './jobPassive.js';
 import { collectLinkSkills } from './linkSkill.js';
 import { collectSkillPassive, type SkillsByGrade } from './skillPassive.js';
 import { collectHexaStat } from './hexaStat.js';
@@ -134,14 +133,7 @@ export function aggregateCharacter(characterName: string, bundle: RawBundle, war
   if (champion) collectChampion(us, champion);
   if (propensity) collectPropensity(us, propensity);
   if (basic?.world_name === '챌린저스') collectChallenger(us); // 챌린저스 서버 상시 버프 (서버 전원 일괄)
-  // 버닝 BEYOND / 하이퍼 버닝 MAX: 옵트인(지정한 사람만). 둘은 상호배타 —
-  //   260+ 버닝비욘드 지정 시 '버닝 BEYOND', 260 미만 하이퍼버닝 지정 시 '하이퍼 버닝 MAX'로 교체.
-  //   둘 다 효과가 "스킬창에 표시되지 않음" → /skill API에 수치 없음. 수치는 동일(툴팁 실측 현재레벨1).
-  //   스킬 보유 여부로만 게이팅하고 하드코딩. 잔차로 검증.
-  if ((skills['0'] ?? []).some((s) => s.skill_name === '버닝 BEYOND' || s.skill_name === '하이퍼 버닝 MAX')) {
-    collectBurning(us, { allStat: 30, atk: 30, matk: 30, bossDmg: 20, ignoreDef: 20 });
-  }
-  collectJobPassive(us, stat.character_class ?? '');
+  if (hasBurning(skills)) collectBurning(us, BURNING_TOOLTIP); // 버닝 BEYOND/하이퍼 버닝 MAX — 게이팅·수치는 collect.ts
   const mainKey = mainStatKey(m);
   const cls = stat.character_class ?? '';
   const job = cls === '제논' ? 'xenon' : cls === '데몬어벤져' ? 'deven' : 'normal';

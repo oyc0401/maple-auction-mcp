@@ -25,7 +25,9 @@ function pickInto(us: UserStat, eff: string, picks: { find: string; as?: string 
 // 직업별 규칙: grade → (skill_name → 뽑을 스탯 라인). 확인된 상시유지분만.
 // cond=true: 액티브 버프 등 "전투 상시"지만 넥슨 resting(final_stat)에는 미포함 —
 // 티엘 실측: 샤프 아이즈(버프)를 넣으면 크뎀이 챔피언 뱃지와 이중으로 +15 초과. D(전투) 계산에서만 반영.
-type Rule = { picks: { find: string; as?: string }[]; cond?: boolean };
+// bracket=true: 액티브 스킬 effect 안의 "[패시브 효과 : …]" 브래킷 내부에서만 뽑는다 —
+// 본문에 같은 스탯명이 조건부 수치로 먼저 나오는 스킬(크루 커맨더십 크뎀 5% vs 브래킷 26%)의 오매치 방지.
+type Rule = { picks: { find: string; as?: string }[]; cond?: boolean; bracket?: boolean };
 type JobRules = Record<string, Record<string, Rule>>; // grade → skillName → rule
 
 // 직업 공통 규칙 — 0차(비기너/이벤트/연합 스킬)와 5차 쓸만한 시리즈. 보유하지 않으면 스킬명이 안 나와 자동 무시.
@@ -100,17 +102,40 @@ const BOWMASTER: JobRules = {
   },
 };
 
-const JOB_RULES: Record<string, JobRules> = { '카데나': CADENA, '보우마스터': BOWMASTER };
+// 캡틴 — 무조건 상시 패시브만 (PR #4의 만렙 상수를 파싱 룰로 포팅, 꽈숩노 실측 2026-07-12).
+// 상수 대신 파싱인 이유: 스킬레벨 증가 효과로 만렙 초과 시 실제 수치가 달라진다 —
+// 꽈숩노 컨티뉴얼 에이밍 Lv11(27%/21%)·크루 커맨더십 Lv16(26%)·캡틴 디그니티 Lv31(공31)을
+// 파싱하면 최종뎀 잔차 0(64.59 정확 일치), PR의 만렙 상수(25/20/25/30)로는 -2.59 잔차.
+// 액티브·조건부(럭키/더블럭키 다이스, 파이렛 스타일, 오펜스 폼, 크루 소환 중 보너스)는 미반영 — 유저 확인 대기.
+const CAPTAIN: JobRules = {
+  '1': {
+    '크리티컬 로어': { picks: [{ find: '크리티컬 확률' }, { find: '크리티컬 데미지' }] },
+  },
+  '2': {
+    '인피닛 불릿': { picks: [{ find: '공격력' }] },
+    '건 액셀레이션': { picks: [{ find: '민첩성' }] },
+    '건 마스터리': { picks: [{ find: '크리티컬 확률' }] },
+    '피지컬 트레이닝': { picks: [{ find: '힘' }, { find: '민첩성' }] },
+  },
+  '3': {
+    '할로포인트 불릿': { picks: [{ find: '공격력' }] },
+    '풀메탈 자켓': { picks: [{ find: '최종 데미지' }, { find: '크리티컬 확률' }, { find: '몬스터 방어율', as: '방어율 무시' }] }, // "몬스터 방어율 20% 무시" 어순 — '몬스터 방어율'로 수치를 잡는다
+  },
+  '4': {
+    '컨티뉴얼 에이밍': { bracket: true, picks: [{ find: '최종 데미지' }, { find: '크리티컬 데미지' }] },
+    '크루 커맨더십': { bracket: true, picks: [{ find: '크리티컬 데미지' }] }, // 본문 크뎀 5%는 선원 소환 중 조건부 — 브래킷(26%)만
+    '캡틴 디그니티': { picks: [{ find: '최종 데미지' }, { find: '공격력' }] },
+  },
+};
 
-// 직업 스킬 DB 보유 여부 — 없으면 스킬 패시브만 빠진 채 계산하고 응답에 미반영 노트를 단다.
-export function hasJobRules(job: string): boolean {
-  return job in JOB_RULES;
-}
+const JOB_RULES: Record<string, JobRules> = { '카데나': CADENA, '보우마스터': BOWMASTER, '캡틴': CAPTAIN };
+
+const RE_PASSIVE_BRACKET = /\[패시브 효과\s*:\s*([^\]]+)\]/;
 
 // 5차 "[패시브 효과 : 올스탯 N]" / "[패시브 효과 : 공격력, 마력 N]" 브래킷 (직업 공통, 액티브에 붙은 패시브).
 function collectFifthBrackets(us: UserStat, grade5: SkillEntry[]): void {
   for (const s of grade5) {
-    const m = s.skill_effect.match(/\[패시브 효과\s*:\s*([^\]]+)\]/);
+    const m = s.skill_effect.match(RE_PASSIVE_BRACKET);
     if (!m) continue;
     const body = m[1];
     const all = pick(body, '올스탯');
@@ -143,7 +168,8 @@ export function collectSkillPassive(us: UserStat, job: string, skills: SkillsByG
         if (!rule) continue;
         if (rule.cond && !includeConditional) continue;
         if (s.skill_name.startsWith('쓸만한 ') && owned.has(s.skill_name.slice('쓸만한 '.length))) continue;
-        pickInto(us, s.skill_effect, rule.picks);
+        const eff = rule.bracket ? (s.skill_effect.match(RE_PASSIVE_BRACKET)?.[1] ?? '') : s.skill_effect;
+        pickInto(us, eff, rule.picks);
       }
     }
   }
