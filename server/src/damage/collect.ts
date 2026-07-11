@@ -128,11 +128,10 @@ export function collectChampion(us: UserStat, champion: any): void {
 }
 
 // ── 성향 (/character/propensity) ───────────────────────────────────
-// 카리스마 → 몬스터 방어율 무시(100렙 10%), 통찰력 → 크리티컬 확률(100렙 10%). 레벨×0.1.
+// 카리스마 → 몬스터 방어율 무시(100렙 10%): 넥슨 방무 필드에 포함 (오유찬 방무 잔차 0 실측).
+// 통찰력 → 크확은 수집하지 않는다 — 오유찬 실측에서 넥슨 크확 필드에 미포함(넣으면 +10 초과, 빼면 정확).
 // (의지=HP·상태이상내성, 감성=버프지속 등은 데미지 무관이라 생략 — 데벤 HP 계산 붙일 때 의지 추가.)
 export function collectPropensity(us: UserStat, propensity: any): void {
   const charisma = num(propensity?.charisma_level);
-  const insight = num(propensity?.insight_level);
   if (charisma) us.ignoreDef.push(charisma * 0.1);
-  if (insight) us.critRate += insight * 0.1;
 }

@@ -98,9 +98,10 @@ const m = final.raw;
 const round2 = (v: number) => Math.round(v * 100) / 100;
 const iedRecon = round2(100 * (1 - us.ignoreDef.reduce((a, v) => a * (1 - v / 100), 1)));
 const rows: [string, number, number][] = [
-  ['공격력', us.atk, m['공격력'] ?? 0],           // API 공격력은 최종값 — % 적용식은 잔차 보고 확정
-  ['마력', us.matk, m['마력'] ?? 0],
-  ['공격력%수집', us.atkPct, NaN],                 // 참고 출력(API에 직접 대응값 없음)
+  // 공격력 = floor(공flat × (1+공%/100)) — 오유찬(카데나) 실측 정확 일치로 공식 확정
+  ['공격력', Math.floor(us.atk * (1 + us.atkPct / 100)), m['공격력'] ?? 0],
+  ['마력', Math.floor(us.matk * (1 + us.matkPct / 100)), m['마력'] ?? 0],
+  ['공격력flat수집', us.atk, NaN], ['공격력%수집', us.atkPct, NaN], // 참고 출력(API에 직접 대응값 없음)
   ['데미지', round2(us.damage), m['데미지'] ?? 0],
   ['보스 몬스터 데미지', round2(us.bossDmg), m['보스 몬스터 데미지'] ?? 0],
   ['방어율 무시', iedRecon, m['방어율 무시'] ?? 0],
