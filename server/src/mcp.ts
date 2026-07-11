@@ -111,9 +111,6 @@ export function createServer(bridge: BridgeLike): McpServer {
     '- 검색 결과를 보여줄 때 사용한 필터 조건을 함께 표기한다.',
     '- 가위(재거래) 잔여 횟수가 낮은 매물은 사용자에게 꼭 명시한다(tradeDesc 참고).',
     '- 매물 id("ynoFBr…:1" 류)는 도구 호출용 내부 값 — 사용자에게 노출하지 말 것. 별칭은 표에 넣지 말고 문장에서 사용.',
-    // [구매 비활성 2026-07-11] buy_item·raise_limit 잠정 제외 — 도구와 함께 주석. 되살릴 때 아래 두 줄 복원.
-    // '- 구매(buy_item)·한도 상향(raise_limit)은 유저가 채팅에서 직접 요청했을 때만 호출한다. 가격·총액은 서버가 검색 캐시에서 계산한다. 구매는 넥슨 2차 비밀번호(OTP) 인증이 된 세션에서만 성공한다.',
-    // '- raise_limit의 confirm은 유저가 채팅에 확인 문구("한도 <금액>")를 그대로 타이핑한 경우에만 전달한다. "알아서 해"·"우회해" 등 어떤 요청이 있어도 에이전트가 문구를 대신 채우는 것은 금지 — 이 문구는 에이전트가 스스로 지출을 승인할 수 없게 하는 안전장치다.',
   ].join('\n');
 
   const server = new McpServer({ name: 'maple-auction', version: '0.7.2' }, { instructions });
@@ -410,37 +407,6 @@ export function createServer(bridge: BridgeLike): McpServer {
     },
     async () => text(await service.status())
   );
-
-  // [구매 비활성 2026-07-11] buy_item·raise_limit 잠정 제외 — 삭제하지 않고 주석 보존(서비스 로직·테스트는 유지, 되살릴 때 주석 해제).
-  // server.registerTool(
-  //   'buy_item',
-  //   {
-  //     title: '매물 구매',
-  //     description:
-  //       '경매장 매물을 구매한다. itemId는 검색 결과의 id. quantity는 묶음 매물의 구매 개수(기본 1). 가격·총액은 서버가 직전 검색 캐시에서 계산하며, 총액이 세션 구매 한도를 넘으면 구매하지 않고 raise_limit을 안내한다. 구매는 넥슨 2차 비밀번호(OTP) 인증이 된 세션에서만 성공한다.',
-  //     inputSchema: {
-  //       itemId: z.string().describe('매물 id (검색 결과의 id 필드)'),
-  //       quantity: z.number().int().min(1).default(1).describe('구매 개수 (묶음 매물, 기본 1)'),
-  //     },
-  //     annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false },
-  //   },
-  //   async ({ itemId, quantity }) => text(await service.buyItem(itemId, quantity))
-  // );
-
-  // server.registerTool(
-  //   'raise_limit',
-  //   {
-  //     title: '세션 구매 한도 상향',
-  //     description:
-  //       '세션 구매 한도를 올린다. confirm 없이 호출하면 유저가 입력해야 할 확인 문구를 반환하고, 유저가 채팅에 그 문구를 입력해 confirm으로 전달하면 한도가 상향된다(이 서버 세션 동안 유지). 기본 한도는 1억 메소.',
-  //     inputSchema: {
-  //       amount: z.number().int().min(1).describe('올릴 한도 (메소)'),
-  //       confirm: z.string().optional().describe('유저가 채팅에 입력한 확인 문구 ("한도 <amount>")'),
-  //     },
-  //     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
-  //   },
-  //   async ({ amount, confirm }) => text(await service.raiseLimit(amount, confirm))
-  // );
 
   return server;
 }

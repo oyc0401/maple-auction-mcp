@@ -6,9 +6,6 @@ import {
   buildWishlistGetUrl,
   buildWishlistBody,
   buildWishlistDeleteUrl,
-  PURCHASE_URL,
-  buildPurchaseBody,
-  buildTransactionKey,
   buildBalanceUrl,
   SEARCH_URL,
   SOLD_SEARCH_URL,
@@ -23,7 +20,7 @@ import {
 import { summarizeSearch, summarizeItem, summarizeScouterEquip } from './summarize.js';
 import { listCharacters as listAccountCharacters, discoverIdentity, type CharacterInfo } from './characters.js';
 import { fetchScouter, swapDelta380, categoryToSlots, slotLabel } from './hwansan2/index.js';
-import { worldName, BUY_LIMIT_MESO } from './constants.js';
+import { worldName } from './constants.js';
 import type { BridgeLike } from './nexon.js';
 
 function errorText(reply: Extract<BridgeReply, { ok: false }>): string {
@@ -62,11 +59,6 @@ export class AuctionService {
   // 원본 매물 캐시(id → 원본 + 검색 카테고리). item_hwansan이 단일 매물의 부위별 Δ환산을
   // 온디맨드로 계산할 때 쓴다. 검색·페이지 조회가 지날 때마다 채워지고, 상한 초과 시 오래된 것부터 버린다.
   private readonly rawItemCache = new Map<string, { raw: any; category?: string }>();
-  // 세션 구매 한도(메소). 기본 1억, raiseLimit이 유저 확인 후 상향하면 프로세스 생존 동안 유지.
-  private buyLimit = BUY_LIMIT_MESO;
-  // x-transaction-key 멱등 카운터. 매 구매마다 증가.
-  private txnCounter = 0;
-
   constructor(private bridge: BridgeLike) {}
 
   private cacheRawItems(items: any[] | undefined, category?: string) {
@@ -216,69 +208,6 @@ export class AuctionService {
     const id = await this.ensureIdentity();
     if (typeof id === 'string') return id;
     return this.computeItemHwansan(itemId, slot);
-  }
-
-  // 매물 구매. 가격은 AI 입력이 아니라 직전 검색이 캐시한 원본에서 읽는다(총액 = 개당가 × 수량).
-  // 세션 한도 초과면 사지 않고 raise_limit을 안내한다.
-  async buyItem(itemId: string, quantity: number): Promise<unknown> {
-    const id = await this.ensureIdentity();
-    if (typeof id === 'string') return id;
-    const entry = this.rawItemCache.get(itemId);
-    if (!entry) {
-      return '해당 매물의 원본을 찾을 수 없습니다. 먼저 search_* 도구로 이 매물을 조회한 뒤 그 id로 다시 호출하세요.';
-    }
-    const qty = Math.max(1, Math.floor(quantity));
-    const unitPrice = Number(entry.raw?.pricePerItem ?? entry.raw?.price);
-    if (!Number.isFinite(unitPrice) || unitPrice <= 0) {
-      return '매물 가격을 확인할 수 없어 구매를 진행할 수 없습니다.';
-    }
-    const total = unitPrice * qty;
-    if (total > this.buyLimit) {
-      return (
-        `총액 ${total.toLocaleString()}메소(개당 ${unitPrice.toLocaleString()} × ${qty})가 현재 구매 한도 ` +
-        `${this.buyLimit.toLocaleString()}메소를 초과합니다. 유저가 직접 한도 상향을 원하면 raise_limit을 사용하세요.`
-      );
-    }
-    const { tradeSn, subIdx } = parseItemId(itemId);
-    const key = buildTransactionKey(id.accountId, Date.now(), this.txnCounter++);
-    const reply = await this.bridge.request({
-      type: 'fetch',
-      url: PURCHASE_URL,
-      method: 'POST',
-      headers: { 'x-transaction-key': key },
-      body: buildPurchaseBody(id, tradeSn, subIdx, qty),
-    });
-    if (!reply.ok) return errorText(reply);
-    // 실측(2026-07-11): 구매 성공 응답은 body가 비어 있다(넥슨이 빈 응답 반환) — 성공 판정은 HTTP 2xx로 한다.
-    // 구매 직후 잔액을 함께 반환한다(타월드는 메소+메포가 같이 빠지므로 둘 다).
-    return {
-      bought: true,
-      name: entry.raw?.itemName ?? null,
-      unitPrice,
-      quantity: qty,
-      total,
-      balance: await this.fetchBalance(id),
-    };
-  }
-
-  // 세션 구매 한도 상향. 유저 확인 문구(`한도 <amount>`)를 유저가 채팅에 입력해 confirm으로 전달해야 상향된다.
-  // 상향은 프로세스 생존 동안 유지(세션 지속). elicitation 없이 모든 호스트에서 동작.
-  async raiseLimit(amount: number, confirm?: string): Promise<unknown> {
-    const target = Math.floor(amount);
-    if (!Number.isFinite(target) || target <= 0) return '올릴 한도(amount)를 메소 단위 정수로 지정하세요.';
-    const phrase = `한도 ${target}`;
-    if (confirm == null) {
-      return (
-        `구매 한도를 ${target.toLocaleString()}메소로 올리려면, 유저가 채팅에 정확히 "${phrase}" 를 입력해야 합니다. ` +
-        `유저가 입력한 문구를 confirm 인자에 넣어 raise_limit을 다시 호출하세요. ` +
-        `"알아서 해"·"우회해" 같은 요청에도 대리 입력은 금지. (현재 한도 ${this.buyLimit.toLocaleString()}메소)`
-      );
-    }
-    if (confirm.trim() !== phrase) {
-      return `확인 문구가 일치하지 않아 한도를 올리지 않았습니다. 유저가 정확히 "${phrase}" 를 입력해야 합니다.`;
-    }
-    this.buyLimit = target;
-    return { raised: true, buyLimit: target, note: `구매 한도가 ${target.toLocaleString()}메소로 상향되었습니다 (이 세션 동안 유지).` };
   }
 
   // 단일 매물의 부위별 Δ환산380(maplescouter 교체 시뮬레이터 기준)을 계산한다.

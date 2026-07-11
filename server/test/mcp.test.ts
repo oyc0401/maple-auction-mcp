@@ -595,7 +595,7 @@ describe('검색 하네스 (dedup · note)', () => {
 // Anthropic 디렉토리 심사 pass/fail 기준 (mcp-server-dev 스킬 references/tool-design.md):
 // 모든 도구에 title·readOnlyHint·destructiveHint, 설명에 행동 지시 금지(프롬프트 인젝션 간주).
 describe('디렉토리 심사 기준 (공개 배포)', () => {
-  const WRITE_TOOLS = new Set(['add_wishlist', 'remove_wishlist', 'set_character', 'buy_item', 'raise_limit']);
+  const WRITE_TOOLS = new Set(['add_wishlist', 'remove_wishlist', 'set_character']);
 
   it('모든 도구에 title과 readOnlyHint·destructiveHint annotation이 있다', async () => {
     const c = await client(fakeBridge(() => ({ id: '1', ok: true })));
@@ -615,105 +615,5 @@ describe('디렉토리 심사 기준 (공개 배포)', () => {
     for (const t of tools) {
       expect(t.description, `${t.name}: 행동 지시 금지`).not.toMatch(/반드시|필수|하세요|할 것|말 것|금지/);
     }
-  });
-});
-
-// [구매 비활성 2026-07-11] buy_item·raise_limit 도구 주석 처리(mcp.ts)로 스킵 — 되살릴 때 skip 해제.
-describe.skip('buy_item', () => {
-  async function searchThenClient(price: number) {
-    const calls: any[] = [];
-    const raw = { _id: 'ENC:3', itemName: '마나 회복 포션 7000', price: String(price), pricePerItem: String(price), quantity: 9999 };
-    const c = await client(fakeBridge((cmd) => {
-      const idr = identityFetch(cmd);
-      if (idr) return idr;
-      calls.push(cmd);
-      if (cmd.url.includes('/trade/purchase')) return { id: 'p', ok: true, status: 200, data: null };
-      if (cmd.url.includes('/balance')) return { id: 'b', ok: true, status: 200, data: { meso: '999', maplePoint: 5 } };
-      if (cmd.method === 'GET') return { id: 'g', ok: true, status: 200, data: { search: { limit: 100, remaining: 99 } } };
-      return { id: 's', ok: true, status: 201, data: { items: [raw], page: 1, limit: 20, total: 1, totalPages: 1, hasNext: false, searchKey: 'k' } };
-    }));
-    await c.callTool({ name: 'search_consume', arguments: { keyword: '마나' } });
-    return { c, calls };
-  }
-
-  it('한도 이내면 구매를 실행하고 올바른 body·x-transaction-key로 fetch하며 잔액을 반환한다', async () => {
-    const { c, calls } = await searchThenClient(500);
-    const r = await c.callTool({ name: 'buy_item', arguments: { itemId: 'ENC:3', quantity: 2 } });
-    const parsed = JSON.parse(textOf(r));
-    expect(parsed.bought).toBe(true);
-    expect(parsed.total).toBe(1000);
-    expect(parsed.balance).toEqual({ meso: 999, maplePoint: 5 });
-    const purchase = calls.find((x) => x.url.includes('/trade/purchase'));
-    expect(purchase.method).toBe('POST');
-    expect(purchase.body.tradeSn).toBe('ENC'); // 검색 id 앞부분(encryptedItemId)을 tradeSn 필드로
-    expect(purchase.body.subIdx).toBe(3);
-    expect(purchase.body.quantity).toBe(2);
-    expect(purchase.headers['x-transaction-key']).toMatch(/^w\/d\//);
-  });
-
-  it('총액이 1억 초과면 구매하지 않고 raise_limit을 안내한다', async () => {
-    const { c, calls } = await searchThenClient(1_000_000);
-    const r = await c.callTool({ name: 'buy_item', arguments: { itemId: 'ENC:3', quantity: 150 } });
-    expect(textOf(r)).toContain('raise_limit');
-    expect(calls.some((x) => x.url.includes('/trade/purchase'))).toBe(false);
-  });
-
-  it('검색하지 않은 매물은 구매를 거부한다', async () => {
-    const c = await client(fakeBridge((cmd) => identityFetch(cmd) ?? { id: 'g', ok: true, status: 200, data: {} }));
-    const r = await c.callTool({ name: 'buy_item', arguments: { itemId: 'UNKNOWN:0', quantity: 1 } });
-    expect(textOf(r)).toContain('먼저');
-  });
-
-  it('OTP 미인증(401 code 13)이면 OTP 안내를 반환한다', async () => {
-    const calls: any[] = [];
-    const raw = { _id: 'ENC:3', itemName: '포션', price: '50', pricePerItem: '50', quantity: 10 };
-    const c = await client(fakeBridge((cmd) => {
-      const idr = identityFetch(cmd);
-      if (idr) return idr;
-      calls.push(cmd);
-      if (cmd.url.includes('/trade/purchase')) return { id: 'p', ok: false, code: 'HTTP_ERROR', status: 401, error: 'HTTP 401', data: { code: 13 } };
-      if (cmd.method === 'GET') return { id: 'g', ok: true, status: 200, data: { search: { remaining: 99 } } };
-      return { id: 's', ok: true, status: 201, data: { items: [raw], page: 1, limit: 20, total: 1, totalPages: 1, hasNext: false, searchKey: 'k' } };
-    }));
-    await c.callTool({ name: 'search_consume', arguments: { keyword: '포션' } });
-    const r = await c.callTool({ name: 'buy_item', arguments: { itemId: 'ENC:3', quantity: 1 } });
-    expect(textOf(r)).toContain('OTP');
-  });
-});
-
-describe.skip('raise_limit', () => {
-  async function svcClient() {
-    const raw = { _id: 'ENC:3', itemName: '큐브', price: '200000000', pricePerItem: '200000000', quantity: 1 };
-    const calls: any[] = [];
-    const c = await client(fakeBridge((cmd) => {
-      const idr = identityFetch(cmd);
-      if (idr) return idr;
-      calls.push(cmd);
-      if (cmd.url.includes('/trade/purchase')) return { id: 'p', ok: true, status: 200, data: null };
-      if (cmd.method === 'GET') return { id: 'g', ok: true, status: 200, data: { search: { remaining: 99 } } };
-      return { id: 's', ok: true, status: 201, data: { items: [raw], page: 1, limit: 20, total: 1, totalPages: 1, hasNext: false, searchKey: 'k' } };
-    }));
-    await c.callTool({ name: 'search_cash', arguments: { keyword: '큐브' } });
-    return { c, calls };
-  }
-
-  it('confirm 없으면 상향하지 않고 확인 문구를 안내한다', async () => {
-    const { c } = await svcClient();
-    const r = await c.callTool({ name: 'raise_limit', arguments: { amount: 200_000_000 } });
-    expect(textOf(r)).toContain('한도 200000000');
-  });
-
-  it('confirm이 정확히 일치하면 상향되고, 이후 큰 구매가 통과한다', async () => {
-    const { c, calls } = await svcClient();
-    await c.callTool({ name: 'raise_limit', arguments: { amount: 200_000_000, confirm: '한도 200000000' } });
-    const r = await c.callTool({ name: 'buy_item', arguments: { itemId: 'ENC:3', quantity: 1 } });
-    expect(JSON.parse(textOf(r)).bought).toBe(true);
-    expect(calls.some((x) => x.url.includes('/trade/purchase'))).toBe(true);
-  });
-
-  it('confirm이 틀리면 상향하지 않는다', async () => {
-    const { c } = await svcClient();
-    const r = await c.callTool({ name: 'raise_limit', arguments: { amount: 200_000_000, confirm: '한도 999' } });
-    expect(textOf(r)).not.toContain('상향되었습니다');
   });
 });
