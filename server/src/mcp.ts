@@ -111,9 +111,10 @@ export function createServer(bridge: BridgeLike): McpServer {
     '- 검색 결과를 보여줄 때 사용한 필터 조건을 함께 표기한다.',
     '- 가위(재거래) 잔여 횟수가 낮은 매물은 사용자에게 꼭 명시한다(tradeDesc 참고).',
     '- 매물 id("ynoFBr…:1" 류)는 도구 호출용 내부 값 — 사용자에게 노출하지 말 것. 별칭은 표에 넣지 말고 문장에서 사용.',
+    '- 정확한 효율 비교는 item_damage(최종 데미지 증감률) — 넥슨 오픈 API 기반이라 검색 횟수를 소진하지 않지만, 후보를 추린 뒤 소수만. 부위가 정해졌으면 slot을 지정한다.',
   ].join('\n');
 
-  const server = new McpServer({ name: 'maple-auction', version: '0.7.3' }, { instructions });
+  const server = new McpServer({ name: 'maple-auction', version: '0.8.0' }, { instructions });
 
   const service = new AuctionService(bridge);
 
@@ -140,22 +141,20 @@ export function createServer(bridge: BridgeLike): McpServer {
     async () => text(loadKnowledge())
   );
 
-  // [환산 비활성 2026-07-11] maplescouter API 이용 중단 요청(운영팀)으로 환산 도구를 AI 노출에서 제외.
-  // 넥슨 오픈 API 기반으로 재구현해 되살릴 예정 — 그때까지 주석 보존.
-  // server.registerTool(
-  //   'user_equip',
-  //   {
-  //     title: '캐릭터 착용 장비 조회',
-  //     description:
-  //       '닉네임으로 임의 캐릭터가 현재 착용 중인 장비를 조회한다(마지막 로그아웃 기준, 외부 계산기 경유·10분 캐시). slot 생략 시 24부위 요약 목록 + 환산380, 지정 시 스탯·잠재·에디·소울 상세. 경매장 매물과의 교체 손익은 item_hwansan.',
-  //     inputSchema: {
-  //       characterName: z.string().optional().describe('조회할 캐릭터 닉네임. 생략 시 현재 검색 기준 캐릭터'),
-  //       slot: z.string().optional().describe('부위 (예: "무기", "반지1", "펜던트2"). 생략 시 전체 목록'),
-  //     },
-  //     annotations: { readOnlyHint: true, destructiveHint: false },
-  //   },
-  //   async ({ characterName, slot }) => text(await service.userEquip(characterName, slot))
-  // );
+  server.registerTool(
+    'user_equip',
+    {
+      title: '캐릭터 착용 장비 조회',
+      description:
+        '닉네임으로 임의 캐릭터가 현재 착용 중인 장비를 조회한다(넥슨 오픈 API, 마지막 로그아웃 기준, 10분 캐시, 검색 횟수 무관). slot 생략 시 전 부위 요약 목록, 지정 시 스탯·잠재·에디·소울 상세. 경매장 매물과의 교체 손익은 item_damage.',
+      inputSchema: {
+        characterName: z.string().optional().describe('조회할 캐릭터 닉네임. 생략 시 현재 검색 기준 캐릭터'),
+        slot: z.string().optional().describe('부위 (예: "무기", "반지1", "펜던트2"). 생략 시 전체 목록'),
+      },
+      annotations: { readOnlyHint: true, destructiveHint: false },
+    },
+    async ({ characterName, slot }) => text(await service.userEquip(characterName, slot))
+  );
 
   server.registerTool(
     'search_items',
@@ -299,21 +298,20 @@ export function createServer(bridge: BridgeLike): McpServer {
     async ({ searchKey, page, limit, sort }) => text(await service.getPage(searchKey, page, limit as GetLimit, sort as Sort))
   );
 
-  // [환산 비활성 2026-07-11] maplescouter API 이용 중단 요청으로 제외. 넥슨 오픈 API 기반 재구현 후 되살릴 예정.
-  // server.registerTool(
-  //   'item_hwansan',
-  //   {
-  //     title: '아이템 교체 환산 증감',
-  //     description:
-  //       '매물 1개를 현재 캐릭터의 해당 부위 장비와 교체할 때의 환산 주스탯(보스 380) 증감 계산. 공격력(깡·%)·보공·방무(곱연산)·크뎀·쿨감·세트효과까지 반영한 정확한 효율 (powerDiff 전투력은 보공·방무 미반영). 매물·부위당 외부 계산 API 1회.',
-  //     inputSchema: {
-  //       itemId: z.string().describe('매물 id (검색 결과의 id 필드, "TRADESN:SUBIDX" 형식)'),
-  //       slot: z.string().optional().describe('특정 부위만 계산 (예: "반지1", "펜던트2"). 생략 시 착용 가능한 모든 부위'),
-  //     },
-  //     annotations: { readOnlyHint: true, destructiveHint: false },
-  //   },
-  //   async ({ itemId, slot }) => text(await service.itemHwansan(itemId, slot))
-  // );
+  server.registerTool(
+    'item_damage',
+    {
+      title: '아이템 교체 시 최종 데미지 증감률',
+      description:
+        '매물 1개를 현재 캐릭터의 해당 부위 장비와 교체할 때의 최종 데미지 증감률(%) — 보스 방어율 300%·380% 기준 병기. 주스탯(%적용·미적용 분리)·공격력(깡·%)·보공·방무(곱연산)·크뎀·최종뎀·세트효과 반영 (powerDiff 전투력은 보공·방무 미반영). 넥슨 오픈 API 기반이라 검색 횟수 무관, 캐릭터 조회는 10분 캐시.',
+      inputSchema: {
+        itemId: z.string().describe('매물 id (검색 결과의 id 필드, "TRADESN:SUBIDX" 형식)'),
+        slot: z.string().optional().describe('특정 부위만 계산 (예: "반지1", "펜던트2"). 생략 시 착용 가능한 모든 부위'),
+      },
+      annotations: { readOnlyHint: true, destructiveHint: false },
+    },
+    async ({ itemId, slot }) => text(await service.itemDamage(itemId, slot))
+  );
 
   server.registerTool(
     'recent_sold',

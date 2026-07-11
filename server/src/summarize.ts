@@ -159,7 +159,7 @@ function scouterPotentialLine(grade: unknown, lines: (string | null)[] | undefin
   return `${g}: ${body}`;
 }
 
-// maplescouter userEquipData 항목 1개 → 착용 장비 상세 요약 (user_equip slot 지정 응답)
+// maplescouter userEquipData 항목 1개 → 착용 장비 상세 요약 (구 user_equip — 참고용 보존)
 export function summarizeScouterEquip(e: any): Record<string, unknown> {
   const out: Record<string, unknown> = {
     slot: e.slot,
@@ -173,6 +173,26 @@ export function summarizeScouterEquip(e: any): Record<string, unknown> {
   };
   if (e.cuttable_count != null && String(e.cuttable_count) !== '') out.cuttable = Number(e.cuttable_count);
   if (Number(e.ring_level)) out.ringLevel = Number(e.ring_level);
+  return out;
+}
+
+// 넥슨 오픈 API item-equipment 항목 1개 → 착용 장비 상세 요약 (user_equip slot 지정 응답).
+// item_total_option 키는 스카우터 totalOption과 동일(둘 다 넥슨 분해옵션) → EQUIP_STAT_LABELS 재사용.
+export function summarizeNexonEquip(e: any): Record<string, unknown> {
+  const pot = (grade: unknown, lines: (string | null | undefined)[]) =>
+    scouterPotentialLine(grade, lines.filter((l): l is string => typeof l === 'string' && !!l));
+  const out: Record<string, unknown> = {
+    slot: e.item_equipment_slot === '펜던트' ? '펜던트1' : e.item_equipment_slot,
+    name: e.item_name,
+    starforce: Number(e.starforce) || 0,
+    scroll: Number(e.scroll_upgrade) ? `강화 ${Number(e.scroll_upgrade)}회` : null,
+    stat: statLine(e.item_total_option, EQUIP_STAT_LABELS),
+    potential: pot(e.potential_option_grade, [e.potential_option_1, e.potential_option_2, e.potential_option_3]),
+    additional: pot(e.additional_potential_option_grade, [e.additional_potential_option_1, e.additional_potential_option_2, e.additional_potential_option_3]),
+    soul: e.soul_name ? `${e.soul_name}${e.soul_option ? ` / ${e.soul_option}` : ''}` : null,
+  };
+  if (e.cuttable_count != null && String(e.cuttable_count) !== '') out.cuttable = Number(e.cuttable_count);
+  if (Number(e.special_ring_level)) out.ringLevel = Number(e.special_ring_level);
   return out;
 }
 

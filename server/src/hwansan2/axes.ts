@@ -29,7 +29,7 @@ export function emptyItemStats(): ItemStats {
   };
 }
 
-function accumLine(s: ItemStats, line: string | null | undefined) {
+export function accumLine(s: ItemStats, line: string | null | undefined) {
   const p = parseOptionLine(line);
   if (!p) return;
   if ('unknown' in p) { s.unknown.push(p.unknown); return; }

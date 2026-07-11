@@ -102,6 +102,11 @@ const BOWMASTER: JobRules = {
 
 const JOB_RULES: Record<string, JobRules> = { '카데나': CADENA, '보우마스터': BOWMASTER };
 
+// 직업 스킬 DB 보유 여부 — 없으면 스킬 패시브만 빠진 채 계산하고 응답에 미반영 노트를 단다.
+export function hasJobRules(job: string): boolean {
+  return job in JOB_RULES;
+}
+
 // 5차 "[패시브 효과 : 올스탯 N]" / "[패시브 효과 : 공격력, 마력 N]" 브래킷 (직업 공통, 액티브에 붙은 패시브).
 function collectFifthBrackets(us: UserStat, grade5: SkillEntry[]): void {
   for (const s of grade5) {

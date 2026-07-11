@@ -50,17 +50,21 @@ Windows는 `"command": "cmd", "args": ["/c", "npx", "-y", "maple-auction-mcp"]` 
 
 > Gemini CLI는 2026-06-18부로 개인 계정 지원이 종료되어 Antigravity CLI로 대체되었습니다.
 
-## 환산 주스탯 (자동)
+## 최종 데미지 증감률 (선택 — 넥슨 오픈 API 키)
 
-방어구·장신구를 검색하면 각 매물에 **`hwansanBySlot`**(부위별로, 현재 착용 장비 대신 낄 때 오르는 환산 주스탯, 음수면 하락)이 함께 표시된다. 전투력과 달리 **보스 데미지·방어율 무시·데미지·세트 효과 변화까지 반영**해 장비 우열을 판단한다.
+`item_damage` 도구는 매물을 현재 착용 장비와 교체할 때의 **최종 데미지 증감률(%)** 을 계산합니다 — 주스탯(%적용·미적용 분리)·공격력·보스 데미지·방어율 무시(곱연산)·크리티컬 데미지·최종 데미지·세트 효과 변화까지 반영. `user_equip`으로 캐릭터 착용 장비도 조회할 수 있습니다.
 
-maplescouter API 기반으로 별도 설정 없이 자동 동작한다(무기 검색, 제논·데몬어벤져 캐릭터는 아직 미지원).
+[openapi.nexon.com](https://openapi.nexon.com)에서 API 키를 발급받아 실행 인자에 붙이면 활성화됩니다 (검색은 키 없이 동작):
+
+```bash
+claude mcp add --scope user maple-auction -- npx -y maple-auction-mcp --api-key YOUR_NEXON_API_KEY
+```
 
 ## 사용 예
 
 > 에디공 21퍼 아케인 체인 검색해줘
 
-> 내가 낄 만한 카데나 무기 환산 높은 순으로 찾아줘
+> 내가 낄 만한 카데나 무기 데미지 증가율 높은 순으로 찾아줘
 
 ![메이플 경매장 검색 예시](docs/maple-auction-example.png)
 

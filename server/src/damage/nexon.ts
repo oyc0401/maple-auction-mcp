@@ -60,8 +60,12 @@ export interface CharacterCollected {
   raw: Record<string, any>; // 진단용 원본 응답 (base/gear/set/symbol/hyper/ability/union)
 }
 
-const cache = new Map<string, CharacterCollected>();
-export function clearNexonCache() { cache.clear(); }
+// 캐릭터 조회 캐시: TTL 10분(구 scouter 클라이언트와 동일 정책) + in-flight dedupe.
+// 캐릭터당 1스윕(~20콜)이 레이트리밋에 치명적이라, 동시·연속 요청이 절대 중복 스윕을 만들지 않게 한다.
+const CACHE_TTL_MS = 10 * 60 * 1000;
+const cache = new Map<string, { at: number; data: CharacterCollected }>();
+const inFlight = new Map<string, Promise<CharacterCollected>>();
+export function clearNexonCache() { cache.clear(); inFlight.clear(); }
 
 // 넥슨 API 원본 응답 묶음 — 집계(aggregate)와 분리해 디스크 캐시/재집계가 가능하도록.
 export interface RawBundle {
@@ -79,8 +83,8 @@ export async function fetchCharacterRaw(characterName: string): Promise<{ raw: R
   const { ocid } = await getJson('/id', { character_name: characterName }, key);
   if (!ocid) throw new Error(`캐릭터를 찾지 못했습니다: ${characterName}`);
 
-  // 순차 호출(레이트리밋). 각 호출 사이 짧은 간격.
-  const gap = () => sleep(250);
+  // 순차 호출(레이트리밋). 각 호출 사이 짧은 간격. (테스트는 NEXON_GAP_MS=0으로 무대기)
+  const gap = () => sleep(Number(process.env.NEXON_GAP_MS ?? 250));
   const warnings: string[] = [];
   // stat은 필수(검증 오라클). 나머지는 best-effort — 실패하면 그 스탯만 누락하고 경고.
   const stat = await getJson('/character/stat', { ocid }, key); await gap();
@@ -111,7 +115,8 @@ export async function fetchCharacterRaw(characterName: string): Promise<{ raw: R
 }
 
 // 원본 응답 묶음 → UserStat 집계 + 검증 오라클. API 호출 없음(디스크 캐시 재집계 가능).
-export function aggregateCharacter(characterName: string, bundle: RawBundle, warnings: string[]): CharacterCollected {
+// combat=true면 조건부(cond) 링크·버프 스킬을 포함해 전투 기준으로 집계한다 (resting 검증은 false).
+export function aggregateCharacter(characterName: string, bundle: RawBundle, warnings: string[], combat = false): CharacterCollected {
   const { stat, basic, equip, setEff, symbol, hyper, ability, link, union, artifact, champion, propensity, skills, hexa } = bundle;
   const m = statMap(stat.final_stat);
   const level = Number(basic?.character_level ?? 0);
@@ -123,7 +128,7 @@ export function aggregateCharacter(characterName: string, bundle: RawBundle, war
   if (symbol) collectSymbol(us, symbol.symbol);
   if (hyper) collectHyper(us, hyper[`hyper_stat_preset_${hyper.use_preset_no ?? 1}`]);
   if (ability) collectAbility(us, ability.ability_info);
-  if (link) collectLinkSkills(us, link);
+  if (link) collectLinkSkills(us, link, combat);
   if (union) collectUnion(us, union);
   if (artifact) collectArtifact(us, artifact);
   if (champion) collectChampion(us, champion);
@@ -132,7 +137,7 @@ export function aggregateCharacter(characterName: string, bundle: RawBundle, war
   const mainKey = mainStatKey(m);
   const cls = stat.character_class ?? '';
   const job = cls === '제논' ? 'xenon' : cls === '데몬어벤져' ? 'deven' : 'normal';
-  collectSkillPassive(us, cls, skills);
+  collectSkillPassive(us, cls, skills, combat);
   if (hexa) collectHexaStat(us, hexa, mainKey, mainKey === 'INT', job);
 
   const collected: CharacterCollected = {
@@ -152,12 +157,18 @@ export function aggregateCharacter(characterName: string, bundle: RawBundle, war
   return collected;
 }
 
-// 닉네임 → 조회 + 집계. 캐릭터당 프로세스 생존 동안 캐시(중복 호출 방지).
+// 닉네임 → 조회 + 집계. TTL 캐시 + 동시 요청은 진행 중 Promise 공유(중복 스윕 방지).
 export async function collectCharacter(characterName: string): Promise<CharacterCollected> {
   const hit = cache.get(characterName);
-  if (hit) return hit;
-  const { raw, warnings } = await fetchCharacterRaw(characterName);
-  const collected = aggregateCharacter(characterName, raw, warnings);
-  cache.set(characterName, collected);
-  return collected;
+  if (hit && Date.now() - hit.at < CACHE_TTL_MS) return hit.data;
+  const running = inFlight.get(characterName);
+  if (running) return running;
+  const p = (async () => {
+    const { raw, warnings } = await fetchCharacterRaw(characterName);
+    const collected = aggregateCharacter(characterName, raw, warnings);
+    cache.set(characterName, { at: Date.now(), data: collected });
+    return collected;
+  })().finally(() => inFlight.delete(characterName));
+  inFlight.set(characterName, p);
+  return p;
 }

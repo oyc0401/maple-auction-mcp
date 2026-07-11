@@ -142,7 +142,7 @@ function tierStats(t: SetTier): ItemStats {
   return s;
 }
 
-function mergeStats(a: ItemStats, b: ItemStats, sign: 1 | -1): ItemStats {
+export function mergeStats(a: ItemStats, b: ItemStats, sign: 1 | -1): ItemStats {
   const out = structuredClone(a);
   (['STR', 'DEX', 'INT', 'LUK'] as const).forEach((k) => { out.flat[k] += sign * b.flat[k]; out.pct[k] += sign * b.pct[k]; });
   out.hp += sign * b.hp; out.atk += sign * b.atk; out.matk += sign * b.matk;

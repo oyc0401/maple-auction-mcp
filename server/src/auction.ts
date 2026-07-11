@@ -17,11 +17,18 @@ import {
   type Sort,
   type GetLimit,
 } from './mapping.js';
-import { summarizeSearch, summarizeItem, summarizeScouterEquip } from './summarize.js';
+import { summarizeSearch, summarizeItem, summarizeNexonEquip } from './summarize.js';
 import { listCharacters as listAccountCharacters, discoverIdentity, type CharacterInfo } from './characters.js';
-import { fetchScouter, swapDelta380, categoryToSlots, slotLabel } from './hwansan2/index.js';
+import { categoryToSlots, slotLabel } from './hwansan2/index.js';
+import { collectCharacter, nexonApiKey, type CharacterCollected } from './damage/nexon.js';
+import { buildCombatStats, type CombatStats } from './damage/combat.js';
+import { swapDamageDelta } from './damage/delta.js';
 import { worldName } from './constants.js';
 import type { BridgeLike } from './nexon.js';
+
+const NEXON_KEY_GUIDE =
+  '넥슨 오픈 API 키가 설정되지 않아 이 도구를 쓸 수 없습니다. https://openapi.nexon.com 에서 키를 발급받아 ' +
+  'MCP 설정의 실행 인자에 --api-key <키> 를 추가하거나 NEXON_DEVELOPER_KEY 환경변수로 지정하세요. (검색 도구는 키 없이 정상 동작)';
 
 function errorText(reply: Extract<BridgeReply, { ok: false }>): string {
   const apiCode = (reply.data as { code?: number } | null)?.code;
@@ -199,22 +206,44 @@ export class AuctionService {
     return errorText(reply);
   }
 
-  async itemHwansan(itemId: string, slot?: string): Promise<unknown> {
+  async itemDamage(itemId: string, slot?: string): Promise<unknown> {
     const id = await this.ensureIdentity();
     if (typeof id === 'string') return id;
-    return this.computeItemHwansan(itemId, slot);
+    return this.computeItemDamage(itemId, slot);
   }
 
-  // 단일 매물의 부위별 Δ환산380(maplescouter 교체 시뮬레이터 기준)을 계산한다.
+  // 넥슨 캐릭터 조회(TTL 캐시)와 스왑 계산 캐시. CombatStats·스왑 결과는 collectCharacter 결과 객체에
+  // 묶어(WeakMap) TTL 갱신 시 자동 무효화된다 (구 swap.ts 캐시 패턴).
+  private readonly combatCache = new WeakMap<CharacterCollected, { cs: CombatStats; swaps: Map<string, ReturnType<typeof swapDamageDelta>> }>();
+
+  private async loadCharacter(name: string): Promise<CharacterCollected | string> {
+    if (!nexonApiKey()) return NEXON_KEY_GUIDE;
+    try {
+      return await collectCharacter(name);
+    } catch (e) {
+      return `넥슨 오픈 API 캐릭터 조회 실패: ${(e as Error).message}`;
+    }
+  }
+
+  private combatOf(collected: CharacterCollected) {
+    let entry = this.combatCache.get(collected);
+    if (!entry) {
+      entry = { cs: buildCombatStats(collected), swaps: new Map() };
+      this.combatCache.set(collected, entry);
+    }
+    return entry;
+  }
+
+  // 단일 매물의 부위별 최종 데미지 증감률(D_after/D_before − 1)을 계산한다.
   // 원본 매물은 직전 검색(search/getPage)이 rawItemCache에 넣어둔 것을 쓴다. 에러는 안내 문자열로 반환.
-  private async computeItemHwansan(itemId: string, onlySlot?: string): Promise<unknown> {
+  private async computeItemDamage(itemId: string, onlySlot?: string): Promise<unknown> {
     const entry = this.rawItemCache.get(itemId);
     if (!entry) {
       return '해당 매물의 원본을 찾을 수 없습니다. 먼저 search_weapon / search_armor / get_page 로 이 매물을 조회한 뒤 그 id로 다시 호출하세요.';
     }
     const slots = categoryToSlots(entry.category);
     if (!slots) {
-      return '이 매물은 환산 비교 대상(장비)이 아니거나 카테고리를 알 수 없습니다. search_weapon / search_armor 로 조회한 매물의 id를 사용하세요.';
+      return '이 매물은 증감률 비교 대상(장비)이 아니거나 카테고리를 알 수 없습니다. search_weapon / search_armor 로 조회한 매물의 id를 사용하세요.';
     }
     let targetSlots = slots;
     if (onlySlot) {
@@ -225,30 +254,32 @@ export class AuctionService {
     }
     const name = this.identity?.characterName;
     if (!name) {
-      return '현재 캐릭터 이름을 알 수 없어 환산을 계산할 수 없습니다. set_character 로 기준 캐릭터를 지정하세요.';
+      return '현재 캐릭터 이름을 알 수 없어 증감률을 계산할 수 없습니다. set_character 로 기준 캐릭터를 지정하세요.';
     }
-    let data;
-    try {
-      data = await fetchScouter(name);
-    } catch (e) {
-      return `환산 계산기(maplescouter) 호출 실패: ${(e as Error).message}`;
-    }
-    const bySlot: Record<string, number> = {};
+    const collected = await this.loadCharacter(name);
+    if (typeof collected === 'string') return collected;
+    const { cs, swaps } = this.combatOf(collected);
+
+    const bySlot: Record<string, { boss300: number; boss380: number }> = {};
     const unknown = new Set<string>();
     for (const slot of targetSlots) {
-      try {
-        const r = await swapDelta380(data, slot, entry.raw);
-        if (r) {
-          bySlot[slotLabel(slot)] = r.delta380;
-          for (const u of r.unknown) unknown.add(u);
-        }
-      } catch { /* 개별 부위 실패는 생략 */ }
+      const key = `${slot}:${itemId}`;
+      let r = swaps.get(key);
+      if (r === undefined) {
+        try { r = swapDamageDelta(collected, cs, slot, entry.raw); } catch { r = null; }
+        swaps.set(key, r);
+      }
+      if (r) {
+        bySlot[slotLabel(slot)] = { boss300: r.delta300, boss380: r.delta380 };
+        for (const u of r.unknown) unknown.add(u);
+      }
     }
     return {
       id: itemId,
       name: entry.raw?.itemName ?? null,
-      hwansan380: data.calculatedData.boss380_stat,
-      bySlot,
+      character: name,
+      deltaPct: bySlot, // 부위별 최종 데미지 증감률 % (보스 방어율 300/380 기준)
+      ...(cs.notes.length ? { notes: cs.notes } : {}),
       ...(unknown.size ? { unknown: [...unknown] } : {}),
     };
   }
@@ -261,29 +292,24 @@ export class AuctionService {
       name = this.identity?.characterName;
       if (!name) return '현재 캐릭터 이름을 알 수 없습니다. characterName을 지정하거나 set_character로 기준 캐릭터를 정하세요.';
     }
-    let data;
-    try {
-      data = await fetchScouter(name);
-    } catch (e) {
-      return `캐릭터 조회 실패(maplescouter): ${(e as Error).message}`;
-    }
+    const collected = await this.loadCharacter(name);
+    if (typeof collected === 'string') return collected;
+    const equips: any[] = collected.raw.equip?.item_equipment ?? [];
     if (slot) {
-      const e = data.userEquipData.find((x) => x.slot === slot);
-      if (!e) return `slot "${slot}" 장비가 없습니다. 가능한 부위: ${data.userEquipData.map((x) => x.slot).join(', ')}`;
-      return { character: name, ...summarizeScouterEquip(e) };
+      const e = equips.find((x) => x.item_equipment_slot === slot || slotLabel(x.item_equipment_slot) === slot);
+      if (!e) return `slot "${slot}" 장비가 없습니다. 가능한 부위: ${equips.map((x) => slotLabel(x.item_equipment_slot)).join(', ')}`;
+      return { character: name, ...summarizeNexonEquip(e) };
     }
-    const st = data.userStat.stat;
     return {
       character: name,
-      class: st.myClass,
-      level: Number(st.level) || undefined,
-      hwansan380: data.calculatedData.boss380_stat,
-      items: data.userEquipData.map((e) => ({
-        slot: e.slot,
-        name: e.name,
+      class: collected.final.characterClass,
+      level: collected.final.level || undefined,
+      items: equips.map((e) => ({
+        slot: slotLabel(e.item_equipment_slot),
+        name: e.item_name,
         star: Number(e.starforce) || undefined,
-        pot: (e.potential_grade as string) || undefined,
-        add: (e.additional_potential_grade as string) || undefined,
+        pot: (e.potential_option_grade as string) || undefined,
+        add: (e.additional_potential_option_grade as string) || undefined,
       })),
     };
   }

@@ -1,10 +1,9 @@
-import { describe, it, expect, vi } from 'vitest';
-import { readFileSync } from 'node:fs';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import type { BridgeCommandInput, BridgeReply } from '@maple/shared';
 import { createServer, type BridgeLike } from '../src/mcp.js';
-import { fetchScouter, clearScouterCache } from '../src/hwansan2/scouterClient.js';
+import { clearNexonCache } from '../src/damage/nexon.js';
 
 const ID = { worldId: 5, accountId: 1, characterId: 2 };
 
@@ -90,8 +89,7 @@ describe('search_items (POST 세션 생성)', () => {
   });
 });
 
-// [환산 비활성 2026-07-11] maplescouter 이용 중단으로 도구 비노출. 넥슨 오픈 API 재구현 시 되살림.
-describe.skip('item_hwansan (단일 매물 교체 환산)', () => {
+describe('item_damage (단일 매물 최종 데미지 증감률)', () => {
   // 검색이 rawItemCache를 채우도록 신원 체인→POST(201)→GET(daily-limit)를 처리하는 브리지.
   const searchBridge = () => fakeBridge((cmd) => {
     const idr = identityFetch(cmd);
@@ -102,58 +100,97 @@ describe.skip('item_hwansan (단일 매물 교체 환산)', () => {
 
   it('검색으로 캐시된 적 없는 매물 id면 먼저 검색하라고 안내한다', async () => {
     const c = await client(searchBridge());
-    const r = await c.callTool({ name: 'item_hwansan', arguments: { itemId: 'unknown:9' } });
+    const r = await c.callTool({ name: 'item_damage', arguments: { itemId: 'unknown:9' } });
     expect(textOf(r)).toContain('원본을 찾을 수 없습니다');
   });
 
-  it('무기 매물도 카테고리 가드를 통과해 캐릭터 기준을 요구한다(무기 환산 지원)', async () => {
+  it('무기 매물도 카테고리 가드를 통과해 캐릭터 기준을 요구한다(무기 지원)', async () => {
     const c = await client(searchBridge());
     await c.callTool({ name: 'search_weapon', arguments: { subCategory: 'WEAPON' } }); // a:1 캐시(category WEAPON)
-    const r = await c.callTool({ name: 'item_hwansan', arguments: { itemId: 'a:1' } });
+    const r = await c.callTool({ name: 'item_damage', arguments: { itemId: 'a:1' } });
     expect(textOf(r)).not.toContain('지원하지 않습니다');
-    expect(textOf(r)).toContain('캐릭터 이름'); // 무기 게이트 제거 → 방어구와 동일 경로
+    expect(textOf(r)).toContain('캐릭터 이름'); // 신원에 이름 없음 → set_character 안내
   });
 
   it('방어구 매물이면 카테고리 가드를 통과해 캐릭터 기준을 요구한다(네트워크 없음)', async () => {
     const c = await client(searchBridge());
     await c.callTool({ name: 'search_armor', arguments: { subCategory: 'ARMOR_ACCESSORY_RING' } }); // a:1 캐시(반지)
-    const r = await c.callTool({ name: 'item_hwansan', arguments: { itemId: 'a:1' } });
+    const r = await c.callTool({ name: 'item_damage', arguments: { itemId: 'a:1' } });
     expect(textOf(r)).toContain('캐릭터 이름');
   });
 
   it('착용 부위가 아닌 slot을 주면 가능한 부위를 안내한다(신원 불필요)', async () => {
     const c = await client(searchBridge());
     await c.callTool({ name: 'search_armor', arguments: { subCategory: 'ARMOR_ACCESSORY_RING' } });
-    const r = await c.callTool({ name: 'item_hwansan', arguments: { itemId: 'a:1', slot: '모자' } });
+    const r = await c.callTool({ name: 'item_damage', arguments: { itemId: 'a:1', slot: '모자' } });
     expect(textOf(r)).toContain('가능한 부위');
   });
 });
 
-// [환산 비활성 2026-07-11] maplescouter 이용 중단으로 도구 비노출. 넥슨 오픈 API 재구현 시 되살림.
-describe.skip('user_equip (캐릭터 착용 장비 조회)', () => {
-  const idResponse = JSON.parse(readFileSync(new URL('../src/scouter/id-response', import.meta.url), 'utf8'));
-  // 스카우터 캐시를 fixture로 시딩 → 도구 핸들러의 fetchScouter(name)가 네트워크 없이 캐시 히트
-  async function seedScouter(name: string) {
-    clearScouterCache();
-    const f = vi.fn(async () => ({ ok: true, status: 200, json: async () => idResponse } as Response));
-    await fetchScouter(name, { fetchFn: f as any });
-  }
+describe('user_equip (캐릭터 착용 장비 조회, 넥슨 오픈 API)', () => {
   const noopBridge = () => fakeBridge(() => ({ id: '1', ok: true, data: ID }));
+  const savedKey = process.env.NEXON_DEVELOPER_KEY;
 
-  it('slot 생략 시 24부위 요약 + 환산380을 반환한다', async () => {
-    await seedScouter('오유찬');
+  // 넥슨 오픈 API 전체를 최소 응답으로 스텁 — 장비 1개(무기)만 가진 카데나.
+  const weaponItem = {
+    item_equipment_slot: '무기', item_name: '아케인셰이드 체인', starforce: '17', scroll_upgrade: '8',
+    potential_option_grade: '레전드리', additional_potential_option_grade: '유니크',
+    item_total_option: { attack_power: '649', luk: '100', boss_damage: '30' },
+    potential_option_1: '몬스터 방어율 무시 +40%', potential_option_2: '보스 몬스터 데미지 +35%', potential_option_3: null,
+    additional_potential_option_1: '공격력 +9%', additional_potential_option_2: null, additional_potential_option_3: null,
+    soul_name: '위대한 매그너스의 소울 적용', soul_option: '보스 몬스터 데미지 +7%', cuttable_count: '3',
+  };
+  function stubNexonFetch() {
+    process.env.NEXON_DEVELOPER_KEY = 'test-key';
+    process.env.NEXON_GAP_MS = '0'; // 스텁이라 레이트리밋 간격 불필요
+    clearNexonCache();
+    vi.stubGlobal('fetch', vi.fn(async (url: any) => {
+      const u = String(url);
+      const body = (data: unknown) => ({ ok: true, status: 200, json: async () => data } as Response);
+      if (u.includes('/id?')) return body({ ocid: 'OCID' });
+      if (u.includes('/character/stat')) return body({
+        character_class: '카데나',
+        final_stat: [
+          { stat_name: 'LUK', stat_value: '1000' }, { stat_name: 'STR', stat_value: '10' },
+          { stat_name: 'DEX', stat_value: '10' }, { stat_name: 'INT', stat_value: '10' },
+          { stat_name: 'AP 배분 LUK', stat_value: '500' },
+        ],
+      });
+      if (u.includes('/character/basic')) return body({ character_level: 270 });
+      if (u.includes('/character/item-equipment')) return body({ item_equipment: [weaponItem] });
+      if (u.includes('/character/skill')) return body({ character_skill: [] });
+      return body({}); // set-effect/symbol/hyper/ability/link/union/artifact/champion/propensity/hexa 등
+    }));
+  }
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    if (savedKey === undefined) delete process.env.NEXON_DEVELOPER_KEY;
+    else process.env.NEXON_DEVELOPER_KEY = savedKey;
+    delete process.env.NEXON_GAP_MS;
+    clearNexonCache();
+  });
+
+  it('넥슨 키가 없으면 발급·설정 안내를 반환한다', async () => {
+    delete process.env.NEXON_DEVELOPER_KEY;
+    const c = await client(noopBridge());
+    const r = await c.callTool({ name: 'user_equip', arguments: { characterName: '오유찬' } });
+    expect(textOf(r)).toContain('--api-key');
+    expect(textOf(r)).toContain('openapi.nexon.com');
+  });
+
+  it('slot 생략 시 부위 요약 목록을 반환한다', async () => {
+    stubNexonFetch();
     const c = await client(noopBridge());
     const r = await c.callTool({ name: 'user_equip', arguments: { characterName: '오유찬' } });
     const parsed = JSON.parse(textOf(r));
     expect(parsed.character).toBe('오유찬');
-    expect(parsed.hwansan380).toBe(30371);
-    expect(parsed.items).toHaveLength(24);
-    const weapon = parsed.items.find((i: any) => i.slot === '무기');
-    expect(weapon).toMatchObject({ name: '아케인셰이드 체인', star: 17, pot: '레전드리', add: '유니크' });
+    expect(parsed.class).toBe('카데나');
+    expect(parsed.items).toHaveLength(1);
+    expect(parsed.items[0]).toMatchObject({ slot: '무기', name: '아케인셰이드 체인', star: 17, pot: '레전드리', add: '유니크' });
   });
 
   it('slot 지정 시 스탯·잠재·에디·소울 상세를 반환한다', async () => {
-    await seedScouter('오유찬');
+    stubNexonFetch();
     const c = await client(noopBridge());
     const r = await c.callTool({ name: 'user_equip', arguments: { characterName: '오유찬', slot: '무기' } });
     const parsed = JSON.parse(textOf(r));
@@ -168,7 +205,7 @@ describe.skip('user_equip (캐릭터 착용 장비 조회)', () => {
   });
 
   it('없는 slot이면 가능한 부위를 안내한다', async () => {
-    await seedScouter('오유찬');
+    stubNexonFetch();
     const c = await client(noopBridge());
     const r = await c.callTool({ name: 'user_equip', arguments: { characterName: '오유찬', slot: '날개' } });
     expect(textOf(r)).toContain('가능한 부위');

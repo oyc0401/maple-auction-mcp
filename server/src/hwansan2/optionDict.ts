@@ -16,6 +16,12 @@ const NAME_TO_KEY: Record<string, OptionKey> = {
   '크리티컬 확률': 'critRate',
 };
 
+// 데미지 계산과 무관해 조용히 무시할 옵션 (unknown 소음 방지 — 등록된 이름만, 그 외는 여전히 unknown 노출)
+const IGNORE_NAMES = new Set([
+  '방어력', '최대 MP', '이동속도', '점프력', '착용 레벨 감소',
+  '모든 속성 내성', '상태 이상 내성', 'HP 회복', 'MP 회복',
+]);
+
 // "이름 +13%" / "이름, 이름 +36" (실측: 콜론 없음) / "스킬 재사용 대기시간 -2초"
 const OPT_RE = /^(.+?)\s*\+\s*(\d+(?:\.\d+)?)\s*(%?)$/;
 const COOL_RE = /^스킬 재사용 대기시간\s*-\s*(\d+(?:\.\d+)?)\s*초$/;
@@ -33,7 +39,9 @@ export function parseOptionLine(
   if (perLev) return { key: `perLev${perLev[1]}` as OptionKey, val: Number(perLev[2]), pct: false };
   const m = t.match(OPT_RE);
   if (!m) return { unknown: t };
-  const key = NAME_TO_KEY[m[1].trim()];
+  const name = m[1].trim();
+  if (IGNORE_NAMES.has(name)) return null; // 계산 무관 옵션은 조용히 무시
+  const key = NAME_TO_KEY[name];
   if (!key) return { unknown: t };
   return { key, val: Number(m[2]), pct: m[3] === '%' };
 }
