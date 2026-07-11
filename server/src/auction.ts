@@ -25,11 +25,6 @@ import type { BridgeLike } from './nexon.js';
 
 function errorText(reply: Extract<BridgeReply, { ok: false }>): string {
   const apiCode = (reply.data as { code?: number } | null)?.code;
-  // 401 code 13 = OTP_REQUIRED: 세션은 살아있고 넥슨 2차 비밀번호(OTP) 인증만 없는 상태(주로 구매).
-  // 세션 안내로 보내면 오해를 부르므로 구분한다 — OTP는 자격증명이라 사용자가 브라우저에서 직접 인증해야 한다.
-  if (reply.status === 401 && apiCode === 13) {
-    return '구매에는 넥슨 2차 비밀번호(OTP) 인증이 필요합니다. 사용자에게 크롬에서 https://auction.maplestory.nexon.com 접속 후 아무 매물이나 한 번 구매해 OTP(2차 비밀번호) 인증을 완료하라고 안내하고, 완료했다고 하면 다시 요청하세요. OTP는 세션 동안 유지됩니다.';
-  }
   // 401/403 = 세션 문제. 세션은 옥션 페이지만 만들 수 있으므로(shared의 NO_SESSION_MSG 주석 참고)
   // nxlogin이 아니라 옥션 페이지로 안내한다. 구버전 확장이 보낸 낡은 안내문도 여기서 최신 안내로 덮인다.
   if (reply.status === 401 || reply.status === 403) {
