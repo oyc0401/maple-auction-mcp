@@ -63,12 +63,15 @@ function addCol(us: UserStat, col: Col, lv: number, isMain: boolean, ctx: Ctx): 
 
 export function collectHexaStat(us: UserStat, hexa: any, mainKey: MainStat, isMagic: boolean, job: JobKind = 'normal'): void {
   const ctx: Ctx = { mainKey, isMagic, job };
-  for (const c of hexa?.character_hexa_stat_core ?? []) {
-    const m = colOf(c.main_stat_name);
-    if (m) addCol(us, m, Number(c.main_stat_level), true, ctx);
-    const s1 = colOf(c.sub_stat_name_1);
-    if (s1) addCol(us, s1, Number(c.sub_stat_level_1), false, ctx);
-    const s2 = colOf(c.sub_stat_name_2);
-    if (s2) addCol(us, s2, Number(c.sub_stat_level_2), false, ctx);
+  // 헥사 스탯 코어는 최대 3개(core, core_2, core_3) — 장착분 전부 합산. preset_* 는 미장착 프리셋이라 제외.
+  for (const field of ['character_hexa_stat_core', 'character_hexa_stat_core_2', 'character_hexa_stat_core_3']) {
+    for (const c of hexa?.[field] ?? []) {
+      const m = colOf(c.main_stat_name);
+      if (m) addCol(us, m, Number(c.main_stat_level), true, ctx);
+      const s1 = colOf(c.sub_stat_name_1);
+      if (s1) addCol(us, s1, Number(c.sub_stat_level_1), false, ctx);
+      const s2 = colOf(c.sub_stat_name_2);
+      if (s2) addCol(us, s2, Number(c.sub_stat_level_2), false, ctx);
+    }
   }
 }
