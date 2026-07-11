@@ -618,7 +618,8 @@ describe('디렉토리 심사 기준 (공개 배포)', () => {
   });
 });
 
-describe('buy_item', () => {
+// [구매 비활성 2026-07-11] buy_item·raise_limit 도구 주석 처리(mcp.ts)로 스킵 — 되살릴 때 skip 해제.
+describe.skip('buy_item', () => {
   async function searchThenClient(price: number) {
     const calls: any[] = [];
     const raw = { _id: 'ENC:3', itemName: '마나 회복 포션 7000', price: String(price), pricePerItem: String(price), quantity: 9999 };
@@ -680,7 +681,7 @@ describe('buy_item', () => {
   });
 });
 
-describe('raise_limit', () => {
+describe.skip('raise_limit', () => {
   async function svcClient() {
     const raw = { _id: 'ENC:3', itemName: '큐브', price: '200000000', pricePerItem: '200000000', quantity: 1 };
     const calls: any[] = [];
