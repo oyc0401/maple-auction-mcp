@@ -26,6 +26,8 @@ export function collectGearItem(us: UserStat, item: any, level = 0): void {
     if (per) apply(us, per[2], Math.floor(level / Number(per[1])) * Number(per[3]), false);
     else accumPlus(us, line);
   }
+  // 무기 소울 옵션 ("보스 몬스터 데미지 +7%" 류) — 넥슨 resting 포함 (오유찬 보공 잔차 7 정확 일치)
+  accumPlus(us, item?.soul_option);
 }
 
 export function collectGear(us: UserStat, itemEquipment: any[] | undefined, level = 0): void {
