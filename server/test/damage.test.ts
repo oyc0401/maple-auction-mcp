@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { aggregateCharacter, type RawBundle } from '../src/damage/nexon.js';
 import { buildCombatStats, damageOf } from '../src/damage/combat.js';
-import { swapDamageDelta, fromNexonEquip } from '../src/damage/delta.js';
+import { swapDamageDelta, itemStatsToBlock } from '../src/damage/delta.js';
 import { fromAuctionRaw } from '../src/hwansan2/axes.js';
 
 // 최소 캐릭터 번들: 카데나(LUK 주스탯·이중부스탯), 반지1 + 무기.
@@ -71,13 +71,14 @@ describe('damage/combat — D 공식', () => {
 });
 
 describe('damage/delta — 교체 증감률', () => {
-  it('넥슨 장착템 파서와 경매장 파서가 같은 아이템에서 같은 스탯을 낸다', () => {
-    const a = fromNexonEquip(ringEquip);
-    const b = fromAuctionRaw(sameRingRaw);
-    expect(b.flat).toEqual(a.flat);
-    expect(b.atk).toBe(a.atk);
-    expect(b.pct).toEqual(a.pct);
-    expect(b.iedFactor).toBeCloseTo(a.iedFactor, 10);
+  it('넥슨 장착템 블록(단일 진실 원천)과 경매장 파서 블록이 같은 아이템에서 같은 스탯을 낸다', () => {
+    const a = collected.stats.장비!['반지1'] as Record<string, number | number[]>;
+    const b = itemStatsToBlock(fromAuctionRaw(sameRingRaw)) as Record<string, number | number[]>;
+    expect(b['STR']).toBe(a['STR']);
+    expect(b['LUK']).toBe(a['LUK']);
+    expect(b['공격력']).toBe(a['공격력']);
+    expect(b['LUK%']).toBe(a['LUK%']);
+    expect((b['방무'] as number[])[0]).toBeCloseTo((a['방무'] as number[])[0], 10);
   });
 
   it('동일 스탯 매물로 교체하면 증감률 0%', () => {

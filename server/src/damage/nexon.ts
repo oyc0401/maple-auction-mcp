@@ -2,19 +2,11 @@
 // 경매장 API(브릿지/확장)와 달리 공개 API + 개발자 키 인증이라 서버가 직접 호출한다.
 // 키는 NEXON_DEVELOPER_KEY(.env). 없으면 환산 기능만 비활성(검색은 정상).
 // 레이트리밋이 약해 순차 호출 + 429 지수 백오프. 캐릭터당 프로세스 생존 동안 캐시.
-import { emptyUserStat, type UserStat } from './statSheet.js';
-import {
-  collectGear, collectSet, collectSymbol, collectHyper, collectAbility, collectBaseAP, collectUnion, collectArtifact, collectChampion, collectPropensity, collectTitle, collectMapleWarrior, collectChallenger, collectBurning, hasBurning, BURNING_TOOLTIP,
-} from './collect.js';
-import { collectLinkSkills } from './linkSkill.js';
-import { collectSkillPassive, type SkillsByGrade } from './skillPassive.js';
-import { collectHexaStat } from './hexaStat.js';
-
-const MAIN_KEYS = ['STR', 'DEX', 'INT', 'LUK'] as const;
-type MainKey = (typeof MAIN_KEYS)[number];
-function mainStatKey(m: Record<string, number>): MainKey {
-  return MAIN_KEYS.reduce((a, b) => ((m[b] ?? 0) >= (m[a] ?? 0) ? b : a), 'LUK' as MainKey);
-}
+import type { UserStat } from './statSheet.js';
+import type { CharacterStats } from './stat-interface.js';
+import type { SkillsByGrade } from './skillPassive.js';
+import { buildCharacterStats, statMapOf, mainStatKeyOf } from './character.js';
+import { flattenStats } from './block.js';
 
 const BASE = 'https://open.api.nexon.com/maplestory/v1';
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -36,12 +28,6 @@ async function getJson(path: string, params: Record<string, string>, key: string
   }
 }
 
-function statMap(finalStat: { stat_name: string; stat_value: string }[]): Record<string, number> {
-  const m: Record<string, number> = {};
-  for (const s of finalStat ?? []) m[s.stat_name] = Number(s.stat_value);
-  return m;
-}
-
 // 캐릭터 최종 종합 스탯(검증 오라클) + 직업.
 export interface CharFinal {
   characterName: string;
@@ -54,7 +40,8 @@ export interface CharFinal {
 
 export interface CharacterCollected {
   final: CharFinal;
-  userStat: UserStat; // 소스에서 모은 값 (재구성 대조 대상)
+  stats: CharacterStats;  // 소스별 StatBlock — 단일 진실 원천
+  userStat: UserStat;     // stats를 flatten한 계산용 버킷 (재구성 대조 대상)
   warnings: string[]; // 조회 실패한 소스 (best-effort — 있으면 그 스탯이 누락됨)
   raw: Record<string, any>; // 진단용 원본 응답 (base/gear/set/symbol/hyper/ability/union)
 }
@@ -113,32 +100,16 @@ export async function fetchCharacterRaw(characterName: string): Promise<{ raw: R
   return { raw: { stat, basic, equip, setEff, symbol, hyper, ability, link, union, artifact, champion, propensity, skills, hexa }, warnings };
 }
 
-// 원본 응답 묶음 → UserStat 집계 + 검증 오라클. API 호출 없음(디스크 캐시 재집계 가능).
+// 원본 응답 묶음 → CharacterStats(소스별 진실 원천) → flatten(UserStat) + 검증 오라클.
+// API 호출 없음(디스크 캐시 재집계 가능).
 // combat=true면 조건부(cond) 링크·버프 스킬을 포함해 전투 기준으로 집계한다 (resting 검증은 false).
 export function aggregateCharacter(characterName: string, bundle: RawBundle, warnings: string[], combat = false): CharacterCollected {
-  const { stat, basic, equip, setEff, symbol, hyper, ability, link, union, artifact, champion, propensity, skills, hexa } = bundle;
-  const m = statMap(stat.final_stat);
+  const { stat, basic, equip, setEff, symbol, hyper, ability, union, skills, hexa } = bundle;
+  const m = statMapOf(stat.final_stat);
   const level = Number(basic?.character_level ?? 0);
-  const us = emptyUserStat();
-  collectBaseAP(us, m);
-  collectMapleWarrior(us, m, skills);
-  if (equip) { collectGear(us, equip.item_equipment, level); collectTitle(us, equip); }
-  if (setEff) collectSet(us, setEff.set_effect);
-  if (symbol) collectSymbol(us, symbol.symbol);
-  if (hyper) collectHyper(us, hyper[`hyper_stat_preset_${hyper.use_preset_no ?? 1}`]);
-  if (ability) collectAbility(us, ability.ability_info);
-  if (link) collectLinkSkills(us, link, combat);
-  if (union) collectUnion(us, union);
-  if (artifact) collectArtifact(us, artifact);
-  if (champion) collectChampion(us, champion);
-  if (propensity) collectPropensity(us, propensity);
-  if (basic?.world_name === '챌린저스') collectChallenger(us); // 챌린저스 서버 상시 버프 (서버 전원 일괄)
-  if (hasBurning(skills)) collectBurning(us, BURNING_TOOLTIP); // 버닝 BEYOND/하이퍼 버닝 MAX — 게이팅·수치는 collect.ts
-  const mainKey = mainStatKey(m);
-  const cls = stat.character_class ?? '';
-  const job = cls === '제논' ? 'xenon' : cls === '데몬어벤져' ? 'deven' : 'normal';
-  collectSkillPassive(us, cls, skills, combat);
-  if (hexa) collectHexaStat(us, hexa, mainKey, mainKey === 'INT', job);
+  const { stats, notes } = buildCharacterStats(bundle, combat);
+  const us = flattenStats(stats, level);
+  const mainKey = mainStatKeyOf(m);
 
   const collected: CharacterCollected = {
     final: {
@@ -150,8 +121,9 @@ export function aggregateCharacter(characterName: string, bundle: RawBundle, war
       statAtkMax: m['최대 스탯공격력'] ?? 0,
       raw: m,
     },
+    stats,
     userStat: us,
-    warnings,
+    warnings: [...warnings, ...notes],
     raw: { statMap: m, equip, setEff, symbol, hyper, ability, union, skills, hexa, class: stat.character_class ?? '', mainKey, bundle },
   };
   return collected;

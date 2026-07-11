@@ -1,13 +1,11 @@
 // 스탯 수집 진단 CLI — 1회 실측: pnpm tsx server/src/damage/cli.ts [닉네임]
-// 전 소스를 모아 UserStat + 소스별 주스탯 기여 + 재구성 대조를 출력한다.
+// CharacterStats(소스별 블록)를 조립해 소스별 기여 + 재구성 대조를 출력한다.
 // 넥슨 API 원본은 디스크에 캐시(.nexon-raw-<닉>.json) — 재실행 시 API를 다시 쏘지 않고 재집계만 한다.
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { fetchCharacterRaw, aggregateCharacter, type RawBundle } from './nexon.js';
 import { emptyUserStat, type UserStat, type MainStat } from './statSheet.js';
-import { collectGear, collectSet, collectSymbol, collectHyper, collectAbility, collectBaseAP, collectUnion, collectArtifact, collectChampion, collectPropensity, collectTitle, collectMapleWarrior, collectChallenger, collectBurning, hasBurning, BURNING_TOOLTIP } from './collect.js';
-import { collectSkillPassive } from './skillPassive.js';
-import { collectLinkSkills } from './linkSkill.js';
-import { collectHexaStat } from './hexaStat.js';
+import type { StatBlock, CharacterStats } from './stat-interface.js';
+import { addBlock, MAIN } from './block.js';
 
 if (!process.env.NEXON_DEVELOPER_KEY) {
   try {
@@ -30,35 +28,18 @@ if (existsSync(dumpPath)) {
   writeFileSync(dumpPath, JSON.stringify({ raw: bundle, warnings: fetchWarnings }));
   console.log(`(넥슨 API 조회 → .nexon-raw-${name}.json 저장)`);
 }
-const { final, userStat: us, warnings, raw } = aggregateCharacter(name, bundle, fetchWarnings);
+const { final, userStat: us, stats, warnings } = aggregateCharacter(name, bundle, fetchWarnings);
 
 if (warnings.length) console.log('⚠️  누락 소스:', warnings.join(' | '));
 console.log(`\n[${name}] ${final.characterClass} Lv.${final.level}`);
 console.log('API 최종 주스탯:', final.finalMain, '| 스탯공격력', final.statAtkMin, '~', final.statAtkMax);
 
-// 소스별 전 버킷 기여 분해
-const MAIN: MainStat[] = ['STR', 'DEX', 'INT', 'LUK'];
-const level = Number(bundle.basic?.character_level ?? 0);
-const mainOf = (fn: (u: UserStat) => void) => { const u = emptyUserStat(); fn(u); return u; };
-const src: [string, UserStat][] = [
-  ['baseAP', mainOf((u) => collectBaseAP(u, raw.statMap))],
-  ['메용', mainOf((u) => collectMapleWarrior(u, raw.statMap, raw.skills ?? {}))],
-  ['gear', mainOf((u) => raw.equip && collectGear(u, raw.equip.item_equipment, level))],
-  ['title', mainOf((u) => raw.equip && collectTitle(u, raw.equip))],
-  ['set', mainOf((u) => raw.setEff && collectSet(u, raw.setEff.set_effect))],
-  ['symbol', mainOf((u) => raw.symbol && collectSymbol(u, raw.symbol.symbol))],
-  ['hyper', mainOf((u) => raw.hyper && collectHyper(u, raw.hyper[`hyper_stat_preset_${raw.hyper.use_preset_no ?? 1}`]))],
-  ['ability', mainOf((u) => raw.ability && collectAbility(u, raw.ability.ability_info))],
-  ['link', mainOf((u) => bundle.link && collectLinkSkills(u, bundle.link))],
-  ['union', mainOf((u) => raw.union && collectUnion(u, raw.union))],
-  ['artifact', mainOf((u) => bundle.artifact && collectArtifact(u, bundle.artifact))],
-  ['champion', mainOf((u) => bundle.champion && collectChampion(u, bundle.champion))],
-  ['성향', mainOf((u) => bundle.propensity && collectPropensity(u, bundle.propensity))],
-  ['챌린저스', mainOf((u) => bundle.basic?.world_name === '챌린저스' && collectChallenger(u))],
-  ['버닝', mainOf((u) => hasBurning(bundle.skills) && collectBurning(u, BURNING_TOOLTIP))],
-  ['skill', mainOf((u) => collectSkillPassive(u, raw.class, raw.skills ?? {}))],
-  ['hexa', mainOf((u) => raw.hexa && collectHexaStat(u, raw.hexa, raw.mainKey, raw.mainKey === 'INT', raw.class === '제논' ? 'xenon' : raw.class === '데몬어벤져' ? 'deven' : 'normal'))],
-];
+const level = final.level;
+const usOf = (blocks: StatBlock[]): UserStat => {
+  const u = emptyUserStat();
+  for (const b of blocks) addBlock(u, b, level);
+  return u;
+};
 const fmtAll = (u: UserStat): string => {
   const p: string[] = [];
   for (const k of MAIN) if (u.flat[k] || u.flatNoPct[k] || u.pct[k]) p.push(`${k} f+${u.flat[k]} nf+${u.flatNoPct[k]} p+${u.pct[k]}`);
@@ -73,17 +54,31 @@ const fmtAll = (u: UserStat): string => {
   if (u.hpFlat || u.hpFlatNoPct || u.hpPct) p.push(`HP f+${u.hpFlat} nf+${u.hpFlatNoPct} p+${u.hpPct}`);
   return p.join(', ') || '-';
 };
+
+// 소스별 전 버킷 기여 — CharacterStats의 필드 구조(단일 블록/블록 묶음/숫자)를 그대로 순회
 console.log('\n── 소스별 기여 (전 버킷) ──');
-for (const [label, u] of src) console.log(`  ${label.padEnd(8)}: ${fmtAll(u)}`);
+for (const [label, v] of Object.entries(stats) as [string, CharacterStats[keyof CharacterStats]][]) {
+  if (v == null) continue;
+  if (label === '크리티컬리인포스') { console.log(`  ${label}: 크확의 ${v}% → 크뎀 전환 (D 계산 시)`); continue; }
+  if (label === '메이플용사') {
+    const u = emptyUserStat();
+    const ap = stats.AP as Record<string, number>;
+    for (const k of MAIN) u.flat[k] += Math.floor(((ap[k] ?? 0) * (v as number)) / 100);
+    console.log(`  ${label.padEnd(8)}: ${fmtAll(u)} (AP의 ${v}%)`);
+    continue;
+  }
+  const blocks = typeof v === 'object' && Object.values(v).every((x) => typeof x === 'number' || Array.isArray(x))
+    ? [v as StatBlock]
+    : Object.values(v as Record<string, StatBlock>);
+  console.log(`  ${label.padEnd(8)}: ${fmtAll(usOf(blocks))}`);
+}
 
 // 부위별 gear 주스탯% 분해 (버그 헌팅)
 console.log('\n── 장비별 LUK%/올스탯% 기여 ──');
-for (const it of raw.equip?.item_equipment ?? []) {
-  const u = emptyUserStat();
-  collectGear(u, [it]);
+for (const [slot, b] of Object.entries((stats.장비 ?? {}) as Record<string, StatBlock>)) {
+  const u = usOf([b]);
   if (u.pct.LUK || u.allPct || u.flat.LUK) {
-    const lines = ['potential_option_1', 'potential_option_2', 'potential_option_3', 'additional_potential_option_1', 'additional_potential_option_2', 'additional_potential_option_3'].map((k) => it[k]).filter(Boolean);
-    console.log(`  ${it.item_equipment_slot?.padEnd(6)}: LUKflat+${u.flat.LUK} LUK%+${u.pct.LUK} 올%+${u.allPct}  | 잠재/에디: ${lines.join(' / ')}`);
+    console.log(`  ${slot.padEnd(6)}: LUKflat+${u.flat.LUK} LUK%+${u.pct.LUK} 올%+${u.allPct}`);
   }
 }
 
@@ -95,13 +90,13 @@ for (const k of MAIN) {
 }
 
 // ── 주스탯 외 잔차: 공/마·데미지·보공·방무·크확·크뎀 ──
-// 방무는 곱연산: 100×(1−∏(1−v/100)). 나머지는 가산. 베이스(직업 기본 크확 5% 등)는 잔차로 드러나면 유저 확인.
+// 방무는 곱연산: 100×(1−∏(1−v/100)). 나머지는 가산.
 console.log('\n── 재구성 vs API (공·데미지 계열) ──');
 const m = final.raw;
 const round2 = (v: number) => Math.round(v * 100) / 100;
 const iedRecon = round2(100 * (1 - us.ignoreDef.reduce((a, v) => a * (1 - v / 100), 1)));
 const rows: [string, number, number][] = [
-  // 공격력 = floor(공flat × (1+공%/100)) — 오유찬(카데나) 실측 정확 일치로 공식 확정
+  // 공격력 = floor(공flat × (1+공%/100)) — 실측 재구성 일치로 확정한 공식
   ['공격력', Math.floor(us.atk * (1 + us.atkPct / 100)), m['공격력'] ?? 0],
   ['마력', Math.floor(us.matk * (1 + us.matkPct / 100)), m['마력'] ?? 0],
   ['공격력flat수집', us.atk, NaN], ['공격력%수집', us.atkPct, NaN], // 참고 출력(API에 직접 대응값 없음)
@@ -109,8 +104,10 @@ const rows: [string, number, number][] = [
   ['보스 몬스터 데미지', round2(us.bossDmg), m['보스 몬스터 데미지'] ?? 0],
   ['상태이상 추가 데미지', round2(us.statusDmg), m['상태이상 추가 데미지'] ?? 0],
   ['방어율 무시', iedRecon, m['방어율 무시'] ?? 0],
-  ['크리티컬 확률', us.critRate + 5, m['크리티컬 확률'] ?? 0], // 베이스 크확 5% (모든 캐릭터, API 필드에 포함 — 티엘 실측). 크뎀은 베이스 0.
-  ['크리티컬 데미지', round2(us.critDmg), m['크리티컬 데미지'] ?? 0],
+  // 공통 베이스(크확 5, 크뎀 35)는 기본 블록에 들어 있다. 넥슨 API의 크리티컬 확률 필드는 베이스를
+  // 포함하지만 크리티컬 데미지 필드는 포함하지 않으므로, 크뎀만 기본 블록 몫을 제외하고 대조한다.
+  ['크리티컬 확률', us.critRate, m['크리티컬 확률'] ?? 0],
+  ['크리티컬 데미지', round2(us.critDmg - ((stats.기본 as Record<string, number>)['크뎀'] ?? 0)), m['크리티컬 데미지'] ?? 0],
   ['최종 데미지', round2(100 * (us.finalDmg.reduce((a, v) => a * (1 + v / 100), 1) - 1)), m['최종 데미지'] ?? 0],
 ];
 for (const [label, recon, api] of rows) {

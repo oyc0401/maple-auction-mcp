@@ -30,10 +30,6 @@ export function collectGearItem(us: UserStat, item: any, level = 0): void {
   accumPlus(us, item?.soul_option);
 }
 
-export function collectGear(us: UserStat, itemEquipment: any[] | undefined, level = 0): void {
-  for (const it of itemEquipment ?? []) collectGearItem(us, it, level);
-}
-
 // ── 세트효과 (set-effect[]) ────────────────────────────────────────
 // 세트효과는 누적: total_set_count 이하 모든 티어의 옵션이 동시 적용. set_option_full의 각 티어 텍스트를 파싱.
 // ⚠️ 일부 세트는 넥슨 API가 실제 인게임 최대 세트수보다 큰 "팬텀 티어"를 포함한다.
@@ -74,26 +70,6 @@ export function collectHyper(us: UserStat, preset: any[] | undefined): void {
 // ability_value 텍스트. 대부분 데미지/크확 계열(조건부 포함) — 일단 무조건형만 파서가 잡는다.
 export function collectAbility(us: UserStat, abilityInfo: any[] | undefined): void {
   for (const a of abilityInfo ?? []) accumIncrease(us, a.ability_value);
-}
-
-// ── 메이플 용사(메용) ──────────────────────────────────────────────
-// "직접 찍은(AP 배분) 스탯의 N%"만큼을 깡 스탯으로 올려주는 상시 스킬. 넥슨 resting에 포함 + 스탯% 적용 → flat.
-// N%는 스킬에서 파싱한다(직업마다 이름 상이: 메이플 용사/노바의 용사 등, 4차). 하드코딩 금지.
-// 스킬 효과 패턴: "[패시브 효과 : AP를 직접 투자한 모든 능력치 15% 증가]". "직접 찍은 스탯"=final_stat "AP 배분 X".
-export function collectMapleWarrior(us: UserStat, statMap: Record<string, number>, skills: Record<string, { skill_effect?: string }[]>): void {
-  let pct = 0;
-  for (const arr of Object.values(skills)) {
-    for (const s of arr) {
-      const m = String(s.skill_effect ?? '').match(/AP를 직접 투자한 모든 능력치\s*(\d+(?:\.\d+)?)\s*%/);
-      if (m) { pct = Number(m[1]); break; }
-    }
-    if (pct) break;
-  }
-  const f = pct / 100;
-  us.flat.STR += Math.floor((statMap['AP 배분 STR'] ?? 0) * f);
-  us.flat.DEX += Math.floor((statMap['AP 배분 DEX'] ?? 0) * f);
-  us.flat.INT += Math.floor((statMap['AP 배분 INT'] ?? 0) * f);
-  us.flat.LUK += Math.floor((statMap['AP 배분 LUK'] ?? 0) * f);
 }
 
 // ── 베이스/AP 주스탯 (stat의 final_stat 맵) ────────────────────────

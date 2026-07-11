@@ -32,14 +32,12 @@ export interface CombatStats {
   myClass: string;
   level: number;
   axes: StatAxes;
-  us: UserStat;           // 전투(cond 포함) 합산 버킷
-  critRateTotal: number;  // us.critRate + 베이스 5 (크리인포 전환의 입력)
-  critReinforce: boolean; // 크리티컬 리인포스 보유 (5차)
-  notes: string[];        // 계산 주의사항 (미검증 축 등)
+  us: UserStat;             // 전투(cond 포함) 합산 버킷
+  critRateTotal: number;    // 총 크확 (공통 베이스 포함, 크리인포 전환의 입력)
+  critReinforcePct: number; // 크리티컬 리인포스: 크확의 N%를 크뎀으로 전환 — 그 N (미보유 0)
+  notes: string[];          // 계산 주의사항 (미검증 축 등)
 }
 
-const BASE_CRIT_RATE = 5;  // 모든 캐릭터 기본 크확 (넥슨 크확 필드 포함 실측)
-const BASE_CRIT_DMG = 35;  // 크리티컬 기본 데미지 배율 %p (크리팩터 = 1 + (35+크뎀)/100)
 
 // CharacterCollected(레스팅 검증용) → 전투 스탯 시트. 조건부 링크·버프 스킬 포함해 재집계한다.
 export function buildCombatStats(collected: CharacterCollected): CombatStats {
@@ -49,14 +47,14 @@ export function buildCombatStats(collected: CharacterCollected): CombatStats {
   const myClass = collected.final.characterClass;
   const axes = statAxesOf(myClass, collected.final.finalMain);
 
-  // 크리티컬 리인포스(5차 공용): 모든 크확 수집이 끝난 뒤 "가장 마지막에" 크확의 50%를 크뎀으로 전환(유저 방침).
-  const critReinforce = (bundle.skills?.['5'] ?? []).some((s) => s.skill_name === '크리티컬 리인포스');
-  const critRateTotal = us.critRate + BASE_CRIT_RATE;
+  // 크리티컬 리인포스(5차 공용): 모든 크확 수집이 끝난 뒤 "가장 마지막에" 크확의 N%를 크뎀으로 전환(유저 방침).
+  const critReinforcePct = combat.stats.크리티컬리인포스 ?? 0;
+  const critRateTotal = us.critRate;
 
   const notes: string[] = [];
   if (axes.kind !== 'standard') notes.push('제논·데몬어벤져 축은 미검증 — 증감률 참고용');
 
-  return { myClass, level: collected.final.level, axes, us, critRateTotal, critReinforce, notes };
+  return { myClass, level: collected.final.level, axes, us, critRateTotal, critReinforcePct, notes };
 }
 
 const statFinal = (us: UserStat, k: MainStat) =>
@@ -83,9 +81,10 @@ export function damageOf(cs: CombatStats, opts: DamageOpts, usOverride?: UserSta
   const atk = Math.floor((isMagic ? us.matk : us.atk) * (1 + (isMagic ? us.matkPct : us.atkPct) / 100));
   const dmgFactor = 1 + (us.damage + us.bossDmg + us.statusDmg) / 100; // 보스 상시 상태이상 가정(유저 방침)
   // 크리인포는 가장 마지막: 전환 후 크뎀. 크확은 100% 가동 가정이라 가동률 계수는 없다.
+  // 공통 베이스 크뎀(35)은 기본 블록에서 이미 합산돼 있다.
   const critRate = cs.critRateTotal + (opts.critRateDelta ?? 0);
-  const critDmg = us.critDmg + (cs.critReinforce ? critRate * 0.5 : 0);
-  const critFactor = 1 + (BASE_CRIT_DMG + critDmg) / 100;
+  const critDmg = us.critDmg + (critRate * cs.critReinforcePct) / 100;
+  const critFactor = 1 + critDmg / 100;
   const iedRemain = us.ignoreDef.reduce((a, v) => a * (1 - v / 100), 1); // ∏(1−vᵢ)
   const defFactor = Math.max(0, 1 - opts.bossDef * iedRemain);
   const finalFactor = us.finalDmg.reduce((a, v) => a * (1 + v / 100), 1);

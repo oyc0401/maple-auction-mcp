@@ -1,73 +1,54 @@
 // 장비 교체 → 최종 데미지 증감률(D_after/D_before − 1).
-// 매물 파싱은 구 hwansan2의 검증된 파서(fromAuctionRaw·optionDict)를 그대로 재사용하고,
-// 시뮬레이터 POST 대신 combat.ts의 로컬 D 공식으로 계산한다.
-import { fromAuctionRaw, accumLine, emptyItemStats, type ItemStats, type Stat4 } from '../hwansan2/axes.js';
+// 매물 파싱은 구 hwansan2의 검증된 파서(fromAuctionRaw·optionDict·sets)를 재사용하되,
+// 계산은 StatBlock으로 정규화해 block.ts의 가산/반전 규칙 + combat.ts의 로컬 D 공식으로 한다.
+// 현재 장착템 스탯은 별도 파싱 없이 단일 진실 원천(collected.stats.장비)의 블록을 그대로 쓴다.
+import { fromAuctionRaw, type ItemStats, type Stat4 } from '../hwansan2/axes.js';
+import { parseOptionLine } from '../hwansan2/optionDict.js';
 import { setSwapStatsByNames, normalizeSet } from '../hwansan2/sets.js';
-import type { UserStat } from './statSheet.js';
+import type { StatBlock } from './stat-interface.js';
 import type { CharacterCollected } from './nexon.js';
+import { SLOT_KEY } from './character.js';
+import { addBlock, negateBlock } from './block.js';
 import { damageOf, type CombatStats } from './combat.js';
 
-// 넥슨 착용 장비(item-equipment 항목) → ItemStats. 구 fromScouterEquip과 동형이지만
-// 넥슨은 잠재가 배열이 아니라 문자열 필드(potential_option_1..3)다.
-export function fromNexonEquip(item: any): ItemStats {
-  const s = emptyItemStats();
-  const t = item?.item_total_option ?? {};
-  const n = (k: string) => Number(t[k] ?? 0);
-  s.flat.STR += n('str'); s.flat.DEX += n('dex'); s.flat.INT += n('int'); s.flat.LUK += n('luk');
-  s.hp += n('max_hp'); s.atk += n('attack_power'); s.matk += n('magic_power');
-  s.dispAtk = n('attack_power'); s.dispMatk = n('magic_power');
-  s.dmgBoss += n('boss_damage') + n('damage');
-  s.allPct += n('all_stat'); // 넥슨 total의 all_stat은 %값(추옵 올스탯%)
-  const ied = n('ignore_monster_armor');
-  if (ied) s.iedFactor *= 1 - ied / 100;
-  for (const k of ['potential_option_1', 'potential_option_2', 'potential_option_3',
-    'additional_potential_option_1', 'additional_potential_option_2', 'additional_potential_option_3']) {
-    accumLine(s, item?.[k]);
+// hwansan2 ItemStats → StatBlock 어댑터. 방무는 곱연산 계수(iedFactor)를 (1−v/100)=f가 되는 합성 소스 v
+// 하나로 옮긴다. f>1이면 v가 음수가 되므로 세트 델타처럼 부호가 섞인 입력도 정확히 표현된다.
+// dmgBoss는 데미지%와 보공%의 합인데 D 공식에서 두 항이 같은 자리에 더해지므로 보공 한 칸에 싣는다.
+export function itemStatsToBlock(s: ItemStats): StatBlock {
+  const b: Record<string, number | number[]> = {};
+  for (const k of ['STR', 'DEX', 'INT', 'LUK'] as Stat4[]) {
+    if (s.flat[k]) b[k] = s.flat[k];
+    if (s.pct[k]) b[`${k}%`] = s.pct[k];
+    if (s.perLev[k]) b[`레벨당${k}`] = s.perLev[k];
   }
-  accumLine(s, item?.soul_option);
-  return s;
+  if (s.allPct) b['올스탯%'] = s.allPct;
+  if (s.atk) b['공격력'] = s.atk;
+  if (s.matk) b['마력'] = s.matk;
+  if (s.atkPct) b['공격력%'] = s.atkPct;
+  if (s.matkPct) b['마력%'] = s.matkPct;
+  if (s.dmgBoss) b['보공'] = s.dmgBoss;
+  if (s.iedFactor !== 1) b['방무'] = [(1 - s.iedFactor) * 100];
+  if (s.finalDmg) b['최종뎀'] = [s.finalDmg];
+  if (s.critRate) b['크확'] = s.critRate;
+  if (s.critDmg) b['크뎀'] = s.critDmg;
+  if (s.hp) b['HP'] = s.hp;
+  if (s.hpPct) b['HP%'] = s.hpPct;
+  if (s.coolSec) b['쿨감'] = s.coolSec;
+  return b as StatBlock;
 }
 
-// 순변화(새 − 현재 + 세트델타). sets.ts의 mergeStats는 세트에 없는 필드(perLev·critRate·hpPct 등)를
-// 병합하지 않아 아이템 net에 재사용하면 안 된다 — 전 필드를 직접 계산한다. 방무는 곱연산(×next ÷cur ×set).
-function netStats(next: ItemStats, cur: ItemStats, setDelta: ItemStats): ItemStats {
-  const n = emptyItemStats();
-  const d = (f: (s: ItemStats) => number) => f(next) - f(cur) + f(setDelta);
-  for (const k of ['STR', 'DEX', 'INT', 'LUK'] as Stat4[]) {
-    n.flat[k] = d((s) => s.flat[k]);
-    n.pct[k] = d((s) => s.pct[k]);
-    n.perLev[k] = d((s) => s.perLev[k]);
+// 장착템 옵션 라인 중 optionDict가 모르는 문구 (매물 쪽 unknown과 합쳐 사용자에게 노출)
+const POTENTIAL_KEYS = [
+  'potential_option_1', 'potential_option_2', 'potential_option_3',
+  'additional_potential_option_1', 'additional_potential_option_2', 'additional_potential_option_3',
+];
+function unknownLines(item: any): string[] {
+  const out: string[] = [];
+  for (const line of [...POTENTIAL_KEYS.map((k) => item?.[k]), item?.soul_option]) {
+    const p = parseOptionLine(line);
+    if (p && 'unknown' in p) out.push(p.unknown);
   }
-  n.hp = d((s) => s.hp); n.hpPct = d((s) => s.hpPct);
-  n.atk = d((s) => s.atk); n.matk = d((s) => s.matk);
-  n.atkPct = d((s) => s.atkPct); n.matkPct = d((s) => s.matkPct);
-  n.allPct = d((s) => s.allPct);
-  n.dmgBoss = d((s) => s.dmgBoss);
-  n.critDmg = d((s) => s.critDmg); n.critRate = d((s) => s.critRate);
-  n.finalDmg = d((s) => s.finalDmg);
-  n.iedFactor = (next.iedFactor * setDelta.iedFactor) / (cur.iedFactor || 1);
-  return n;
-}
-
-// ItemStats 순변화를 UserStat 사본에 적용.
-// 방무는 곱연산이라 계수(iedFactor)를 "(1−v/100)=f"인 합성 소스 v로 넣는다 (f>1도 음수 v로 정확).
-function applyNet(base: UserStat, net: ItemStats, level: number): UserStat {
-  const us = structuredClone(base);
-  const lv9 = Math.floor(level / 9);
-  for (const k of ['STR', 'DEX', 'INT', 'LUK'] as Stat4[]) {
-    us.flat[k] += net.flat[k] + lv9 * net.perLev[k];
-    us.pct[k] += net.pct[k];
-  }
-  us.allPct += net.allPct;
-  us.hpFlat += net.hp; us.hpPct += net.hpPct;
-  us.atk += net.atk; us.matk += net.matk;
-  us.atkPct += net.atkPct; us.matkPct += net.matkPct;
-  us.damage += net.dmgBoss; // 뎀%+보공%는 D 공식에서 합산 등가
-  us.critDmg += net.critDmg;
-  us.critRate += net.critRate;
-  if (net.finalDmg) us.finalDmg.push(net.finalDmg);
-  if (net.iedFactor !== 1) us.ignoreDef.push((1 - net.iedFactor) * 100);
-  return us;
+  return out;
 }
 
 export interface SwapResult {
@@ -75,7 +56,8 @@ export interface SwapResult {
   unknown: string[];
 }
 
-const round2 = (v: number) => Math.round(v * 100) / 100;
+const round2 = (v: number) => Math.round(v * 100) / 100 || 0; // 곱연산 역수 계산의 부동소수점 잔재로 생기는 −0을 0으로 정규화
+const num = (b: StatBlock, k: string) => ((b as Record<string, number>)[k] ?? 0);
 
 // 현재 slot 장비를 경매장 매물로 교체할 때의 최종 데미지 증감률.
 export function swapDamageDelta(
@@ -88,15 +70,17 @@ export function swapDamageDelta(
   const cur = equips.find((e) => e.item_equipment_slot === slot);
   if (!cur) return null;
 
-  const curStats = fromNexonEquip(cur);
+  const gearBlocks = (collected.stats.장비 ?? {}) as Record<string, StatBlock>;
+  const curBlock: StatBlock = { ...(gearBlocks[SLOT_KEY[slot] ?? slot] ?? {}) };
   const nextStats = fromAuctionRaw(newItemRaw);
-  const unknown = new Set([...curStats.unknown, ...nextStats.unknown]);
+  const newBlock = itemStatsToBlock(nextStats);
+  const unknown = new Set([...unknownLines(cur), ...nextStats.unknown]);
   const newName = String(newItemRaw?.itemName ?? '');
 
   // 제네시스 무기 해방 효과(최종뎀 +10) — 구 swap.ts와 동일 정책 (해방 여부 미제공 → 제네시스면 해방 간주)
   if (slot === '무기') {
-    if (/^제네시스 /.test(String(cur.item_name ?? ''))) curStats.finalDmg += 10;
-    if (/^제네시스 /.test(newName)) nextStats.finalDmg += 10;
+    if (/^제네시스 /.test(String(cur.item_name ?? ''))) curBlock.최종뎀 = [...(curBlock.최종뎀 ?? []), 10];
+    if (/^제네시스 /.test(newName)) newBlock.최종뎀 = [...(newBlock.최종뎀 ?? []), 10];
   }
 
   // 세트 델타: 교체 전/후 이름 목록으로 각각 countSets(럭키 재판정 포함). 여명 전환 수는 넥슨 set-effect에서.
@@ -108,15 +92,18 @@ export function swapDamageDelta(
   const setOpts = { aliases: {} as Record<string, string>, dawnCount: Number(dawn?.total_set_count ?? 0) };
   const officialNewSet = normalizeSet(newItemRaw?.toolTip?.setEffects?.[0]);
   if (officialNewSet) setOpts.aliases[newName] = officialNewSet;
-  const setDelta = setSwapStatsByNames(names, namesAfter, setOpts);
+  const setDeltaBlock = itemStatsToBlock(setSwapStatsByNames(names, namesAfter, setOpts));
 
-  // 순변화 = 새 − 현재 + 세트델타 (방무는 곱연산으로 처리)
-  const net = netStats(nextStats, curStats, setDelta);
-  const usAfter = applyNet(cs.us, net, cs.level);
+  // 교체 적용본 = 현재 버킷 + 새 매물 + 세트델타 − 현재 장착템 (곱연산은 negateBlock이 역수 계수로 처리)
+  const usAfter = structuredClone(cs.us);
+  addBlock(usAfter, newBlock, cs.level);
+  addBlock(usAfter, setDeltaBlock, cs.level);
+  addBlock(usAfter, negateBlock(curBlock), cs.level);
+  const critRateDelta = num(newBlock, '크확') + num(setDeltaBlock, '크확') - num(curBlock, '크확');
 
   const deltaAt = (bossDef: number) => {
     const before = damageOf(cs, { bossDef });
-    const after = damageOf(cs, { bossDef, critRateDelta: net.critRate }, usAfter);
+    const after = damageOf(cs, { bossDef, critRateDelta }, usAfter);
     return before > 0 ? round2((after / before - 1) * 100) : 0;
   };
   return { delta380: deltaAt(3.8), unknown: [...unknown] };

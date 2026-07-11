@@ -155,11 +155,13 @@ function collectFifthBrackets(us: UserStat, grade5: SkillEntry[]): void {
 const PET_SET_RE = /Lv\.?\s*\d+$/;
 const PET_SET_PICKS = [{ find: '공격력' }, { find: '마력' }];
 
-export function collectSkillPassive(us: UserStat, job: string, skills: SkillsByGrade, includeConditional = false): void {
+// ownedOverride: 스킬 일부만 담은 skills로 단건 재집계할 때(character.ts) 전체 보유 목록을 주입한다.
+// 쓸만한 게이팅은 룰 적용만 막고 5차 브래킷 패시브(올스탯 등)는 계속 집계해야 하므로 호출부에서 스킬을 미리 걸러내면 안 된다.
+export function collectSkillPassive(us: UserStat, job: string, skills: SkillsByGrade, includeConditional = false, ownedOverride?: Set<string>): void {
   // 쓸만한 X(5차)는 본체 X 스킬과 중첩 불가(유저 확인 2026-07-11) — 본체 보유 시 쓸만한 규칙을 스킵.
   // 예: 보마는 샤프 아이즈(4차)를 쓰므로 쓸만한 샤프 아이즈(10/8)가 아닌 본체(20/15)만 적용.
-  const owned = new Set<string>();
-  for (const arr of Object.values(skills)) for (const s of arr) owned.add(s.skill_name);
+  const owned = ownedOverride ?? new Set<string>();
+  if (!ownedOverride) for (const arr of Object.values(skills)) for (const s of arr) owned.add(s.skill_name);
   for (const rules of [COMMON, JOB_RULES[job]]) {
     if (!rules) continue;
     for (const [grade, byName] of Object.entries(rules)) {
