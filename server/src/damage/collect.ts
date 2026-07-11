@@ -1,13 +1,15 @@
 // 넥슨 오픈 API 응답 → UserStat 누적. 소스별 콜렉터를 순서대로 호출한다.
 // 1차 목표는 "다 모으기". 스탯% 적용 여부(심볼/유니온이 flat vs flatNoPct)는 재구성 검증에서 확정한다.
 import type { UserStat } from './statSheet.js';
-import { accumPlus, accumIncrease } from './parse.js';
+import { apply, accumPlus, accumIncrease } from './parse.js';
 
 const num = (v: unknown) => Number(v ?? 0) || 0;
 
 // ── 장비 1개 (item-equipment[]의 한 항목) ──────────────────────────
 // item_total_option = 고정옵션+추옵+주문서+스타포스 (잠재 제외). 잠재/에디는 텍스트에 별도 → 중복 없음.
-export function collectGearItem(us: UserStat, item: any): void {
+// level: 잠재 "캐릭터 기준 N레벨 당 STAT +M" 라인 환산용 캐릭터 레벨 (floor(level/N)×M).
+const RE_PER_LEVEL = /캐릭터 기준\s*(\d+)레벨 당\s*(.+?)\s*\+\s*(\d+(?:\.\d+)?)/;
+export function collectGearItem(us: UserStat, item: any, level = 0): void {
   const t = item?.item_total_option ?? {};
   us.flat.STR += num(t.str); us.flat.DEX += num(t.dex); us.flat.INT += num(t.int); us.flat.LUK += num(t.luk);
   us.allPct += num(t.all_stat); // item_total_option.all_stat(추옵 올스탯)은 %다 (flat 아님)
@@ -16,15 +18,18 @@ export function collectGearItem(us: UserStat, item: any): void {
   us.bossDmg += num(t.boss_damage);   // 수치로 오지만 의미는 %
   us.damage += num(t.damage);
   if (num(t.ignore_monster_armor)) us.ignoreDef.push(num(t.ignore_monster_armor));
-  // 잠재 3줄 + 에디 3줄 (텍스트: 깡·% 모두 accumPlus가 처리)
+  // 잠재 3줄 + 에디 3줄 (텍스트: 깡·% 모두 accumPlus가 처리, 레벨 비례 라인은 별도 환산)
   for (const k of ['potential_option_1', 'potential_option_2', 'potential_option_3',
     'additional_potential_option_1', 'additional_potential_option_2', 'additional_potential_option_3']) {
-    accumPlus(us, item?.[k]);
+    const line = item?.[k];
+    const per = typeof line === 'string' ? line.match(RE_PER_LEVEL) : null;
+    if (per) apply(us, per[2], Math.floor(level / Number(per[1])) * Number(per[3]), false);
+    else accumPlus(us, line);
   }
 }
 
-export function collectGear(us: UserStat, itemEquipment: any[] | undefined): void {
-  for (const it of itemEquipment ?? []) collectGearItem(us, it);
+export function collectGear(us: UserStat, itemEquipment: any[] | undefined, level = 0): void {
+  for (const it of itemEquipment ?? []) collectGearItem(us, it, level);
 }
 
 // ── 세트효과 (set-effect[]) ────────────────────────────────────────
@@ -101,7 +106,33 @@ export function collectTitle(us: UserStat, equip: any): void {
 // ── 유니온 (/user/union-raider) ────────────────────────────────────
 // 공격대원효과(union_raider_stat): 깡 주스탯이 스탯% 안 받음 → noPct.
 // 점령효과(union_occupied_stat): 스탯% 받음 → flat.
+// 전투 스탯(union_state_stat, 신규): 주스탯 깡이 스탯% 받는 것으로 가정(scouter abs 대조와 일치) → flat. 잔차로 검증.
 export function collectUnion(us: UserStat, raider: any): void {
   for (const line of raider?.union_raider_stat ?? []) accumIncrease(us, line, true);
   for (const line of raider?.union_occupied_stat ?? []) accumIncrease(us, line, false);
+  for (const line of raider?.union_state_stat ?? []) accumIncrease(us, line, false);
+}
+
+// ── 유니온 아티팩트 (/user/union-artifact) ─────────────────────────
+// union_artifact_effect[].name = "올스탯 150 증가" 류 텍스트. 주스탯/올스탯 깡은 스탯% 받는 것으로 가정 → flat.
+export function collectArtifact(us: UserStat, artifact: any): void {
+  for (const e of artifact?.union_artifact_effect ?? []) accumIncrease(us, e?.name, false);
+}
+
+// ── 유니온 챔피언 뱃지 (/user/union-champion) ──────────────────────
+// champion_badge_total_info[].stat = "올스탯 100, 최대 HP/MP 5000 증가" 류 — 상시 패시브, 넥슨 resting 포함
+// (티엘 실측: 보공 25가 잔차와 정확히 일치). 올스탯은 스탯% 받는 flat으로 가정.
+// 챔피언의 가호(코인 소모 30분 버프)는 별개 — 수치가 API에 없어 미수집(잔차로 추적 중).
+export function collectChampion(us: UserStat, champion: any): void {
+  for (const e of champion?.champion_badge_total_info ?? []) accumIncrease(us, e?.stat, false);
+}
+
+// ── 성향 (/character/propensity) ───────────────────────────────────
+// 카리스마 → 몬스터 방어율 무시(100렙 10%), 통찰력 → 크리티컬 확률(100렙 10%). 레벨×0.1.
+// (의지=HP·상태이상내성, 감성=버프지속 등은 데미지 무관이라 생략 — 데벤 HP 계산 붙일 때 의지 추가.)
+export function collectPropensity(us: UserStat, propensity: any): void {
+  const charisma = num(propensity?.charisma_level);
+  const insight = num(propensity?.insight_level);
+  if (charisma) us.ignoreDef.push(charisma * 0.1);
+  if (insight) us.critRate += insight * 0.1;
 }

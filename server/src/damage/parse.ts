@@ -61,10 +61,22 @@ export function accumPlus(us: UserStat, line: string | null | undefined, noPct =
   }
 }
 
-// 포맷 B: "이름 값[%] 증가" (하이퍼 stat_increase / 어빌 ability_value / 유니온).
+// 포맷 B: "이름 값[%] 증가" (하이퍼 stat_increase / 어빌 ability_value / 유니온 / 아티팩트).
+// 콤마 결합이 두 가지라 구분한다:
+//   공유값형 "STR, DEX, LUK 50 증가"   → 이름에 콤마 → apply()가 분배 (숫자 없는 세그먼트 존재)
+//   개별값형 "공격력 30, 마력 30 증가" → 세그먼트마다 숫자 → 각각 파싱 (마지막만 "증가"로 끝남)
 const RE_INC = /^(.+?)\s+(-?\d+(?:\.\d+)?)\s*(%?)\s*증가$/;
+const RE_INC_SEG = /^(.+?)\s*(-?\d+(?:\.\d+)?)\s*(%?)(?:\s*증가)?$/;
 export function accumIncrease(us: UserStat, line: string | null | undefined, noPct = false): void {
   if (!line) return;
+  const segs = line.split(',').map((s) => s.trim());
+  if (segs.length > 1 && segs.every((s) => /\d/.test(s))) {
+    for (const seg of segs) {
+      const m = seg.match(RE_INC_SEG);
+      if (m) apply(us, m[1], Number(m[2]), m[3] === '%', noPct);
+    }
+    return;
+  }
   const m = line.trim().match(RE_INC);
   if (!m) return;
   apply(us, m[1], Number(m[2]), m[3] === '%', noPct);
