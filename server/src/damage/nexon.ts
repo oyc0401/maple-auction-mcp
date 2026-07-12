@@ -4,7 +4,7 @@
 // 레이트리밋이 약해 순차 호출 + 429 지수 백오프. 캐릭터당 프로세스 생존 동안 캐시.
 import { emptyUserStat, type UserStat } from './statSheet.js';
 import {
-  collectGear, collectSet, collectSymbol, collectHyper, collectAbility, collectBaseAP, collectUnion, collectArtifact, collectChampion, collectPropensity, collectTitle, collectMapleWarrior, collectChallenger, collectBurning, collectGuild,
+  collectGear, collectSet, collectSymbol, collectHyper, collectAbility, collectBaseAP, collectUnion, collectArtifact, collectChampion, collectPropensity, collectTitle, collectMapleWarrior, collectChallenger, collectBurning, collectGuild, collectCash,
 } from './collect.js';
 import { collectJobPassive } from './jobPassive.js';
 import { collectLinkSkills } from './linkSkill.js';
@@ -72,7 +72,7 @@ export interface RawBundle {
   stat: any; basic: any;
   equip: any; setEff: any; symbol: any; hyper: any; ability: any; link: any; union: any; artifact: any;
   champion: any; propensity: any;
-  skills: SkillsByGrade; hexa: any; guild?: any; // guild: 길드 미가입/조회실패 시 없을 수 있음
+  skills: SkillsByGrade; hexa: any; guild?: any; cash?: any; // guild/cash: 없을 수 있음(optional)
 }
 
 // 닉네임 → 전 소스 순차 조회(레이트리밋 준수). API를 실제로 쏘는 유일한 지점.
@@ -110,6 +110,7 @@ export async function fetchCharacterRaw(characterName: string): Promise<{ raw: R
     if (r) skills[grade] = r.character_skill ?? [];
   }
   const hexa = await opt('HEXA스탯', '/character/hexamatrix-stat');
+  const cash = await opt('캐시장비', '/character/cashitem-equipment'); // 하이퍼 버닝 치장 등 능력치 캐시장비
   // 길드 스킬(길드의 노하우 등 상시 공/마 패시브) — /character/skill엔 없어 /guild로 별도 조회.
   let guild: any = null;
   if (basic?.character_guild_name && basic?.world_name) {
@@ -119,13 +120,13 @@ export async function fetchCharacterRaw(characterName: string): Promise<{ raw: R
     } catch (e) { warnings.push(`길드 조회 실패: ${(e as Error).message}`); }
   }
 
-  return { raw: { stat, basic, equip, setEff, symbol, hyper, ability, link, union, artifact, champion, propensity, skills, hexa, guild }, warnings };
+  return { raw: { stat, basic, equip, setEff, symbol, hyper, ability, link, union, artifact, champion, propensity, skills, hexa, guild, cash }, warnings };
 }
 
 // 원본 응답 묶음 → UserStat 집계 + 검증 오라클. API 호출 없음(디스크 캐시 재집계 가능).
 // combat=true면 조건부(cond) 링크·버프 스킬을 포함해 전투 기준으로 집계한다 (resting 검증은 false).
 export function aggregateCharacter(characterName: string, bundle: RawBundle, warnings: string[], combat = false): CharacterCollected {
-  const { stat, basic, equip, setEff, symbol, hyper, ability, link, union, artifact, champion, propensity, skills, hexa, guild } = bundle;
+  const { stat, basic, equip, setEff, symbol, hyper, ability, link, union, artifact, champion, propensity, skills, hexa, guild, cash } = bundle;
   const m = statMap(stat.final_stat);
   const level = Number(basic?.character_level ?? 0);
   const us = emptyUserStat();
@@ -141,6 +142,7 @@ export function aggregateCharacter(characterName: string, bundle: RawBundle, war
   if (artifact) collectArtifact(us, artifact);
   if (champion) collectChampion(us, champion);
   if (guild) collectGuild(us, guild); // 길드의 노하우 등 상시 공/마 패시브
+  if (cash) collectCash(us, cash); // 하이퍼 버닝 치장 등 능력치 캐시장비
   if (propensity) collectPropensity(us, propensity);
   if (basic?.world_name === '챌린저스') collectChallenger(us); // 챌린저스 서버 상시 버프 (서버 전원 일괄)
   // 버닝 BEYOND / 하이퍼 버닝 MAX: 옵트인(지정한 사람만). 둘은 상호배타 —
@@ -159,6 +161,9 @@ export function aggregateCharacter(characterName: string, bundle: RawBundle, war
   if ((skills['0'] ?? []).some((s) => s.skill_name === '결계의 핵 소환')) {
     us.flat.DEX += 65; us.flat.STR += 65; us.atk += 40; us.pct.DEX += 20;
   }
+  // 소비창 장착 총알(불릿) 공격력 — 인피닛 불릿으로 소비 없이 상시 적용. API 미노출 + 불릿 종류마다 값 상이.
+  // 꽈숩노(초보 해적의 불릿) 실측 = 공10. ⚠️ 불릿 종류마다 다름 — 하드코딩(추후 config).
+  if ((skills['2'] ?? []).some((s) => s.skill_name === '인피닛 불릿')) us.atk += 10;
   const cls = stat.character_class ?? '';
   const job = cls === '제논' ? 'xenon' : cls === '데몬어벤져' ? 'deven' : 'normal';
   collectSkillPassive(us, cls, skills, combat);
