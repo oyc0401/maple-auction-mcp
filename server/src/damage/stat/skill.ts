@@ -6,6 +6,7 @@ import type { StatBlock, CharacterStats } from '../stat-interface.js';
 import { apply, accumIncrease } from '../parse.js';
 import { blockOf, isEmptyBlock } from '../block.js';
 import type { SkillEntry, SkillsByGrade } from '../nexon.js';
+import { COMMON, JOB_RULES } from './skill-job.js';
 
 function pick(effect: string, name: string): { val: number; pct: boolean } | null {
   const re = new RegExp(name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\s*\\+?\\s*(-?\\d+(?:\\.\\d+)?)\\s*(%?)');
@@ -19,99 +20,6 @@ function pickInto(us: UserStat, eff: string, picks: { find: string; as?: string 
     if (r) apply(us, p.as ?? p.find, r.val, r.pct);
   }
 }
-
-// bracket=true: 액티브 스킬 effect 안의 "[패시브 효과 : …]" 내부에서만 뽑는다(본문 조건부 수치 오매치 방지).
-type Rule = { picks: { find: string; as?: string }[]; bracket?: boolean };
-type JobRules = Record<string, Record<string, Rule>>;
-
-const COMMON: JobRules = {
-  '0': {
-    '연합의 의지': { picks: [{ find: '힘' }, { find: '민첩' }, { find: '지능' }, { find: '행운' }, { find: '공격력' }, { find: '마력' }] },
-    '여제의 축복': { picks: [{ find: '공격력' }, { find: '마력' }] },
-    '정령의 축복': { picks: [{ find: '공격력' }, { find: '마력' }] }, // 여제와 중복 불가 — 높은 쪽 1개만(getSkill의 blessSkip)
-    '익스클루시브 스펠': { picks: [{ find: '공격력, 마력' }] },
-    '영웅의 메아리': { picks: [{ find: '공격력, 마력' }] },
-    '초월 : 최초의 유산': { picks: [{ find: '공격력' }] },
-    '루나 게더링': { picks: [{ find: '공격력' }, { find: '마력' }] },
-    '루나 익스텐션': { picks: [{ find: '공격력' }, { find: '마력' }] },
-    '루나 파워업': { picks: [{ find: '공격력' }, { find: '마력' }] },
-    '훈련 일지': { picks: [{ find: '공격력/마력' }, { find: '보스 몬스터 공격 시 데미지', as: '보스 몬스터 데미지' }, { find: '몬스터 방어율 무시', as: '방어율 무시' }, { find: '올스탯' }, { find: '크리티컬 확률' }] },
-    '초월 : 결전의 의지': { picks: [{ find: '최종 데미지' }, { find: '보스 몬스터 공격 시 데미지', as: '보스 몬스터 데미지' }, { find: '몬스터 방어율 무시', as: '방어율 무시' }] },
-  },
-  '5': {
-    '쓸만한 샤프 아이즈': { picks: [{ find: '크리티컬 확률' }, { find: '크리티컬 데미지' }] },
-    '쓸만한 어드밴스드 블레스': { picks: [{ find: '공격력' }, { find: '마력' }] },
-  },
-};
-
-const CADENA: JobRules = {
-  '1': {
-    '콜렉팅 포리프': { picks: [{ find: '행운' }] },
-  },
-  '2': {
-    '피지컬 트레이닝': { picks: [{ find: '행운' }, { find: '민첩성' }] },
-    '퀵서비스 마인드 Ⅰ': { picks: [{ find: '공격력' }, { find: '크리티컬 데미지' }, { find: '크리티컬 확률' }] },
-  },
-  '3': {
-    '베이직 디텍션': { picks: [{ find: '방어율 무시' }, { find: '데미지', as: '데미지' }, { find: '최종 데미지' }] },
-    '위크포인트 어택': { picks: [{ find: '크리티컬 확률' }, { find: '크리티컬 데미지' }] },
-  },
-  '4': {
-    '웨폰 엑스퍼트': { picks: [{ find: '공격력' }, { find: '크리티컬 확률' }, { find: '크리티컬 데미지' }] },
-    '퀵서비스 마인드 Ⅱ': { picks: [{ find: '공격력' }, { find: '크리티컬 데미지' }, { find: '크리티컬 확률' }, { find: '보스 공격 시 데미지', as: '보스 몬스터 데미지' }] },
-    '위크포인트 컨버징 어택': { picks: [{ find: '크리티컬 확률' }, { find: '크리티컬 데미지' }] },
-  },
-  '5': {
-    '레디 투 다이': { picks: [{ find: '공격력' }] },
-  },
-};
-
-const BOWMASTER: JobRules = {
-  '1': {
-    '크리티컬 샷': { picks: [{ find: '크리티컬 확률' }] },
-  },
-  '2': {
-    '보우 액셀레이션': { picks: [{ find: '민첩성' }] },
-    '소울 애로우 : 활': { picks: [{ find: '공격력' }] },
-    '피지컬 트레이닝': { picks: [{ find: '힘' }, { find: '민첩성' }] },
-  },
-  '3': {
-    '익스트림 아쳐리 : 활': { picks: [{ find: '공격력' }, { find: '최종 데미지' }] },
-    '마크맨쉽': { picks: [{ find: '물리 방어율', as: '방어율 무시' }, { find: '공격력' }] },
-    '닷지': { picks: [{ find: '최대 HP' }] },
-  },
-  '4': {
-    '보우 엑스퍼트': { picks: [{ find: '공격력' }, { find: '크리티컬 데미지' }] },
-    '일루전 스탭': { picks: [{ find: '민첩성' }] },
-    '어드밴스드 파이널 어택': { picks: [{ find: '공격력' }] },
-    '아머 피어싱': { picks: [{ find: '방어율 무시' }, { find: '최종 데미지' }] },
-    '어드밴스드 퀴버': { picks: [{ find: '최종 데미지' }] },
-    '샤프 아이즈': { picks: [{ find: '크리티컬 확률' }, { find: '크리티컬 데미지' }] },
-  },
-};
-
-const CAPTAIN: JobRules = {
-  '1': {
-    '크리티컬 로어': { picks: [{ find: '크리티컬 확률' }, { find: '크리티컬 데미지' }] },
-  },
-  '2': {
-    '인피닛 불릿': { picks: [{ find: '공격력' }] },
-    '건 액셀레이션': { picks: [{ find: '민첩성' }] },
-    '건 마스터리': { picks: [{ find: '크리티컬 확률' }] },
-    '피지컬 트레이닝': { picks: [{ find: '힘' }, { find: '민첩성' }] },
-  },
-  '3': {
-    '할로포인트 불릿': { picks: [{ find: '공격력' }] },
-    '풀메탈 자켓': { picks: [{ find: '최종 데미지' }, { find: '크리티컬 확률' }, { find: '몬스터 방어율', as: '방어율 무시' }] },
-  },
-  '4': {
-    '컨티뉴얼 에이밍': { bracket: true, picks: [{ find: '최종 데미지' }, { find: '크리티컬 데미지' }] },
-    '크루 커맨더십': { bracket: true, picks: [{ find: '크리티컬 데미지' }] },
-    '캡틴 디그니티': { picks: [{ find: '최종 데미지' }, { find: '공격력' }] },
-  },
-};
-
-const JOB_RULES: Record<string, JobRules> = { '카데나': CADENA, '보우마스터': BOWMASTER, '캡틴': CAPTAIN };
 
 const RE_PASSIVE_BRACKET = /\[패시브 효과\s*:\s*([^\]]+)\]/;
 const PET_SET_RE = /Lv\.?\s*\d+$/; // 펫 세트효과 스킬(0차) — 종류가 많아 이름 패턴 매칭, 전부 중첩
@@ -145,10 +53,11 @@ function collectOne(us: UserStat, job: string, grade: string, s: SkillEntry, own
   }
   if (grade === '0' && PET_SET_RE.test(s.skill_name.trim())) {
     pickInto(us, s.skill_effect, PET_SET_PICKS);
-  } else if ((grade === '0' || grade === 'hyperpassive') && !ruled) {
-    // 동적 폴백: 룰·펫 세트 밖 0차/하이퍼 패시브(달콤하담 등 이벤트성 상시 패시브)의 능력치 라인을
-    // 줄 단위 파싱. "N분/초 동안" 지속버프 라인은 액티브라 제외. 특정 스킬 강화("X의 데미지 20% 증가")
-    // 류·환산 무관 문구는 apply가 표준 스탯명 불일치로 조용히 무시.
+  } else if (grade === '0' && !ruled) {
+    // 동적 폴백: 룰·펫 세트 밖 0차 스킬(달콤하담 등 이벤트성 상시 패시브)의 능력치 라인을 줄 단위 파싱.
+    // "N분/초 동안" 지속버프 라인은 액티브라 제외. 환산 무관 문구는 apply가 조용히 무시.
+    // 하이퍼 패시브는 폴백 금지 — "래피드 파이어-리인포스: 데미지 30% 증가"처럼 대상 스킬명이 skill_name에만
+    // 있고 effect는 전역 스탯처럼 보여 오수집된다(꽈숩노 실측 데미지 +50 과잉). 하이퍼는 명시 룰만.
     for (const line of String(s.skill_effect ?? '').split('\n')) {
       if (/\d+\s*(분|초)\s*동안/.test(line)) continue;
       accumIncrease(us, line);
