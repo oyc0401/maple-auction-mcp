@@ -143,6 +143,13 @@ export function aggregateCharacter(characterName: string, bundle: RawBundle, war
   }
   collectJobPassive(us, stat.character_class ?? '');
   const mainKey = mainStatKey(m);
+  // 찬란한 결계의 핵: 장착형 상시 스탯 아이템. 등급(유니크 등)·강화(+N)마다 값이 달라 넥슨 API에 없다
+  //   ("결계의 핵 소환" 스킬만 노출됨). 인게임 DEX%의 "스킬 20%"가 메용이 아니라 이거였음.
+  //   꽈숩노(유니크 +7) 실측: 메인/서브 주스탯 +65, 공격력 +40, 메인스탯 +20%.
+  //   ⚠️ 캐릭터마다 값이 달라 하드코딩 — 추후 config/입력화 필요(버닝과 동일 성격).
+  if ((skills['0'] ?? []).some((s) => s.skill_name === '결계의 핵 소환')) {
+    us.flat.DEX += 65; us.flat.STR += 65; us.atk += 40; us.pct.DEX += 20;
+  }
   const cls = stat.character_class ?? '';
   const job = cls === '제논' ? 'xenon' : cls === '데몬어벤져' ? 'deven' : 'normal';
   collectSkillPassive(us, cls, skills, combat);

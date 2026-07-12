@@ -33,7 +33,7 @@ const COMMON: JobRules = {
   '0': {
     '연합의 의지': { picks: [{ find: '힘' }, { find: '민첩' }, { find: '지능' }, { find: '행운' }, { find: '공격력' }, { find: '마력' }] },
     '여제의 축복': { picks: [{ find: '공격력' }, { find: '마력' }] },
-    '정령의 축복': { picks: [{ find: '공격력' }, { find: '마력' }] }, // 여제와 별도 합산(유저 확인 2026-07-11 재확정)
+    '정령의 축복': { picks: [{ find: '공격력' }, { find: '마력' }] }, // 여제의 축복과 중복 불가 — 높은 레벨만 적용(collectSkillPassive의 blessSkip에서 처리, 유저 확인 2026-07-12)
     // "MP 30 소비하여 2400초 동안 공격력, 마력 4% 증가" — 장시간 버프. resting 미포함(오유찬 마력 +21 초과 실측) → cond.
     '익스클루시브 스펠': { picks: [{ find: '공격력, 마력' }], cond: true },
     '영웅의 메아리': { picks: [{ find: '공격력, 마력' }], cond: true }, // 동일 패턴 버프(2400초) — 전투 상시
@@ -48,7 +48,7 @@ const COMMON: JobRules = {
   },
   '5': {
     '쓸만한 샤프 아이즈': { picks: [{ find: '크리티컬 확률' }, { find: '크리티컬 데미지' }], cond: true }, // 전투 상시 버프(유저 확인) — resting 미포함
-    '쓸만한 어드밴스드 블레스': { picks: [{ find: '공격력' }, { find: '마력' }], cond: true }, // 전투 상시 버프(유저 확인) — resting 미포함
+    '쓸만한 어드밴스드 블레스': { picks: [{ find: '공격력' }, { find: '마력' }] }, // 지속시간 없는 상시 패시브 — 공/마 20 resting 포함(유저 확인 2026-07-12)
   },
 };
 
@@ -135,12 +135,23 @@ export function collectSkillPassive(us: UserStat, job: string, skills: SkillsByG
   // 예: 보마는 샤프 아이즈(4차)를 쓰므로 쓸만한 샤프 아이즈(10/8)가 아닌 본체(20/15)만 적용.
   const owned = new Set<string>();
   for (const arr of Object.values(skills)) for (const s of arr) owned.add(s.skill_name);
+  // 여제의 축복 vs 정령의 축복: 중복 불가 — 높은 레벨(공격력 큰 쪽)만 적용 (여제 툴팁 명시, 유저 확인 2026-07-12).
+  const blessSkip = new Set<string>();
+  {
+    const atkOf = (name: string): number => {
+      for (const arr of Object.values(skills)) for (const s of arr) if (s.skill_name === name) return pick(s.skill_effect ?? '', '공격력')?.val ?? -1;
+      return -1;
+    };
+    const emp = atkOf('여제의 축복'), spi = atkOf('정령의 축복');
+    if (emp >= 0 && spi >= 0) blessSkip.add(emp >= spi ? '정령의 축복' : '여제의 축복');
+  }
   for (const rules of [COMMON, JOB_RULES[job]]) {
     if (!rules) continue;
     for (const [grade, byName] of Object.entries(rules)) {
       for (const s of skills[grade] ?? []) {
         const rule = byName[s.skill_name];
         if (!rule) continue;
+        if (blessSkip.has(s.skill_name)) continue;
         if (rule.cond && !includeConditional) continue;
         if (s.skill_name.startsWith('쓸만한 ') && owned.has(s.skill_name.slice('쓸만한 '.length))) continue;
         pickInto(us, s.skill_effect, rule.picks);
