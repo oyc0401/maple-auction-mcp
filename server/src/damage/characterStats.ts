@@ -21,6 +21,7 @@ export function getCharacterStats(bundle: RawBundle): CharacterStats {
     스킬_2차: skill.스킬_2차,
     스킬_3차: skill.스킬_3차,
     스킬_4차: skill.스킬_4차,
+    스킬_하이퍼: skill.스킬_하이퍼,
     스킬_5차: skill.스킬_5차,
     // TODO: 링크스킬 · 길드스킬 · 캐시장비 · 헥사스탯 · 챌린저스 · 버닝 · 불릿
   };

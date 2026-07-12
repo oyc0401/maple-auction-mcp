@@ -8,7 +8,7 @@ import {
   collectChallenger, collectBurning, hasBurning, BURNING_TOOLTIP, collectGuild, collectCash,
 } from './collect.js';
 import { collectLinkSkills } from './linkSkill.js';
-import { getSkill } from './stat/skill.js';
+import { getCharacterStats } from './characterStats.js';
 import { collectHexaStat } from './hexaStat.js';
 
 export function statMapOf(finalStat: { stat_name: string; stat_value: string }[] | undefined): Record<string, number> {
@@ -82,7 +82,8 @@ export function buildCharacterStats(bundle: RawBundle): BuiltCharacter {
     }
   }
 
-  const { 메이플용사, 크리티컬리인포스, ...skillGrades } = getSkill(cls, bundle.skills);
+  const { 기본: _기본, AP: _AP, ...skillPart } = getCharacterStats(bundle);
+  const { 메이플용사, 크리티컬리인포스, ...skillGrades } = skillPart;
 
   const preset = bundle.hyper?.[`hyper_stat_preset_${bundle.hyper?.use_preset_no ?? 1}`];
   const single = {

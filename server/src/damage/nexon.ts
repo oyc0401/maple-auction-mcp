@@ -1,6 +1,7 @@
 import type { UserStat } from './statSheet.js';
 import type { CharacterStats } from './stat-interface.js';
-import type { SkillsByGrade } from './stat/skill.js';
+export interface SkillEntry { skill_name: string; skill_level: number; skill_effect: string }
+export type SkillsByGrade = Record<string, SkillEntry[]>; // '0'~'5' + 'hyperpassive'
 import { buildCharacterStats, statMapOf, mainStatKeyOf } from './character.js';
 import { flattenStats } from './block.js';
 
@@ -80,8 +81,8 @@ export async function fetchCharacterRaw(characterName: string): Promise<{ raw: R
   const champion = await opt('유니온 챔피언', '/user/union-champion');
   const propensity = await opt('성향', '/character/propensity');
   const skills: SkillsByGrade = {};
-  for (const grade of ['0', '1', '2', '3', '4', '5']) {
-    const r = await opt(`스킬${grade}차`, '/character/skill', { character_skill_grade: grade });
+  for (const grade of ['0', '1', '2', '3', '4', '5', 'hyperpassive']) {
+    const r = await opt(`스킬(${grade})`, '/character/skill', { character_skill_grade: grade });
     if (r) skills[grade] = r.character_skill ?? [];
   }
   const hexa = await opt('HEXA스탯', '/character/hexamatrix-stat');

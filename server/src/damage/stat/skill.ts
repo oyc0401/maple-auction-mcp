@@ -5,9 +5,7 @@ import type { UserStat } from '../statSheet.js';
 import type { StatBlock, CharacterStats } from '../stat-interface.js';
 import { apply, accumIncrease } from '../parse.js';
 import { blockOf, isEmptyBlock } from '../block.js';
-
-export interface SkillEntry { skill_name: string; skill_level: number; skill_effect: string }
-export type SkillsByGrade = Record<string, SkillEntry[]>;
+import type { SkillEntry, SkillsByGrade } from '../nexon.js';
 
 function pick(effect: string, name: string): { val: number; pct: boolean } | null {
   const re = new RegExp(name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\s*\\+?\\s*(-?\\d+(?:\\.\\d+)?)\\s*(%?)');
@@ -145,15 +143,15 @@ function collectOne(us: UserStat, job: string, grade: string, s: SkillEntry, own
     const eff = rule.bracket ? (s.skill_effect.match(RE_PASSIVE_BRACKET)?.[1] ?? '') : s.skill_effect;
     pickInto(us, eff, rule.picks);
   }
-  if (grade === '0') {
-    if (PET_SET_RE.test(s.skill_name.trim())) pickInto(us, s.skill_effect, PET_SET_PICKS);
-    // 동적 폴백: 룰·펫 세트 밖 0차 스킬(달콤하담 등 이벤트성 상시 패시브)의 능력치 라인을 줄 단위 파싱.
-    // "N분/초 동안" 지속버프 라인은 액티브라 제외. 환산 무관 문구는 apply가 조용히 무시.
-    else if (!ruled) {
-      for (const line of String(s.skill_effect ?? '').split('\n')) {
-        if (/\d+\s*(분|초)\s*동안/.test(line)) continue;
-        accumIncrease(us, line);
-      }
+  if (grade === '0' && PET_SET_RE.test(s.skill_name.trim())) {
+    pickInto(us, s.skill_effect, PET_SET_PICKS);
+  } else if ((grade === '0' || grade === 'hyperpassive') && !ruled) {
+    // 동적 폴백: 룰·펫 세트 밖 0차/하이퍼 패시브(달콤하담 등 이벤트성 상시 패시브)의 능력치 라인을
+    // 줄 단위 파싱. "N분/초 동안" 지속버프 라인은 액티브라 제외. 특정 스킬 강화("X의 데미지 20% 증가")
+    // 류·환산 무관 문구는 apply가 표준 스탯명 불일치로 조용히 무시.
+    for (const line of String(s.skill_effect ?? '').split('\n')) {
+      if (/\d+\s*(분|초)\s*동안/.test(line)) continue;
+      accumIncrease(us, line);
     }
   }
   if (grade === '5') bracket5(us, s);
@@ -173,12 +171,14 @@ function blessSkipOf(skills: SkillsByGrade): Set<string> {
   return skip;
 }
 
-export type SkillStats = Pick<CharacterStats,
-  '메이플용사' | '크리티컬리인포스' | '스킬_0차' | '스킬_1차' | '스킬_2차' | '스킬_3차' | '스킬_4차' | '스킬_5차'>;
+type SkillStats = Pick<CharacterStats,
+  '메이플용사' | '크리티컬리인포스' | '스킬_0차' | '스킬_1차' | '스킬_2차' | '스킬_3차' | '스킬_4차' | '스킬_하이퍼' | '스킬_5차'>;
 
-const GRADE_FIELD = {
-  '0': '스킬_0차', '1': '스킬_1차', '2': '스킬_2차', '3': '스킬_3차', '4': '스킬_4차', '5': '스킬_5차',
-} as const;
+// 배열 순서 = CharacterStats 필드 순서 (객체 리터럴은 숫자형 키가 먼저 돌아 하이퍼 위치를 못 지킨다)
+const GRADE_FIELD = [
+  ['0', '스킬_0차'], ['1', '스킬_1차'], ['2', '스킬_2차'], ['3', '스킬_3차'], ['4', '스킬_4차'],
+  ['hyperpassive', '스킬_하이퍼'], ['5', '스킬_5차'],
+] as const;
 
 // 스킬 원본(SkillsByGrade) → CharacterStats 스킬 파트 통째로.
 export function getSkill(job: string, skills: SkillsByGrade | undefined): SkillStats {
@@ -188,7 +188,7 @@ export function getSkill(job: string, skills: SkillsByGrade | undefined): SkillS
   for (const arr of Object.values(skills)) for (const s of arr) owned.add(s.skill_name);
   const blessSkip = blessSkipOf(skills);
 
-  for (const [grade, field] of Object.entries(GRADE_FIELD)) {
+  for (const [grade, field] of GRADE_FIELD) {
     for (const s of skills[grade] ?? []) {
       if (blessSkip.has(s.skill_name)) continue;
       const b: StatBlock = blockOf((u) => collectOne(u, job, grade, s, owned));
