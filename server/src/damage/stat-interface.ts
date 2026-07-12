@@ -1,3 +1,36 @@
+// 스탯 버킷의 명명 상수 — 값은 StatBlock 키와 1:1.
+export enum MapleStat {
+  STR = 'STR',
+  DEX = 'DEX',
+  INT = 'INT',
+  LUK = 'LUK',
+  STR미적용 = 'STR미적용',
+  DEX미적용 = 'DEX미적용',
+  INT미적용 = 'INT미적용',
+  LUK미적용 = 'LUK미적용',
+  STR퍼 = 'STR퍼',
+  DEX퍼 = 'DEX퍼',
+  INT퍼 = 'INT퍼',
+  LUK퍼 = 'LUK퍼',
+  올스탯 = '올스탯',
+  올스탯미적용 = '올스탯미적용',
+  올스탯퍼 = '올스탯퍼',
+  공격력 = '공격력',
+  마력 = '마력',
+  공격력퍼 = '공격력퍼',
+  마력퍼 = '마력퍼',
+  데미지 = '데미지',
+  보공 = '보공',
+  추가뎀 = '추가뎀',
+  방무 = '방무',     // 곱연산 — UserStat에선 계수 배열에 push
+  최종뎀 = '최종뎀', // 곱연산 — UserStat에선 계수 배열에 push
+  크확 = '크확',
+  크뎀 = '크뎀',
+  HP = 'HP',
+  HP미적용 = 'HP미적용',
+  HP퍼 = 'HP퍼',
+}
+
 export interface StatBlock {
   STR?: number;
   DEX?: number;
@@ -7,21 +40,21 @@ export interface StatBlock {
   DEX미적용?: number;
   INT미적용?: number;
   LUK미적용?: number;
-  'STR%'?: number;
-  'DEX%'?: number;
-  'INT%'?: number;
-  'LUK%'?: number;
+  STR퍼?: number;
+  DEX퍼?: number;
+  INT퍼?: number;
+  LUK퍼?: number;
   올스탯?: number;
   올스탯미적용?: number;
-  '올스탯%'?: number;
+  올스탯퍼?: number;
   레벨당STR?: number;
   레벨당DEX?: number;
   레벨당INT?: number;
   레벨당LUK?: number;
   공격력?: number;
   마력?: number;
-  '공격력%'?: number;
-  '마력%'?: number;
+  공격력퍼?: number;
+  마력퍼?: number;
   데미지?: number;
   보공?: number;
   추가뎀?: number;
@@ -31,7 +64,7 @@ export interface StatBlock {
   크뎀?: number;
   HP?: number;
   HP미적용?: number;
-  'HP%'?: number;
+  HP퍼?: number;
 
   쿨감?: number;
 }

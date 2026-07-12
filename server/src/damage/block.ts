@@ -9,13 +9,13 @@ export function toBlock(u: UserStat): StatBlock {
   const b: Rec = {};
   for (const k of MAIN) if (u.flat[k]) b[k] = u.flat[k];
   for (const k of MAIN) if (u.flatNoPct[k]) b[`${k}미적용`] = u.flatNoPct[k];
-  for (const k of MAIN) if (u.pct[k]) b[`${k}%`] = u.pct[k];
+  for (const k of MAIN) if (u.pct[k]) b[`${k}퍼`] = u.pct[k];
   if (u.allFlat) b['올스탯'] = u.allFlat;
-  if (u.allPct) b['올스탯%'] = u.allPct;
+  if (u.allPct) b['올스탯퍼'] = u.allPct;
   if (u.atk) b['공격력'] = u.atk;
   if (u.matk) b['마력'] = u.matk;
-  if (u.atkPct) b['공격력%'] = u.atkPct;
-  if (u.matkPct) b['마력%'] = u.matkPct;
+  if (u.atkPct) b['공격력퍼'] = u.atkPct;
+  if (u.matkPct) b['마력퍼'] = u.matkPct;
   if (u.damage) b['데미지'] = u.damage;
   if (u.bossDmg) b['보공'] = u.bossDmg;
   if (u.statusDmg) b['추가뎀'] = u.statusDmg;
@@ -25,7 +25,7 @@ export function toBlock(u: UserStat): StatBlock {
   if (u.critDmg) b['크뎀'] = u.critDmg;
   if (u.hpFlat) b['HP'] = u.hpFlat;
   if (u.hpFlatNoPct) b['HP미적용'] = u.hpFlatNoPct;
-  if (u.hpPct) b['HP%'] = u.hpPct;
+  if (u.hpPct) b['HP퍼'] = u.hpPct;
   return b as StatBlock;
 }
 
@@ -42,16 +42,16 @@ export function addBlock(u: UserStat, b: StatBlock, level: number): void {
   for (const k of MAIN) {
     u.flat[k] += (r[k] as number) ?? 0;
     u.flatNoPct[k] += (r[`${k}미적용`] as number) ?? 0;
-    u.pct[k] += (r[`${k}%`] as number) ?? 0;
+    u.pct[k] += (r[`${k}퍼`] as number) ?? 0;
     u.flat[k] += Math.floor(level / 9) * ((r[`레벨당${k}`] as number) ?? 0);
     u.flatNoPct[k] += (r['올스탯미적용'] as number) ?? 0;
   }
   u.allFlat += (r['올스탯'] as number) ?? 0;
-  u.allPct += (r['올스탯%'] as number) ?? 0;
+  u.allPct += (r['올스탯퍼'] as number) ?? 0;
   u.atk += (r['공격력'] as number) ?? 0;
   u.matk += (r['마력'] as number) ?? 0;
-  u.atkPct += (r['공격력%'] as number) ?? 0;
-  u.matkPct += (r['마력%'] as number) ?? 0;
+  u.atkPct += (r['공격력퍼'] as number) ?? 0;
+  u.matkPct += (r['마력퍼'] as number) ?? 0;
   u.damage += (r['데미지'] as number) ?? 0;
   u.bossDmg += (r['보공'] as number) ?? 0;
   u.statusDmg += (r['추가뎀'] as number) ?? 0;
@@ -61,7 +61,7 @@ export function addBlock(u: UserStat, b: StatBlock, level: number): void {
   u.critDmg += (r['크뎀'] as number) ?? 0;
   u.hpFlat += (r['HP'] as number) ?? 0;
   u.hpFlatNoPct += (r['HP미적용'] as number) ?? 0;
-  u.hpPct += (r['HP%'] as number) ?? 0;
+  u.hpPct += (r['HP퍼'] as number) ?? 0;
 }
 
 export function negateBlock(b: StatBlock): StatBlock {

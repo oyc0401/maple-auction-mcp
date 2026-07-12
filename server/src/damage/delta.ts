@@ -11,21 +11,21 @@ export function itemStatsToBlock(s: ItemStats): StatBlock {
   const b: Record<string, number | number[]> = {};
   for (const k of ['STR', 'DEX', 'INT', 'LUK'] as Stat4[]) {
     if (s.flat[k]) b[k] = s.flat[k];
-    if (s.pct[k]) b[`${k}%`] = s.pct[k];
+    if (s.pct[k]) b[`${k}퍼`] = s.pct[k];
     if (s.perLev[k]) b[`레벨당${k}`] = s.perLev[k];
   }
-  if (s.allPct) b['올스탯%'] = s.allPct;
+  if (s.allPct) b['올스탯퍼'] = s.allPct;
   if (s.atk) b['공격력'] = s.atk;
   if (s.matk) b['마력'] = s.matk;
-  if (s.atkPct) b['공격력%'] = s.atkPct;
-  if (s.matkPct) b['마력%'] = s.matkPct;
+  if (s.atkPct) b['공격력퍼'] = s.atkPct;
+  if (s.matkPct) b['마력퍼'] = s.matkPct;
   if (s.dmgBoss) b['보공'] = s.dmgBoss;
   if (s.iedFactor !== 1) b['방무'] = [(1 - s.iedFactor) * 100];
   if (s.finalDmg) b['최종뎀'] = [s.finalDmg];
   if (s.critRate) b['크확'] = s.critRate;
   if (s.critDmg) b['크뎀'] = s.critDmg;
   if (s.hp) b['HP'] = s.hp;
-  if (s.hpPct) b['HP%'] = s.hpPct;
+  if (s.hpPct) b['HP퍼'] = s.hpPct;
   if (s.coolSec) b['쿨감'] = s.coolSec;
   return b as StatBlock;
 }

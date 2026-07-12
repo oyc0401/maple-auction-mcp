@@ -77,7 +77,7 @@ describe('damage/delta — 교체 증감률', () => {
     expect(b['STR']).toBe(a['STR']);
     expect(b['LUK']).toBe(a['LUK']);
     expect(b['공격력']).toBe(a['공격력']);
-    expect(b['LUK%']).toBe(a['LUK%']);
+    expect(b['LUK퍼']).toBe(a['LUK퍼']);
     expect((b['방무'] as number[])[0]).toBeCloseTo((a['방무'] as number[])[0], 10);
   });
 
