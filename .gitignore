@@ -20,3 +20,4 @@ dev/
 MEMO.md
 
 *.json
+server/src/scouter/
