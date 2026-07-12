@@ -1,6 +1,6 @@
 import type { UserStat } from './statSheet.js';
 import type { CharacterStats } from './stat-interface.js';
-import type { SkillsByGrade } from './skillPassive.js';
+import type { SkillsByGrade } from './stat/skill.js';
 import { buildCharacterStats, statMapOf, mainStatKeyOf } from './character.js';
 import { flattenStats } from './block.js';
 

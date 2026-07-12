@@ -8,7 +8,7 @@ import {
   collectChallenger, collectBurning, hasBurning, BURNING_TOOLTIP, collectGuild, collectCash,
 } from './collect.js';
 import { collectLinkSkills } from './linkSkill.js';
-import { collectSkillPassive, type SkillsByGrade } from './skillPassive.js';
+import { getSkill } from './stat/skill.js';
 import { collectHexaStat } from './hexaStat.js';
 
 export function statMapOf(finalStat: { stat_name: string; stat_value: string }[] | undefined): Record<string, number> {
@@ -70,15 +70,6 @@ export function buildCharacterStats(bundle: RawBundle): BuiltCharacter {
     if (!isEmptyBlock(b)) sets[s.set_name] = b;
   }
 
-  let mwPct = 0;
-  for (const arr of Object.values(bundle.skills ?? {})) {
-    for (const s of arr) {
-      const m = String(s.skill_effect ?? '').match(/AP를 직접 투자한 모든 능력치\s*(\d+(?:\.\d+)?)\s*%/);
-      if (m) { mwPct = Number(m[1]); break; }
-    }
-    if (mwPct) break;
-  }
-
   const links: Record<string, StatBlock> = {};
   {
     const transferred = bundle.link?.character_link_skill ?? bundle.link?.character_link_skill_info ?? [];
@@ -91,32 +82,7 @@ export function buildCharacterStats(bundle: RawBundle): BuiltCharacter {
     }
   }
 
-  const ownedAll = new Set<string>();
-  for (const arr of Object.values(bundle.skills ?? {})) for (const s of arr) ownedAll.add(s.skill_name);
-  const blessSkip = new Set<string>();
-  {
-    const atkOf = (name: string): number => {
-      for (const arr of Object.values(bundle.skills ?? {})) {
-        for (const s of arr) {
-          if (s.skill_name !== name) continue;
-          const m = String(s.skill_effect ?? '').match(/공격력\s*\+?\s*(\d+(?:\.\d+)?)/);
-          return m ? Number(m[1]) : -1;
-        }
-      }
-      return -1;
-    };
-    const emp = atkOf('여제의 축복'), spi = atkOf('정령의 축복');
-    if (emp >= 0 && spi >= 0) blessSkip.add(emp >= spi ? '정령의 축복' : '여제의 축복');
-  }
-  const skillsByGrade: Record<string, Record<string, StatBlock>> = {};
-  for (const grade of ['0', '1', '2', '3', '4', '5']) {
-    for (const s of bundle.skills?.[grade] ?? []) {
-      if (blessSkip.has(s.skill_name)) continue;
-      const b = blockOf((u) => collectSkillPassive(u, cls, { [grade]: [s] } as SkillsByGrade, ownedAll));
-      if (isEmptyBlock(b)) continue;
-      (skillsByGrade[grade] ??= {})[s.skill_name] = b;
-    }
-  }
+  const { 메이플용사, 크리티컬리인포스, ...skillGrades } = getSkill(cls, bundle.skills);
 
   const preset = bundle.hyper?.[`hyper_stat_preset_${bundle.hyper?.use_preset_no ?? 1}`];
   const single = {
@@ -139,14 +105,14 @@ export function buildCharacterStats(bundle: RawBundle): BuiltCharacter {
     : null;
 
   const out: CharacterStats = { 기본: { 크확: 5, 크뎀: 35 }, AP: blockOf((u) => collectBaseAP(u, statMap)) };
-  if (mwPct) out.메이플용사 = mwPct;
-  if ((bundle.skills?.['5'] ?? []).some((s) => s.skill_name === '크리티컬 리인포스')) out.크리티컬리인포스 = 50;
+  if (메이플용사) out.메이플용사 = 메이플용사;
+  if (크리티컬리인포스) out.크리티컬리인포스 = 크리티컬리인포스;
   if (Object.keys(gear).length) out.장비 = gear;
   if (Object.keys(sets).length) out.세트효과 = sets;
   for (const k of ['심볼', '하이퍼스탯', '어빌리티', '유니온', '아티팩트', '챔피언', '성향'] as const) {
     if (!isEmptyBlock(single[k])) out[k] = single[k];
   }
-  for (const [grade, rec] of Object.entries(skillsByGrade)) (out as any)[`스킬_${grade}차`] = rec;
+  Object.assign(out, skillGrades);
   if (Object.keys(links).length) out.링크스킬 = links;
   if (!isEmptyBlock(single.길드스킬)) out.길드스킬 = single.길드스킬;
   if (!isEmptyBlock(single.캐시장비)) out.캐시장비 = single.캐시장비;
