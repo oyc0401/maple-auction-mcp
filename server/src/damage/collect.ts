@@ -143,3 +143,39 @@ export function collectBurning(us: UserStat, b?: BurningBeyond): void {
   us.critRate += b.critRate ?? 0;
   us.critDmg += b.critDmg ?? 0;
 }
+
+// ── 캐시장비 (/character/cashitem-equipment) ───────────────────────
+// 하이퍼 버닝 이벤트 치장 세트 등 "능력치 있는 캐시장비"의 주스탯·공마를 실제 전투 스탯으로 반영.
+// cash_item_option[].option_type/option_value. 주스탯은 flat(×주스탯%)로 가정 — 잔차로 검증(꽈숩노 0).
+export function collectCash(us: UserStat, cash: any): void {
+  for (const it of cash?.cash_item_equipment_base ?? []) {
+    for (const o of it?.cash_item_option ?? []) {
+      const v = num(o?.option_value);
+      switch (o?.option_type) {
+        case 'STR': us.flat.STR += v; break;
+        case 'DEX': us.flat.DEX += v; break;
+        case 'INT': us.flat.INT += v; break;
+        case 'LUK': us.flat.LUK += v; break;
+        case '올스탯': us.allFlat += v; break;
+        case '공격력': us.atk += v; break;
+        case '마력': us.matk += v; break;
+      }
+    }
+  }
+}
+
+// ── 길드 스킬 (/guild/basic) ───────────────────────────────────────
+// "길드의 노하우" 등 지속시간 없는 상시 패시브의 공/마·보공 등만 반영한다.
+// "N분/초 동안" 지속버프(보스 킬링 머신·길드의 이름으로·크게 한방)는 액티브라 제외.
+// 일반 몬스터 데미지는 보스전 무관 → 제외. (꽈숩노 실측: 노하우 I/II/IV/VI 합 = 공/마 45)
+export function collectGuild(us: UserStat, guild: any): void {
+  const skills = [...(guild?.guild_skill ?? []), ...(guild?.guild_noblesse_skill ?? [])];
+  for (const s of skills) {
+    const eff = String(s?.skill_effect ?? '');
+    if (/\d+\s*(분|초)\s*동안/.test(eff)) continue; // 지속시간 있는 액티브 버프 제외
+    for (const line of eff.split('\n')) { // 줄 단위. 콤마 결합("공격력 30, 마력 30 증가")은 accumIncrease가 처리.
+      if (line.includes('일반 몬스터') || line.includes('받는 피해')) continue; // 보스 무관/미모델
+      accumIncrease(us, line);
+    }
+  }
+}

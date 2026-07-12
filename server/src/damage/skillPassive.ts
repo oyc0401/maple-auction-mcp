@@ -32,7 +32,7 @@ const COMMON: JobRules = {
   '0': {
     '연합의 의지': { picks: [{ find: '힘' }, { find: '민첩' }, { find: '지능' }, { find: '행운' }, { find: '공격력' }, { find: '마력' }] },
     '여제의 축복': { picks: [{ find: '공격력' }, { find: '마력' }] },
-    '정령의 축복': { picks: [{ find: '공격력' }, { find: '마력' }] }, // 여제의 축복과 별도 합산
+    '정령의 축복': { picks: [{ find: '공격력' }, { find: '마력' }] }, // 여제의 축복과 중복 불가 — 높은 쪽 1개만(character.ts blessSkip에서 판정, 유저 확인 2026-07-12)
     '익스클루시브 스펠': { picks: [{ find: '공격력, 마력' }] },
     '영웅의 메아리': { picks: [{ find: '공격력, 마력' }] },
     '초월 : 최초의 유산': { picks: [{ find: '공격력' }] },

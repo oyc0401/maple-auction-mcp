@@ -140,11 +140,14 @@ export interface CharacterStats {
   스킬_하이퍼?: Record<string, StatBlock>;
   스킬_5차?: Record<string, StatBlock>;
   링크스킬?: LinkSkillStats;
-  길드스킬?: StatBlock;
+  길드스킬?: StatBlock;   // 길드의 노하우 등 지속시간 없는 상시 패시브만 (/guild/basic)
+  캐시장비?: StatBlock;   // 능력치 있는 캐시장비 — 하이퍼 버닝 치장 등 (/character/cashitem-equipment)
   헥사스탯?: StatBlock;
 
   도핑?: StatBlock;
 
   챌린저스?: StatBlock;   // 챌린저스 서버 상시 버프 (비챌린저스면 없음)
   버닝?: StatBlock;       // 버닝 BEYOND/하이퍼 버닝 MAX
+  결계의핵?: StatBlock;   // 찬란한 결계의 핵 — 단기 이벤트 0차 스킬. 등급·강화별 값 상이, API 미노출 → 캐릭별 하드코딩
+  불릿?: StatBlock;       // 소비창 장착 불릿 공격력 (인피닛 불릿으로 상시화). 종류별 값 상이, API 미노출
 }

@@ -59,6 +59,7 @@ export interface RawBundle {
   equip: any; setEff: any; symbol: any; hyper: any; ability: any; link: any; union: any; artifact: any;
   champion: any; propensity: any;
   skills: SkillsByGrade; hexa: any;
+  guild?: any; cash?: any; // 구캐시(.nexon-raw)엔 없을 수 있음 — optional
 }
 
 // 닉네임 → 전 소스 순차 조회(레이트리밋 준수). API를 실제로 쏘는 유일한 지점.
@@ -96,8 +97,17 @@ export async function fetchCharacterRaw(characterName: string): Promise<{ raw: R
     if (r) skills[grade] = r.character_skill ?? [];
   }
   const hexa = await opt('HEXA스탯', '/character/hexamatrix-stat');
+  const cash = await opt('캐시장비', '/character/cashitem-equipment'); // 하이퍼 버닝 치장 등 능력치 캐시장비
+  // 길드 스킬(길드의 노하우 등 상시 공/마 패시브) — /character/skill엔 없어 /guild로 별도 조회.
+  let guild: any = null;
+  if (basic?.character_guild_name && basic?.world_name) {
+    try {
+      const gid = await getJson('/guild/id', { guild_name: basic.character_guild_name, world_name: basic.world_name }, key); await gap();
+      if (gid?.oguild_id) { guild = await getJson('/guild/basic', { oguild_id: gid.oguild_id }, key); await gap(); }
+    } catch (e) { warnings.push(`길드 조회 실패: ${(e as Error).message}`); }
+  }
 
-  return { raw: { stat, basic, equip, setEff, symbol, hyper, ability, link, union, artifact, champion, propensity, skills, hexa }, warnings };
+  return { raw: { stat, basic, equip, setEff, symbol, hyper, ability, link, union, artifact, champion, propensity, skills, hexa, guild, cash }, warnings };
 }
 
 // 원본 응답 묶음 → CharacterStats(소스별 진실 원천) → flatten(UserStat). API 호출 없음(디스크 캐시 재집계 가능).

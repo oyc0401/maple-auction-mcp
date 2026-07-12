@@ -7,7 +7,7 @@ import { blockOf, isEmptyBlock, MAIN } from './block.js';
 import {
   collectGearItem, collectSet, collectSymbol, collectHyper, collectAbility, collectBaseAP,
   collectUnion, collectArtifact, collectChampion, collectPropensity, collectTitle,
-  collectChallenger, collectBurning, hasBurning, BURNING_TOOLTIP,
+  collectChallenger, collectBurning, hasBurning, BURNING_TOOLTIP, collectGuild, collectCash,
 } from './collect.js';
 import { collectLinkSkills } from './linkSkill.js';
 import { collectSkillPassive, type SkillsByGrade } from './skillPassive.js';
@@ -107,9 +107,27 @@ export function buildCharacterStats(bundle: RawBundle): BuiltCharacter {
   // 전체 보유 목록을 주입해 collectSkillPassive 내부에서 게이팅한다.
   const ownedAll = new Set<string>();
   for (const arr of Object.values(bundle.skills ?? {})) for (const s of arr) ownedAll.add(s.skill_name);
+  // 여제의 축복 vs 정령의 축복: 중복 불가 — 공격력 높은 쪽 1개만 적용(여제 툴팁 명시, 유저 확인 2026-07-12).
+  // collectSkillPassive는 스킬 단건으로 호출돼 서로를 볼 수 없으므로 여기서 전체 목록으로 판정한다.
+  const blessSkip = new Set<string>();
+  {
+    const atkOf = (name: string): number => {
+      for (const arr of Object.values(bundle.skills ?? {})) {
+        for (const s of arr) {
+          if (s.skill_name !== name) continue;
+          const m = String(s.skill_effect ?? '').match(/공격력\s*\+?\s*(\d+(?:\.\d+)?)/);
+          return m ? Number(m[1]) : -1;
+        }
+      }
+      return -1;
+    };
+    const emp = atkOf('여제의 축복'), spi = atkOf('정령의 축복');
+    if (emp >= 0 && spi >= 0) blessSkip.add(emp >= spi ? '정령의 축복' : '여제의 축복');
+  }
   const skillsByGrade: Record<string, Record<string, StatBlock>> = {};
   for (const grade of ['0', '1', '2', '3', '4', '5']) {
     for (const s of bundle.skills?.[grade] ?? []) {
+      if (blessSkip.has(s.skill_name)) continue;
       const b = blockOf((u) => collectSkillPassive(u, cls, { [grade]: [s] } as SkillsByGrade, ownedAll));
       if (isEmptyBlock(b)) continue;
       (skillsByGrade[grade] ??= {})[s.skill_name] = b;
@@ -129,7 +147,20 @@ export function buildCharacterStats(bundle: RawBundle): BuiltCharacter {
     헥사스탯: blockOf((u) => bundle.hexa && collectHexaStat(u, bundle.hexa, mainKey, mainKey === 'INT', cls === '제논' ? 'xenon' : cls === '데몬어벤져' ? 'deven' : 'normal')),
     챌린저스: blockOf((u) => bundle.basic?.world_name === '챌린저스' && collectChallenger(u)),
     버닝: blockOf((u) => hasBurning(bundle.skills) && collectBurning(u, BURNING_TOOLTIP)),
+    길드스킬: blockOf((u) => bundle.guild && collectGuild(u, bundle.guild)),
+    캐시장비: blockOf((u) => bundle.cash && collectCash(u, bundle.cash)),
   };
+  // 찬란한 결계의 핵: 단기 이벤트성 0차 스킬("결계의 핵 소환")로만 노출되는 장착형 상시 스탯 아이템.
+  // 등급(유니크 등)·+강화마다 값이 달라 API에 수치가 없다 → 꽈숩노(유니크 +7) 실측 하드코딩.
+  // ⚠️ 캐릭터마다 값이 다름 — 추후 config/입력화 필요(버닝과 동일 성격). 이벤트 종료 시 스킬 소멸로 자연 비활성.
+  const coreBarrier: StatBlock | null = (bundle.skills?.['0'] ?? []).some((s) => s.skill_name === '결계의 핵 소환')
+    ? { STR: 65, DEX: 65, 공격력: 40, 'DEX%': 20 }
+    : null;
+  // 소비창 장착 총알(불릿) 공격력 — 인피닛 불릿으로 소비 없이 상시 적용. API 미노출 + 불릿 종류마다 값 상이.
+  // 꽈숩노(초보 해적의 불릿) 실측 = 공10. ⚠️ 불릿 종류마다 다름 — 하드코딩(추후 config).
+  const bullet: StatBlock | null = (bundle.skills?.['2'] ?? []).some((s) => s.skill_name === '인피닛 불릿')
+    ? { 공격력: 10 }
+    : null;
 
   // ── CharacterStats 조립 (인터페이스 필드 순서대로, 빈 소스는 생략) ──
   // 모든 캐릭터 공통 베이스(크확 5%, 크뎀 35%)는 기본 블록에 담는다. 넥슨 API의 크리티컬 확률 필드는
@@ -147,8 +178,12 @@ export function buildCharacterStats(bundle: RawBundle): BuiltCharacter {
   }
   for (const [grade, rec] of Object.entries(skillsByGrade)) (out as any)[`스킬_${grade}차`] = rec;
   if (Object.keys(links).length) out.링크스킬 = links;
+  if (!isEmptyBlock(single.길드스킬)) out.길드스킬 = single.길드스킬;
+  if (!isEmptyBlock(single.캐시장비)) out.캐시장비 = single.캐시장비;
   if (!isEmptyBlock(single.헥사스탯)) out.헥사스탯 = single.헥사스탯;
   if (!isEmptyBlock(single.챌린저스)) out.챌린저스 = single.챌린저스;
   if (!isEmptyBlock(single.버닝)) out.버닝 = single.버닝;
+  if (coreBarrier) out.결계의핵 = coreBarrier;
+  if (bullet) out.불릿 = bullet;
   return { stats: out, notes };
 }
