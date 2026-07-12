@@ -119,6 +119,42 @@ describe('damage/delta — 교체 증감률', () => {
   });
 });
 
+describe('damage — 소스별 버킷 배치 규칙', () => {
+  it('심볼 주스탯은 스탯%를 받지 않는 버킷(flatNoPct)에 들어간다', () => {
+    const base = aggregateCharacter('테스트', makeBundle(), []).userStat;
+    const b = makeBundle();
+    b.symbol = { symbol: [{ symbol_luk: '1234' }] };
+    const withSymbol = aggregateCharacter('테스트', b, []).userStat;
+    // 심볼 LUK는 flatNoPct에만 더해지고 스탯% 적용 버킷(flat)은 그대로다.
+    expect(withSymbol.flatNoPct.LUK - base.flatNoPct.LUK).toBe(1234);
+    expect(withSymbol.flat.LUK).toBe(base.flat.LUK);
+  });
+
+  it('인텐시브 인썰트 링크는 상태이상·레벨낮은 몬스터 라인을 모두 추가뎀으로 합산한다', () => {
+    const b = makeBundle();
+    b.link = {
+      character_link_skill: [{
+        skill_name: '인텐시브 인썰트',
+        skill_effect: '상태 이상에 걸린 몬스터 공격 시 데미지 6%, 캐릭터보다 레벨이 낮은 몬스터 공격 시 데미지 6%',
+      }],
+    };
+    const col = aggregateCharacter('테스트', b, []);
+    expect(col.userStat.statusDmg).toBe(12);
+  });
+
+  it('크리티컬 리인포스 보유 시 크확의 절반이 크뎀에 더해진다', () => {
+    const b = makeBundle();
+    b.skills = { '5': [{ skill_name: '크리티컬 리인포스', skill_level: 30, skill_effect: '' }] };
+    const col = aggregateCharacter('테스트', b, []);
+    const rcs = buildCombatStats(col);
+    expect(rcs.critReinforcePct).toBe(50);
+    // 크확 전량이 크뎀으로 전환돼 D가 오른다 (크리인포 미보유 대비).
+    const withReinforce = damageOf(rcs, { bossDef: 3.0 });
+    const noReinforce = damageOf({ ...rcs, critReinforcePct: 0 }, { bossDef: 3.0 });
+    expect(withReinforce).toBeGreaterThan(noReinforce);
+  });
+});
+
 describe('damage — 제논·데몬어벤져 축', () => {
   function makeFor(cls: string, extraStat: Record<string, string>[] = []): ReturnType<typeof aggregateCharacter> {
     const b = makeBundle();

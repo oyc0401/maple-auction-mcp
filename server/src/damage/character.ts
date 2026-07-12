@@ -1,6 +1,5 @@
 // 넥슨 RawBundle → CharacterStats(stat-interface) 조립 — 소스별 StatBlock의 단일 진실 원천.
 // 수집 파서(collect/linkSkill/skillPassive/hexaStat)는 UserStat 버킷 뮤테이터라 blockOf로 소스 단위 블록을 뽑는다.
-// combat=true면 조건부(cond) 링크·버프 스킬을 포함해 전투 기준으로 조립한다 (resting 재구성 검증은 false).
 import type { MainStat } from './statSheet.js';
 import type { StatBlock, CharacterStats } from './stat-interface.js';
 import type { RawBundle } from './nexon.js';
@@ -41,7 +40,7 @@ const STAT_ALIAS: Record<string, MainStat> = {
 
 export interface BuiltCharacter { stats: CharacterStats; notes: string[] }
 
-export function buildCharacterStats(bundle: RawBundle, combat = false): BuiltCharacter {
+export function buildCharacterStats(bundle: RawBundle): BuiltCharacter {
   const notes: string[] = [];
   const statMap = statMapOf(bundle.stat?.final_stat);
   const level = Number(bundle.basic?.character_level ?? 0);
@@ -96,7 +95,7 @@ export function buildCharacterStats(bundle: RawBundle, combat = false): BuiltCha
     const transferred = bundle.link?.character_link_skill ?? bundle.link?.character_link_skill_info ?? [];
     const owned = bundle.link?.character_owned_link_skill;
     for (const s of [...transferred, ...(owned ? [owned].flat() : [])]) {
-      const b = blockOf((u) => collectLinkSkills(u, { character_link_skill: [s] }, combat));
+      const b = blockOf((u) => collectLinkSkills(u, { character_link_skill: [s] }));
       if (isEmptyBlock(b)) continue;
       const key = String(s.skill_name ?? '').replace(/\([^)]*\)\s*$/, '').trim(); // 본인 링크 "(직업)" 접미사 제거
       links[key] = b;
@@ -111,7 +110,7 @@ export function buildCharacterStats(bundle: RawBundle, combat = false): BuiltCha
   const skillsByGrade: Record<string, Record<string, StatBlock>> = {};
   for (const grade of ['0', '1', '2', '3', '4', '5']) {
     for (const s of bundle.skills?.[grade] ?? []) {
-      const b = blockOf((u) => collectSkillPassive(u, cls, { [grade]: [s] } as SkillsByGrade, combat, ownedAll));
+      const b = blockOf((u) => collectSkillPassive(u, cls, { [grade]: [s] } as SkillsByGrade, ownedAll));
       if (isEmptyBlock(b)) continue;
       (skillsByGrade[grade] ??= {})[s.skill_name] = b;
     }

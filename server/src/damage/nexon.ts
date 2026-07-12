@@ -46,7 +46,7 @@ export interface CharacterCollected {
   raw: Record<string, any>; // 진단용 원본 응답 (base/gear/set/symbol/hyper/ability/union)
 }
 
-// 캐릭터 조회 캐시: TTL 10분(구 scouter 클라이언트와 동일 정책) + in-flight dedupe.
+// 캐릭터 조회 캐시: TTL 10분 + in-flight dedupe.
 // 캐릭터당 1스윕(~20콜)이 레이트리밋에 치명적이라, 동시·연속 요청이 절대 중복 스윕을 만들지 않게 한다.
 const CACHE_TTL_MS = 10 * 60 * 1000;
 const cache = new Map<string, { at: number; data: CharacterCollected }>();
@@ -100,14 +100,12 @@ export async function fetchCharacterRaw(characterName: string): Promise<{ raw: R
   return { raw: { stat, basic, equip, setEff, symbol, hyper, ability, link, union, artifact, champion, propensity, skills, hexa }, warnings };
 }
 
-// 원본 응답 묶음 → CharacterStats(소스별 진실 원천) → flatten(UserStat) + 검증 오라클.
-// API 호출 없음(디스크 캐시 재집계 가능).
-// combat=true면 조건부(cond) 링크·버프 스킬을 포함해 전투 기준으로 집계한다 (resting 검증은 false).
-export function aggregateCharacter(characterName: string, bundle: RawBundle, warnings: string[], combat = false): CharacterCollected {
+// 원본 응답 묶음 → CharacterStats(소스별 진실 원천) → flatten(UserStat). API 호출 없음(디스크 캐시 재집계 가능).
+export function aggregateCharacter(characterName: string, bundle: RawBundle, warnings: string[]): CharacterCollected {
   const { stat, basic, equip, setEff, symbol, hyper, ability, union, skills, hexa } = bundle;
   const m = statMapOf(stat.final_stat);
   const level = Number(basic?.character_level ?? 0);
-  const { stats, notes } = buildCharacterStats(bundle, combat);
+  const { stats, notes } = buildCharacterStats(bundle);
   const us = flattenStats(stats, level);
   const mainKey = mainStatKeyOf(m);
 

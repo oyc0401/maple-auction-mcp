@@ -1,12 +1,9 @@
 // 전투 스탯 시트 + 로컬 D(데미지 지표) 공식.
-// 인터페이스는 구 maplescouter dmg-simulator payload(stat/simulator 축)를 차용하되 계산은 로컬.
 // D는 절대값이 아니라 비율용 지표 — 직업 상수·숙련도 등 공통 배수는 D_after/D_before에서 상쇄된다.
 import type { UserStat, MainStat } from './statSheet.js';
-import type { CharacterCollected, RawBundle } from './nexon.js';
-import { aggregateCharacter } from './nexon.js';
+import type { CharacterCollected } from './nexon.js';
 
-// 직업별 스탯 축 (구 hwansan2/axes.ts statAxes 이식 — scouter 타입 의존 제거).
-// 이중부스탯(카데나·듀얼블레이드·섀도어): sub=DEX, ssub=STR. 데벤=HP축, 제논=3스탯 합.
+// 직업별 스탯 축. 이중부스탯(카데나·듀얼블레이드·섀도어): sub=DEX, ssub=STR. 데몬어벤져=HP축, 제논=3스탯 합.
 const DOUBLE_SUB = new Set(['카데나', '듀얼블레이드', '섀도어']);
 const SUB_OF: Record<MainStat, MainStat> = { STR: 'DEX', DEX: 'STR', INT: 'LUK', LUK: 'DEX' };
 
@@ -32,29 +29,22 @@ export interface CombatStats {
   myClass: string;
   level: number;
   axes: StatAxes;
-  us: UserStat;             // 전투(cond 포함) 합산 버킷
+  us: UserStat;             // 전투 합산 버킷
   critRateTotal: number;    // 총 크확 (공통 베이스 포함, 크리인포 전환의 입력)
   critReinforcePct: number; // 크리티컬 리인포스: 크확의 N%를 크뎀으로 전환 — 그 N (미보유 0)
   notes: string[];          // 계산 주의사항 (미검증 축 등)
 }
 
-
-// CharacterCollected(레스팅 검증용) → 전투 스탯 시트. 조건부 링크·버프 스킬 포함해 재집계한다.
 export function buildCombatStats(collected: CharacterCollected): CombatStats {
-  const bundle = collected.raw.bundle as RawBundle;
-  const combat = aggregateCharacter(collected.final.characterName, bundle, [], true);
-  const us = combat.userStat;
+  const us = collected.userStat;
   const myClass = collected.final.characterClass;
   const axes = statAxesOf(myClass, collected.final.finalMain);
-
-  // 크리티컬 리인포스(5차 공용): 모든 크확 수집이 끝난 뒤 "가장 마지막에" 크확의 N%를 크뎀으로 전환(유저 방침).
-  const critReinforcePct = combat.stats.크리티컬리인포스 ?? 0;
-  const critRateTotal = us.critRate;
+  const critReinforcePct = collected.stats.크리티컬리인포스 ?? 0;
 
   const notes: string[] = [];
   if (axes.kind !== 'standard') notes.push('제논·데몬어벤져 축은 미검증 — 증감률 참고용');
 
-  return { myClass, level: collected.final.level, axes, us, critRateTotal, critReinforcePct, notes };
+  return { myClass, level: collected.final.level, axes, us, critRateTotal: us.critRate, critReinforcePct, notes };
 }
 
 const statFinal = (us: UserStat, k: MainStat) =>
@@ -79,8 +69,8 @@ export function damageOf(cs: CombatStats, opts: DamageOpts, usOverride?: UserSta
   const us = usOverride ?? cs.us;
   const isMagic = cs.axes.kind === 'standard' && cs.axes.isMagic;
   const atk = Math.floor((isMagic ? us.matk : us.atk) * (1 + (isMagic ? us.matkPct : us.atkPct) / 100));
-  const dmgFactor = 1 + (us.damage + us.bossDmg + us.statusDmg) / 100; // 보스 상시 상태이상 가정(유저 방침)
-  // 크리인포는 가장 마지막: 전환 후 크뎀. 크확은 100% 가동 가정이라 가동률 계수는 없다.
+  const dmgFactor = 1 + (us.damage + us.bossDmg + us.statusDmg) / 100; // 추가뎀은 보스전 상시 발동으로 본다
+  // 크리인포는 전환 후 크뎀으로 반영한다. 크확 100% 가동으로 보므로 가동률 계수는 없다.
   // 공통 베이스 크뎀(35)은 기본 블록에서 이미 합산돼 있다.
   const critRate = cs.critRateTotal + (opts.critRateDelta ?? 0);
   const critDmg = us.critDmg + (critRate * cs.critReinforcePct) / 100;

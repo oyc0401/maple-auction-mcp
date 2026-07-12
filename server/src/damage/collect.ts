@@ -1,5 +1,4 @@
 // 넥슨 오픈 API 응답 → UserStat 누적. 소스별 콜렉터를 순서대로 호출한다.
-// 1차 목표는 "다 모으기". 스탯% 적용 여부(심볼/유니온이 flat vs flatNoPct)는 재구성 검증에서 확정한다.
 import type { UserStat } from './statSheet.js';
 import { apply, accumPlus, accumIncrease } from './parse.js';
 
@@ -26,16 +25,14 @@ export function collectGearItem(us: UserStat, item: any, level = 0): void {
     if (per) apply(us, per[2], Math.floor(level / Number(per[1])) * Number(per[3]), false);
     else accumPlus(us, line);
   }
-  // 무기 소울 옵션 ("보스 몬스터 데미지 +7%" 류) — 넥슨 resting 포함 (오유찬 보공 잔차 7 정확 일치)
+  // 무기 소울 옵션 ("보스 몬스터 데미지 +7%" 류)
   accumPlus(us, item?.soul_option);
 }
 
 // ── 세트효과 (set-effect[]) ────────────────────────────────────────
 // 세트효과는 누적: total_set_count 이하 모든 티어의 옵션이 동시 적용. set_option_full의 각 티어 텍스트를 파싱.
-// ⚠️ 일부 세트는 넥슨 API가 실제 인게임 최대 세트수보다 큰 "팬텀 티어"를 포함한다.
-//   도전자의 장비 세트(챌린저스): 인게임 최대 7세트(유저 세트창 7/7 실측 2026-07-12)인데
-//   API는 도전자 방어구7+무기1=8개를 세어 total_set_count 8 + 6세트를 복제한 8세트(방무10%)를 준다.
-//   → 캡 없이 8세트를 세면 방무 10%가 잉여로 잡혀 잔차. 알려진 세트는 최대 세트수로 캡한다.
+// ⚠️ 일부 세트는 넥슨 API가 실제 인게임 최대 세트수보다 큰 "팬텀 티어"를 포함한다(도전자의 장비 세트는
+//   방어구7+무기1=8을 세지만 인게임 최대는 7). 알려진 세트는 최대 세트수로 캡한다.
 const SET_MAX_COUNT: [namePrefix: string, max: number][] = [
   ['도전자의 장비 세트', 7],
 ];
@@ -51,7 +48,6 @@ export function collectSet(us: UserStat, setEffect: any[] | undefined): void {
 
 // ── 심볼 (symbol-equipment의 symbol[]) ─────────────────────────────
 // 아케인/어센틱 심볼 깡 주스탯은 스탯%(주스탯%)를 받지 않고 최종에 그대로 가산 → flatNoPct.
-// 실측 재구성으로 확인: 심볼을 flat(스탯% 적용)에 넣으면 LUK가 약 2배로 튄다.
 export function collectSymbol(us: UserStat, symbols: any[] | undefined): void {
   for (const s of symbols ?? []) {
     us.flatNoPct.STR += num(s.symbol_str); us.flatNoPct.DEX += num(s.symbol_dex);
@@ -67,14 +63,13 @@ export function collectHyper(us: UserStat, preset: any[] | undefined): void {
 }
 
 // ── 어빌리티 (ability의 ability_info[]) ────────────────────────────
-// ability_value 텍스트. 대부분 데미지/크확 계열(조건부 포함) — 일단 무조건형만 파서가 잡는다.
+// ability_value 텍스트. 대부분 데미지/크확 계열.
 export function collectAbility(us: UserStat, abilityInfo: any[] | undefined): void {
   for (const a of abilityInfo ?? []) accumIncrease(us, a.ability_value);
 }
 
 // ── 베이스/AP 주스탯 (stat의 final_stat 맵) ────────────────────────
 // "AP 배분 LUK" = 유저가 찍은 AP. 캐릭터 순수 주스탯의 근간(스탯% 적용 대상) → flat.
-// 이름표: statMap['AP 배분 LUK'] 등. 직업 이니셜 +4 등 잔여는 재구성 검증에서 확인.
 export function collectBaseAP(us: UserStat, statMap: Record<string, number>): void {
   us.flat.STR += statMap['AP 배분 STR'] ?? 0;
   us.flat.DEX += statMap['AP 배분 DEX'] ?? 0;
@@ -91,8 +86,7 @@ export function collectTitle(us: UserStat, equip: any): void {
 
 // ── 유니온 (/user/union-raider) ────────────────────────────────────
 // 공격대원효과(union_raider_stat): 깡 주스탯이 스탯% 안 받음 → noPct.
-// 점령효과(union_occupied_stat): 스탯% 받음 → flat.
-// 전투 스탯(union_state_stat, 신규): 주스탯 깡이 스탯% 받는 것으로 가정(scouter abs 대조와 일치) → flat. 잔차로 검증.
+// 점령효과(union_occupied_stat)·전투 스탯(union_state_stat): 스탯% 받음 → flat.
 export function collectUnion(us: UserStat, raider: any): void {
   for (const line of raider?.union_raider_stat ?? []) accumIncrease(us, line, true);
   for (const line of raider?.union_occupied_stat ?? []) accumIncrease(us, line, false);
@@ -100,32 +94,27 @@ export function collectUnion(us: UserStat, raider: any): void {
 }
 
 // ── 유니온 아티팩트 (/user/union-artifact) ─────────────────────────
-// union_artifact_effect[].name = "올스탯 150 증가" 류 텍스트. 주스탯/올스탯 깡은 스탯% 받는 것으로 가정 → flat.
+// union_artifact_effect[].name = "올스탯 150 증가" 류 텍스트. 주스탯/올스탯 깡은 스탯% 받음 → flat.
 export function collectArtifact(us: UserStat, artifact: any): void {
   for (const e of artifact?.union_artifact_effect ?? []) accumIncrease(us, e?.name, false);
 }
 
 // ── 유니온 챔피언 뱃지 (/user/union-champion) ──────────────────────
-// champion_badge_total_info[].stat = "올스탯 100, 최대 HP/MP 5000 증가" 류 — 상시 패시브, 넥슨 resting 포함
-// (티엘 실측: 보공 25가 잔차와 정확히 일치). 올스탯은 스탯% 받는 flat으로 가정.
-// 챔피언의 가호(코인 소모 30분 버프)는 별개 — 수치가 API에 없어 미수집(잔차로 추적 중).
+// champion_badge_total_info[].stat = "올스탯 100, 최대 HP/MP 5000 증가" 류 — 상시 패시브. 올스탯은 flat.
+// 챔피언의 가호(코인 소모 30분 버프)는 수치가 API에 없어 미수집.
 export function collectChampion(us: UserStat, champion: any): void {
   for (const e of champion?.champion_badge_total_info ?? []) accumIncrease(us, e?.stat, false);
 }
 
 // ── 성향 (/character/propensity) ───────────────────────────────────
-// 카리스마 → 몬스터 방어율 무시(100렙 10%): 넥슨 방무 필드에 포함 (오유찬 방무 잔차 0 실측).
-// 통찰력 → 크확은 수집하지 않는다 — 오유찬 실측에서 넥슨 크확 필드에 미포함(넣으면 +10 초과, 빼면 정확).
-// (의지=HP·상태이상내성, 감성=버프지속 등은 데미지 무관이라 생략 — 데벤 HP 계산 붙일 때 의지 추가.)
+// 카리스마 → 몬스터 방어율 무시(100렙 10%). 통찰력→크확은 넥슨 크확 필드에 이미 포함돼 있어 중복 수집하지 않는다.
 export function collectPropensity(us: UserStat, propensity: any): void {
   const charisma = num(propensity?.charisma_level);
   if (charisma) us.ignoreDef.push(charisma * 0.1);
 }
 
-// ── 챌린저스 서버 상시 버프 (모든 챌린저스 캐릭터 고정 = resting 포함) ────────
-// 넥슨 API에 개별 항목이 없어 인게임 버프 툴팁 실측값을 하드코딩(챌린저스 서버 한정, 고정값).
-//   올스탯100·공마80·보공70·방무70·크확30·크뎀40
-// 올스탯은 스탯% 받는 flat(allFlat)으로 가정 — 잔차로 검증한다.
+// ── 챌린저스 서버 상시 버프 (모든 챌린저스 캐릭터 고정) ────────
+// 넥슨 API에 개별 항목이 없어 인게임 버프 툴팁 값을 하드코딩한다. 올스탯은 flat(allFlat).
 export function collectChallenger(us: UserStat): void {
   us.allFlat += 100;
   us.atk += 80;
@@ -137,9 +126,8 @@ export function collectChallenger(us: UserStat): void {
 }
 
 // ── 버닝 BEYOND / 하이퍼 버닝 MAX 이벤트 버프 ─────────────────────────────────
-// 옵트인(지정 캐릭터만) + 상호배타. 효과가 "스킬창에 표시되지 않음" → /skill API에 수치 없음.
-// 수치는 인게임 버프 툴팁 실측 고정(BURNING_TOOLTIP, 두 스킬 동일) — 이벤트 개편 시 갱신 필요.
-// 스킬 보유 여부(hasBurning)로만 게이팅하고 잔차로 검증한다. 챌린저스 상시버프와 별개 소스라 합치지 말 것.
+// 효과가 스킬창에 표시되지 않아 /skill API에 수치가 없으므로 인게임 버프 툴팁 값을 하드코딩한다(두 스킬 동일).
+// 스킬 보유 여부(hasBurning)로만 게이팅한다 — 이벤트 개편 시 갱신 필요.
 export interface BurningBeyond { allStat?: number; atk?: number; matk?: number; bossDmg?: number; ignoreDef?: number; critRate?: number; critDmg?: number; }
 export const BURNING_TOOLTIP: BurningBeyond = { allStat: 30, atk: 30, matk: 30, bossDmg: 20, ignoreDef: 20 };
 export function hasBurning(skills: Record<string, { skill_name?: string }[]> | undefined): boolean {

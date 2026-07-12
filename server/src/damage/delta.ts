@@ -1,6 +1,6 @@
 // 장비 교체 → 최종 데미지 증감률(D_after/D_before − 1).
-// 매물 파싱은 구 hwansan2의 검증된 파서(fromAuctionRaw·optionDict·sets)를 재사용하되,
-// 계산은 StatBlock으로 정규화해 block.ts의 가산/반전 규칙 + combat.ts의 로컬 D 공식으로 한다.
+// 매물 파싱은 hwansan2의 파서(fromAuctionRaw·optionDict·sets)를 재사용하고, 계산은 StatBlock으로
+// 정규화해 block.ts의 가산/반전 규칙 + combat.ts의 로컬 D 공식으로 한다.
 // 현재 장착템 스탯은 별도 파싱 없이 단일 진실 원천(collected.stats.장비)의 블록을 그대로 쓴다.
 import { fromAuctionRaw, type ItemStats, type Stat4 } from '../hwansan2/axes.js';
 import { parseOptionLine } from '../hwansan2/optionDict.js';
@@ -77,7 +77,7 @@ export function swapDamageDelta(
   const unknown = new Set([...unknownLines(cur), ...nextStats.unknown]);
   const newName = String(newItemRaw?.itemName ?? '');
 
-  // 제네시스 무기 해방 효과(최종뎀 +10) — 구 swap.ts와 동일 정책 (해방 여부 미제공 → 제네시스면 해방 간주)
+  // 제네시스 무기 해방 효과(최종뎀 +10). 해방 여부가 API에 없어 제네시스면 해방으로 간주한다.
   if (slot === '무기') {
     if (/^제네시스 /.test(String(cur.item_name ?? ''))) curBlock.최종뎀 = [...(curBlock.최종뎀 ?? []), 10];
     if (/^제네시스 /.test(newName)) newBlock.최종뎀 = [...(newBlock.최종뎀 ?? []), 10];
