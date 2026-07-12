@@ -174,3 +174,19 @@ export function collectBurning(us: UserStat, b?: BurningBeyond): void {
   us.critRate += b.critRate ?? 0;
   us.critDmg += b.critDmg ?? 0;
 }
+
+// ── 길드 스킬 (/guild/basic) ───────────────────────────────────────
+// "길드의 노하우" 등 지속시간 없는 상시 패시브의 공/마·보공 등만 resting에 반영한다.
+// "N분/초 동안" 지속버프(보스 킬링 머신·길드의 이름으로·크게 한방)는 액티브라 제외.
+// 일반 몬스터 데미지는 보스전 무관 → 제외. (꽈숩노 실측: 노하우 I/II/IV/VI 합 = 공/마 45)
+export function collectGuild(us: UserStat, guild: any): void {
+  const skills = [...(guild?.guild_skill ?? []), ...(guild?.guild_noblesse_skill ?? [])];
+  for (const s of skills) {
+    const eff = String(s?.skill_effect ?? '');
+    if (/\d+\s*(분|초)\s*동안/.test(eff)) continue; // 지속시간 있는 액티브 버프 제외
+    for (const line of eff.split('\n')) { // 줄 단위. 콤마 결합("공격력 30, 마력 30 증가")은 accumIncrease가 처리.
+      if (line.includes('일반 몬스터') || line.includes('받는 피해')) continue; // 보스 무관/미모델
+      accumIncrease(us, line);
+    }
+  }
+}
