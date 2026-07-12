@@ -1,6 +1,3 @@
-// 스탯 수집 진단 CLI: pnpm tsx server/src/damage/cli.ts [닉네임]
-// CharacterStats(소스별 블록)를 조립해 소스별 기여를 출력한다.
-// 넥슨 API 원본은 디스크에 캐시(.nexon-raw-<닉>.json) — 재실행 시 API를 다시 쏘지 않고 재집계만 한다.
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { fetchCharacterRaw, aggregateCharacter, type RawBundle } from './nexon.js';
 import { emptyUserStat, type UserStat } from './statSheet.js';
@@ -14,10 +11,14 @@ if (!process.env.NEXON_DEVELOPER_KEY) {
       const i = line.indexOf('=');
       if (i > 0 && !line.startsWith('#')) process.env[line.slice(0, i).trim()] = line.slice(i + 1).trim();
     }
-  } catch { /* .env 없으면 무시 */ }
+  } catch { /* ignore */ }
 }
 
-const name = process.argv[2] ?? '오유찬';
+const name = process.argv[2];
+if (!name) {
+  console.error('사용법: pnpm tsx server/src/damage/cli.ts <닉네임>');
+  process.exit(1);
+}
 const dumpPath = new URL(`../../../.nexon-raw-${name}.json`, import.meta.url);
 let bundle: RawBundle; let fetchWarnings: string[];
 if (existsSync(dumpPath)) {

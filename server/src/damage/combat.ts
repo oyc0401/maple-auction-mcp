@@ -1,16 +1,13 @@
-// 전투 스탯 시트 + 로컬 D(데미지 지표) 공식.
-// D는 절대값이 아니라 비율용 지표 — 직업 상수·숙련도 등 공통 배수는 D_after/D_before에서 상쇄된다.
 import type { UserStat, MainStat } from './statSheet.js';
 import type { CharacterCollected } from './nexon.js';
 
-// 직업별 스탯 축. 이중부스탯(카데나·듀얼블레이드·섀도어): sub=DEX, ssub=STR. 데몬어벤져=HP축, 제논=3스탯 합.
 const DOUBLE_SUB = new Set(['카데나', '듀얼블레이드', '섀도어']);
 const SUB_OF: Record<MainStat, MainStat> = { STR: 'DEX', DEX: 'STR', INT: 'LUK', LUK: 'DEX' };
 
 export type StatAxes =
   | { kind: 'standard'; main: MainStat; sub: MainStat; ssub: MainStat | null; isMagic: boolean }
-  | { kind: 'da' }     // 데몬어벤져: HP 주스탯 + sub STR (HP/3.5 환산 — 미검증, 노트 표기)
-  | { kind: 'xenon' }; // 제논: STR+DEX+LUK 합 (합산 스케일은 비율에서 상쇄)
+  | { kind: 'da' }
+  | { kind: 'xenon' };
 
 export function statAxesOf(myClass: string, finalMain: Record<string, number>): StatAxes {
   if (myClass === '데몬어벤져') return { kind: 'da' };
@@ -29,10 +26,10 @@ export interface CombatStats {
   myClass: string;
   level: number;
   axes: StatAxes;
-  us: UserStat;             // 전투 합산 버킷
-  critRateTotal: number;    // 총 크확 (공통 베이스 포함, 크리인포 전환의 입력)
-  critReinforcePct: number; // 크리티컬 리인포스: 크확의 N%를 크뎀으로 전환 — 그 N (미보유 0)
-  notes: string[];          // 계산 주의사항 (미검증 축 등)
+  us: UserStat;
+  critRateTotal: number;
+  critReinforcePct: number;
+  notes: string[];
 }
 
 export function buildCombatStats(collected: CharacterCollected): CombatStats {
@@ -51,7 +48,6 @@ const statFinal = (us: UserStat, k: MainStat) =>
   Math.floor((us.flat[k] + us.allFlat) * (1 + (us.pct[k] + us.allPct) / 100)) + us.flatNoPct[k];
 const hpFinal = (us: UserStat) => Math.floor(us.hpFlat * (1 + us.hpPct / 100)) + us.hpFlatNoPct;
 
-// 스탯팩터: 4×주스탯 + 부스탯(+제2부스탯). 데벤은 HP/3.5를 주스탯으로 환산(커뮤니티 공식, 미검증).
 function statFactor(cs: CombatStats, us: UserStat): number {
   const ax = cs.axes;
   if (ax.kind === 'da') return 4 * Math.floor(hpFinal(us) / 3.5) + statFinal(us, 'STR');
@@ -60,22 +56,19 @@ function statFactor(cs: CombatStats, us: UserStat): number {
 }
 
 export interface DamageOpts {
-  bossDef: number;          // 보스 방어율 (3.0 = 300%, 3.8 = 380%)
-  critRateDelta?: number;   // 아이템 교체로 인한 크확 변화 (크리인포 전환 입력에 반영)
+  bossDef: number;
+  critRateDelta?: number;
 }
 
-// D = 스탯팩터 × 공격력 × 뎀팩터 × 크리팩터 × 방무팩터 × 최종뎀. usOverride는 교체 적용본.
 export function damageOf(cs: CombatStats, opts: DamageOpts, usOverride?: UserStat): number {
   const us = usOverride ?? cs.us;
   const isMagic = cs.axes.kind === 'standard' && cs.axes.isMagic;
   const atk = Math.floor((isMagic ? us.matk : us.atk) * (1 + (isMagic ? us.matkPct : us.atkPct) / 100));
-  const dmgFactor = 1 + (us.damage + us.bossDmg + us.statusDmg) / 100; // 추가뎀은 보스전 상시 발동으로 본다
-  // 크리인포는 전환 후 크뎀으로 반영한다. 크확 100% 가동으로 보므로 가동률 계수는 없다.
-  // 공통 베이스 크뎀(35)은 기본 블록에서 이미 합산돼 있다.
+  const dmgFactor = 1 + (us.damage + us.bossDmg + us.statusDmg) / 100;
   const critRate = cs.critRateTotal + (opts.critRateDelta ?? 0);
   const critDmg = us.critDmg + (critRate * cs.critReinforcePct) / 100;
   const critFactor = 1 + critDmg / 100;
-  const iedRemain = us.ignoreDef.reduce((a, v) => a * (1 - v / 100), 1); // ∏(1−vᵢ)
+  const iedRemain = us.ignoreDef.reduce((a, v) => a * (1 - v / 100), 1);
   const defFactor = Math.max(0, 1 - opts.bossDef * iedRemain);
   const finalFactor = us.finalDmg.reduce((a, v) => a * (1 + v / 100), 1);
   return statFactor(cs, us) * atk * dmgFactor * critFactor * defFactor * finalFactor;

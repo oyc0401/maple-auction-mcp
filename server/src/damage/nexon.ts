@@ -1,7 +1,3 @@
-// 넥슨 오픈 API 클라이언트 (환산/데미지 계산용 캐릭터 스탯 조회).
-// 경매장 API(브릿지/확장)와 달리 공개 API + 개발자 키 인증이라 서버가 직접 호출한다.
-// 키는 NEXON_DEVELOPER_KEY(.env). 없으면 환산 기능만 비활성(검색은 정상).
-// 레이트리밋이 약해 순차 호출 + 429 지수 백오프. 캐릭터당 프로세스 생존 동안 캐시.
 import type { UserStat } from './statSheet.js';
 import type { CharacterStats } from './stat-interface.js';
 import type { SkillsByGrade } from './skillPassive.js';
@@ -28,41 +24,36 @@ async function getJson(path: string, params: Record<string, string>, key: string
   }
 }
 
-// 캐릭터 최종 종합 스탯(검증 오라클) + 직업.
 export interface CharFinal {
   characterName: string;
   characterClass: string;
   level: number;
-  finalMain: Record<string, number>; // STR/DEX/INT/LUK/HP 최종값
-  statAtkMin: number; statAtkMax: number; // 최소/최대 스탯공격력
-  raw: Record<string, number>;       // final_stat 전체 맵
+  finalMain: Record<string, number>;
+  statAtkMin: number; statAtkMax: number;
+  raw: Record<string, number>;
 }
 
 export interface CharacterCollected {
   final: CharFinal;
-  stats: CharacterStats;  // 소스별 StatBlock — 단일 진실 원천
-  userStat: UserStat;     // stats를 flatten한 계산용 버킷 (재구성 대조 대상)
-  warnings: string[]; // 조회 실패한 소스 (best-effort — 있으면 그 스탯이 누락됨)
-  raw: Record<string, any>; // 진단용 원본 응답 (base/gear/set/symbol/hyper/ability/union)
+  stats: CharacterStats;
+  userStat: UserStat;
+  warnings: string[];
+  raw: Record<string, any>;
 }
 
-// 캐릭터 조회 캐시: TTL 10분 + in-flight dedupe.
-// 캐릭터당 1스윕(~20콜)이 레이트리밋에 치명적이라, 동시·연속 요청이 절대 중복 스윕을 만들지 않게 한다.
 const CACHE_TTL_MS = 10 * 60 * 1000;
 const cache = new Map<string, { at: number; data: CharacterCollected }>();
 const inFlight = new Map<string, Promise<CharacterCollected>>();
 export function clearNexonCache() { cache.clear(); inFlight.clear(); }
 
-// 넥슨 API 원본 응답 묶음 — 집계(aggregate)와 분리해 디스크 캐시/재집계가 가능하도록.
 export interface RawBundle {
   stat: any; basic: any;
   equip: any; setEff: any; symbol: any; hyper: any; ability: any; link: any; union: any; artifact: any;
   champion: any; propensity: any;
   skills: SkillsByGrade; hexa: any;
-  guild?: any; cash?: any; // 구캐시(.nexon-raw)엔 없을 수 있음 — optional
+  guild?: any; cash?: any;
 }
 
-// 닉네임 → 전 소스 순차 조회(레이트리밋 준수). API를 실제로 쏘는 유일한 지점.
 export async function fetchCharacterRaw(characterName: string): Promise<{ raw: RawBundle; warnings: string[] }> {
   const key = nexonApiKey();
   if (!key) throw new Error('NEXON_DEVELOPER_KEY 미설정');
@@ -70,10 +61,8 @@ export async function fetchCharacterRaw(characterName: string): Promise<{ raw: R
   const { ocid } = await getJson('/id', { character_name: characterName }, key);
   if (!ocid) throw new Error(`캐릭터를 찾지 못했습니다: ${characterName}`);
 
-  // 순차 호출(레이트리밋). 각 호출 사이 짧은 간격. (테스트는 NEXON_GAP_MS=0으로 무대기)
   const gap = () => sleep(Number(process.env.NEXON_GAP_MS ?? 250));
   const warnings: string[] = [];
-  // stat은 필수(검증 오라클). 나머지는 best-effort — 실패하면 그 스탯만 누락하고 경고.
   const stat = await getJson('/character/stat', { ocid }, key); await gap();
   const basic = await getJson('/character/basic', { ocid }, key).catch(() => ({})); await gap();
   const opt = async (label: string, path: string, extra: Record<string, string> = {}) => {
@@ -86,19 +75,17 @@ export async function fetchCharacterRaw(characterName: string): Promise<{ raw: R
   const hyper = await opt('하이퍼스탯', '/character/hyper-stat');
   const ability = await opt('어빌리티', '/character/ability');
   const link = await opt('링크스킬', '/character/link-skill');
-  const union = await opt('유니온', '/user/union-raider'); // 유니온은 /user/ 경로 (character 아님)
+  const union = await opt('유니온', '/user/union-raider');
   const artifact = await opt('유니온 아티팩트', '/user/union-artifact');
-  const champion = await opt('유니온 챔피언', '/user/union-champion'); // 챔피언 뱃지 (resting 포함)
-  const propensity = await opt('성향', '/character/propensity');      // 카리스마=방무, 통찰력=크확
-  // 스킬 패시브: 0~5차만(하이퍼패시브·6차 액티브 제외, 6차 HEXA는 hexamatrix-stat). best-effort.
+  const champion = await opt('유니온 챔피언', '/user/union-champion');
+  const propensity = await opt('성향', '/character/propensity');
   const skills: SkillsByGrade = {};
   for (const grade of ['0', '1', '2', '3', '4', '5']) {
     const r = await opt(`스킬${grade}차`, '/character/skill', { character_skill_grade: grade });
     if (r) skills[grade] = r.character_skill ?? [];
   }
   const hexa = await opt('HEXA스탯', '/character/hexamatrix-stat');
-  const cash = await opt('캐시장비', '/character/cashitem-equipment'); // 하이퍼 버닝 치장 등 능력치 캐시장비
-  // 길드 스킬(길드의 노하우 등 상시 공/마 패시브) — /character/skill엔 없어 /guild로 별도 조회.
+  const cash = await opt('캐시장비', '/character/cashitem-equipment');
   let guild: any = null;
   if (basic?.character_guild_name && basic?.world_name) {
     try {
@@ -110,7 +97,6 @@ export async function fetchCharacterRaw(characterName: string): Promise<{ raw: R
   return { raw: { stat, basic, equip, setEff, symbol, hyper, ability, link, union, artifact, champion, propensity, skills, hexa, guild, cash }, warnings };
 }
 
-// 원본 응답 묶음 → CharacterStats(소스별 진실 원천) → flatten(UserStat). API 호출 없음(디스크 캐시 재집계 가능).
 export function aggregateCharacter(characterName: string, bundle: RawBundle, warnings: string[]): CharacterCollected {
   const { stat, basic, equip, setEff, symbol, hyper, ability, union, skills, hexa } = bundle;
   const m = statMapOf(stat.final_stat);
@@ -137,7 +123,6 @@ export function aggregateCharacter(characterName: string, bundle: RawBundle, war
   return collected;
 }
 
-// 닉네임 → 조회 + 집계. TTL 캐시 + 동시 요청은 진행 중 Promise 공유(중복 스윕 방지).
 export async function collectCharacter(characterName: string): Promise<CharacterCollected> {
   const hit = cache.get(characterName);
   if (hit && Date.now() - hit.at < CACHE_TTL_MS) return hit.data;

@@ -1,5 +1,3 @@
-// StatBlock(stat-interface) ↔ UserStat 변환의 단일 통로.
-// StatBlock은 소스별 진실 원천(한글 키·희소), UserStat은 계산용 누적 버킷 — 두 표현의 결합 규칙을 여기서만 안다.
 import type { StatBlock, CharacterStats } from './stat-interface.js';
 import { emptyUserStat, type UserStat, type MainStat } from './statSheet.js';
 
@@ -7,7 +5,6 @@ export const MAIN: MainStat[] = ['STR', 'DEX', 'INT', 'LUK'];
 
 type Rec = Record<string, number | number[]>;
 
-// UserStat → StatBlock (0인 필드는 생략)
 export function toBlock(u: UserStat): StatBlock {
   const b: Rec = {};
   for (const k of MAIN) if (u.flat[k]) b[k] = u.flat[k];
@@ -34,14 +31,12 @@ export function toBlock(u: UserStat): StatBlock {
 
 export const isEmptyBlock = (b: StatBlock): boolean => Object.keys(b).length === 0;
 
-// 수집 파서(UserStat 뮤테이터)를 소스 단위로 돌려 StatBlock으로 뽑는다.
 export function blockOf(fn: (u: UserStat) => void): StatBlock {
   const u = emptyUserStat();
   fn(u);
   return toBlock(u);
 }
 
-// StatBlock → UserStat 가산. 레벨당X는 인터페이스 규약(9레벨 주기)대로 floor(level/9)×M.
 export function addBlock(u: UserStat, b: StatBlock, level: number): void {
   const r = b as Rec;
   for (const k of MAIN) {
@@ -69,8 +64,6 @@ export function addBlock(u: UserStat, b: StatBlock, level: number): void {
   u.hpPct += (r['HP%'] as number) ?? 0;
 }
 
-// 교체 계산용 부호 반전. 가산 필드는 −v, 곱연산(방무·최종뎀)은 정확한 역수 계수로.
-// 방무 100%는 역수가 없어(0으로 나눔) 제거 불가 — 현실에 없는 값이라 스킵.
 export function negateBlock(b: StatBlock): StatBlock {
   const out: Rec = {};
   for (const [k, v] of Object.entries(b as Rec)) {
@@ -81,13 +74,9 @@ export function negateBlock(b: StatBlock): StatBlock {
   return out as StatBlock;
 }
 
-// StatBlock(값이 number|number[]) vs 블록 묶음(값이 객체) 판별. 빈 객체는 어느 쪽으로 봐도 무해.
 const isBlock = (v: object): boolean =>
   Object.values(v).every((x) => typeof x === 'number' || Array.isArray(x));
 
-// CharacterStats 전체 → UserStat. 소스 구조(단일 블록/블록 묶음)를 모양으로 판별해 전부 가산한다.
-// 메이플용사(N%)는 "직접 찍은 스탯"=AP 블록의 주스탯 × N%를 깡(flat)으로 환산(floor, 스탯별 개별 내림).
-// 크리티컬리인포스는 스탯 합산이 아니라 D 계산 최종 단계의 전환이라 여기서 다루지 않는다(combat.ts).
 export function flattenStats(cs: CharacterStats, level: number): UserStat {
   const us = emptyUserStat();
   for (const v of Object.values(cs)) {

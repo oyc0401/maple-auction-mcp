@@ -1,7 +1,3 @@
-// 장비 교체 → 최종 데미지 증감률(D_after/D_before − 1).
-// 매물 파싱은 hwansan2의 파서(fromAuctionRaw·optionDict·sets)를 재사용하고, 계산은 StatBlock으로
-// 정규화해 block.ts의 가산/반전 규칙 + combat.ts의 로컬 D 공식으로 한다.
-// 현재 장착템 스탯은 별도 파싱 없이 단일 진실 원천(collected.stats.장비)의 블록을 그대로 쓴다.
 import { fromAuctionRaw, type ItemStats, type Stat4 } from '../hwansan2/axes.js';
 import { parseOptionLine } from '../hwansan2/optionDict.js';
 import { setSwapStatsByNames, normalizeSet } from '../hwansan2/sets.js';
@@ -11,9 +7,6 @@ import { SLOT_KEY } from './character.js';
 import { addBlock, negateBlock } from './block.js';
 import { damageOf, type CombatStats } from './combat.js';
 
-// hwansan2 ItemStats → StatBlock 어댑터. 방무는 곱연산 계수(iedFactor)를 (1−v/100)=f가 되는 합성 소스 v
-// 하나로 옮긴다. f>1이면 v가 음수가 되므로 세트 델타처럼 부호가 섞인 입력도 정확히 표현된다.
-// dmgBoss는 데미지%와 보공%의 합인데 D 공식에서 두 항이 같은 자리에 더해지므로 보공 한 칸에 싣는다.
 export function itemStatsToBlock(s: ItemStats): StatBlock {
   const b: Record<string, number | number[]> = {};
   for (const k of ['STR', 'DEX', 'INT', 'LUK'] as Stat4[]) {
@@ -37,7 +30,6 @@ export function itemStatsToBlock(s: ItemStats): StatBlock {
   return b as StatBlock;
 }
 
-// 장착템 옵션 라인 중 optionDict가 모르는 문구 (매물 쪽 unknown과 합쳐 사용자에게 노출)
 const POTENTIAL_KEYS = [
   'potential_option_1', 'potential_option_2', 'potential_option_3',
   'additional_potential_option_1', 'additional_potential_option_2', 'additional_potential_option_3',
@@ -52,14 +44,13 @@ function unknownLines(item: any): string[] {
 }
 
 export interface SwapResult {
-  delta380: number; // 보스 방어율 380% 기준 증감률 % (예: +2.31)
+  delta380: number;
   unknown: string[];
 }
 
-const round2 = (v: number) => Math.round(v * 100) / 100 || 0; // 곱연산 역수 계산의 부동소수점 잔재로 생기는 −0을 0으로 정규화
+const round2 = (v: number) => Math.round(v * 100) / 100 || 0;
 const num = (b: StatBlock, k: string) => ((b as Record<string, number>)[k] ?? 0);
 
-// 현재 slot 장비를 경매장 매물로 교체할 때의 최종 데미지 증감률.
 export function swapDamageDelta(
   collected: CharacterCollected,
   cs: CombatStats,
@@ -77,13 +68,11 @@ export function swapDamageDelta(
   const unknown = new Set([...unknownLines(cur), ...nextStats.unknown]);
   const newName = String(newItemRaw?.itemName ?? '');
 
-  // 제네시스 무기 해방 효과(최종뎀 +10). 해방 여부가 API에 없어 제네시스면 해방으로 간주한다.
   if (slot === '무기') {
     if (/^제네시스 /.test(String(cur.item_name ?? ''))) curBlock.최종뎀 = [...(curBlock.최종뎀 ?? []), 10];
     if (/^제네시스 /.test(newName)) newBlock.최종뎀 = [...(newBlock.최종뎀 ?? []), 10];
   }
 
-  // 세트 델타: 교체 전/후 이름 목록으로 각각 countSets(럭키 재판정 포함). 여명 전환 수는 넥슨 set-effect에서.
   const names = equips.map((e) => String(e.item_name ?? ''));
   const idx = equips.findIndex((e) => e.item_equipment_slot === slot);
   const namesAfter = [...names];
@@ -94,7 +83,6 @@ export function swapDamageDelta(
   if (officialNewSet) setOpts.aliases[newName] = officialNewSet;
   const setDeltaBlock = itemStatsToBlock(setSwapStatsByNames(names, namesAfter, setOpts));
 
-  // 교체 적용본 = 현재 버킷 + 새 매물 + 세트델타 − 현재 장착템 (곱연산은 negateBlock이 역수 계수로 처리)
   const usAfter = structuredClone(cs.us);
   addBlock(usAfter, newBlock, cs.level);
   addBlock(usAfter, setDeltaBlock, cs.level);
