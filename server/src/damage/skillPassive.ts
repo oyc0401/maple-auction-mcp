@@ -1,13 +1,9 @@
-// 스킬 패시브 → UserStat. 직업별로 상시 유지로 취급하는 패시브·버프만, 지정 스탯 라인만 파싱한다.
-// 값은 skill_effect(현재 레벨 수치)에서 뽑으므로 스킬레벨 증가 효과로 만렙을 넘어도 반영된다.
-// 등재 기준과 절차는 fill-job-passives 스킬 참고.
 import type { UserStat } from './statSheet.js';
-import { apply } from './parse.js';
+import { apply, accumIncrease } from './parse.js';
 
 export interface SkillEntry { skill_name: string; skill_level: number; skill_effect: string }
-export type SkillsByGrade = Record<string, SkillEntry[]>; // '0'..'6','hyperpassive'
+export type SkillsByGrade = Record<string, SkillEntry[]>;
 
-// effect 문자열에서 "이름 [+]값[%]" 첫 매치의 값. 없으면 null.
 function pick(effect: string, name: string): { val: number; pct: boolean } | null {
   const re = new RegExp(name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\s*\\+?\\s*(-?\\d+(?:\\.\\d+)?)\\s*(%?)');
   const m = effect.match(re);
@@ -21,18 +17,14 @@ function pickInto(us: UserStat, eff: string, picks: { find: string; as?: string 
   }
 }
 
-// 직업별 규칙: grade → (skill_name → 뽑을 스탯 라인).
-// bracket=true: 액티브 스킬 effect 안의 "[패시브 효과 : …]" 브래킷 내부에서만 뽑는다 —
-// 본문에 같은 스탯명이 조건부 수치로 먼저 나오는 스킬의 오매치 방지.
 type Rule = { picks: { find: string; as?: string }[]; bracket?: boolean };
-type JobRules = Record<string, Record<string, Rule>>; // grade → skillName → rule
+type JobRules = Record<string, Record<string, Rule>>;
 
-// 직업 공통 규칙 — 0차(비기너/이벤트/연합 스킬)와 5차 쓸만한 시리즈. 보유하지 않으면 스킬명이 안 나와 자동 무시.
 const COMMON: JobRules = {
   '0': {
     '연합의 의지': { picks: [{ find: '힘' }, { find: '민첩' }, { find: '지능' }, { find: '행운' }, { find: '공격력' }, { find: '마력' }] },
     '여제의 축복': { picks: [{ find: '공격력' }, { find: '마력' }] },
-    '정령의 축복': { picks: [{ find: '공격력' }, { find: '마력' }] }, // 여제의 축복과 중복 불가 — 높은 쪽 1개만(character.ts blessSkip에서 판정, 유저 확인 2026-07-12)
+    '정령의 축복': { picks: [{ find: '공격력' }, { find: '마력' }] },
     '익스클루시브 스펠': { picks: [{ find: '공격력, 마력' }] },
     '영웅의 메아리': { picks: [{ find: '공격력, 마력' }] },
     '초월 : 최초의 유산': { picks: [{ find: '공격력' }] },
@@ -62,11 +54,11 @@ const CADENA: JobRules = {
   },
   '4': {
     '웨폰 엑스퍼트': { picks: [{ find: '공격력' }, { find: '크리티컬 확률' }, { find: '크리티컬 데미지' }] },
-    '퀵서비스 마인드 Ⅱ': { picks: [{ find: '공격력' }, { find: '크리티컬 데미지' }, { find: '크리티컬 확률' }, { find: '보스 공격 시 데미지', as: '보스 몬스터 데미지' }] }, // Ⅰ과 합산
+    '퀵서비스 마인드 Ⅱ': { picks: [{ find: '공격력' }, { find: '크리티컬 데미지' }, { find: '크리티컬 확률' }, { find: '보스 공격 시 데미지', as: '보스 몬스터 데미지' }] },
     '위크포인트 컨버징 어택': { picks: [{ find: '크리티컬 확률' }, { find: '크리티컬 데미지' }] },
   },
   '5': {
-    '레디 투 다이': { picks: [{ find: '공격력' }] }, // 공격력 패시브만, 최종뎀 제외
+    '레디 투 다이': { picks: [{ find: '공격력' }] },
   },
 };
 
@@ -94,7 +86,6 @@ const BOWMASTER: JobRules = {
   },
 };
 
-// 캡틴 — 액티브·조건부(럭키/더블럭키 다이스, 파이렛 스타일, 오펜스 폼, 크루 소환 중 보너스)는 미반영.
 const CAPTAIN: JobRules = {
   '1': {
     '크리티컬 로어': { picks: [{ find: '크리티컬 확률' }, { find: '크리티컬 데미지' }] },
@@ -107,11 +98,11 @@ const CAPTAIN: JobRules = {
   },
   '3': {
     '할로포인트 불릿': { picks: [{ find: '공격력' }] },
-    '풀메탈 자켓': { picks: [{ find: '최종 데미지' }, { find: '크리티컬 확률' }, { find: '몬스터 방어율', as: '방어율 무시' }] }, // "몬스터 방어율 20% 무시" 어순이라 '몬스터 방어율'로 수치를 잡는다
+    '풀메탈 자켓': { picks: [{ find: '최종 데미지' }, { find: '크리티컬 확률' }, { find: '몬스터 방어율', as: '방어율 무시' }] },
   },
   '4': {
     '컨티뉴얼 에이밍': { bracket: true, picks: [{ find: '최종 데미지' }, { find: '크리티컬 데미지' }] },
-    '크루 커맨더십': { bracket: true, picks: [{ find: '크리티컬 데미지' }] }, // 본문 크뎀은 선원 소환 중 조건부라 브래킷만
+    '크루 커맨더십': { bracket: true, picks: [{ find: '크리티컬 데미지' }] },
     '캡틴 디그니티': { picks: [{ find: '최종 데미지' }, { find: '공격력' }] },
   },
 };
@@ -120,7 +111,6 @@ const JOB_RULES: Record<string, JobRules> = { '카데나': CADENA, '보우마스
 
 const RE_PASSIVE_BRACKET = /\[패시브 효과\s*:\s*([^\]]+)\]/;
 
-// 5차 "[패시브 효과 : 올스탯 N]" / "[패시브 효과 : 공격력, 마력 N]" 브래킷 (직업 공통, 액티브에 붙은 패시브).
 function collectFifthBrackets(us: UserStat, grade5: SkillEntry[]): void {
   for (const s of grade5) {
     const m = s.skill_effect.match(RE_PASSIVE_BRACKET);
@@ -128,7 +118,6 @@ function collectFifthBrackets(us: UserStat, grade5: SkillEntry[]): void {
     const body = m[1];
     const all = pick(body, '올스탯');
     if (all) apply(us, '올스탯', all.val, all.pct);
-    // "공격력, 마력 30 증가"는 결합 표기 — 콤마 결합이면 양쪽에, 아니면 각각 개별 매치.
     const both = pick(body, '공격력, 마력');
     if (both) { apply(us, '공격력', both.val, both.pct); apply(us, '마력', both.val, both.pct); }
     else {
@@ -138,14 +127,10 @@ function collectFifthBrackets(us: UserStat, grade5: SkillEntry[]): void {
   }
 }
 
-// 펫 세트효과 스킬: 0차, 이름이 "… Lv.N"으로 끝난다. 세트 종류가 많아 열거 대신 패턴 매칭. 전부 중첩, 공/마만 파싱.
 const PET_SET_RE = /Lv\.?\s*\d+$/;
 const PET_SET_PICKS = [{ find: '공격력' }, { find: '마력' }];
 
-// ownedOverride: 스킬 일부만 담은 skills로 단건 재집계할 때(character.ts) 전체 보유 목록을 주입한다.
-// 쓸만한 게이팅은 룰 적용만 막고 5차 브래킷 패시브는 계속 집계해야 하므로 호출부에서 스킬을 미리 걸러내면 안 된다.
 export function collectSkillPassive(us: UserStat, job: string, skills: SkillsByGrade, ownedOverride?: Set<string>): void {
-  // 쓸만한 X(5차)는 본체 X 스킬과 중첩 불가 — 본체 보유 시 쓸만한 규칙을 스킵.
   const owned = ownedOverride ?? new Set<string>();
   if (!ownedOverride) for (const arr of Object.values(skills)) for (const s of arr) owned.add(s.skill_name);
   for (const rules of [COMMON, JOB_RULES[job]]) {
@@ -162,6 +147,18 @@ export function collectSkillPassive(us: UserStat, job: string, skills: SkillsByG
   }
   for (const s of skills['0'] ?? []) {
     if (PET_SET_RE.test(s.skill_name.trim())) pickInto(us, s.skill_effect, PET_SET_PICKS);
+  }
+  // 0차 동적 폴백: 명시 룰·펫 세트에 안 걸린 0차 스킬(달콤하담 등 열거 불가한 이벤트성 상시 패시브)의
+  // 능력치 증가 라인을 줄 단위로 파싱. "N분/초 동안" 지속버프 라인은 액티브라 제외.
+  // 환산 무관 문구(경험치·수영속도 등)는 apply가 조용히 무시. 결계의 핵 소환처럼 수치가 아이템에
+  // 있는 스킬은 effect에 능력치가 없어 아무것도 안 나온다(API 미노출 — 잔차로 드러남).
+  const ruled0 = new Set([...Object.keys(COMMON['0'] ?? {}), ...Object.keys(JOB_RULES[job]?.['0'] ?? {})]);
+  for (const s of skills['0'] ?? []) {
+    if (ruled0.has(s.skill_name) || PET_SET_RE.test(s.skill_name.trim())) continue;
+    for (const line of String(s.skill_effect ?? '').split('\n')) {
+      if (/\d+\s*(분|초)\s*동안/.test(line)) continue;
+      accumIncrease(us, line);
+    }
   }
   collectFifthBrackets(us, skills['5'] ?? []);
 }
