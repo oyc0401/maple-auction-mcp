@@ -73,29 +73,29 @@ export async function getCharacterStats(ocid: string): Promise<CharacterStats> {
 
   return {
     기본: { 크확: 5, 크뎀: 35 },
-    AP: getAP(stat),
-    장비: getGear(equip, basic.character_level),
-    세트효과: getSet(setEffect),
-    심볼: getSymbol(symbol),
-    하이퍼스탯: getHyper(hyper),
+    AP: getAP(stat), // 미완
+    장비: getGear(equip, basic.character_level), // 미완
+    세트효과: getSet(setEffect), // 미완
+    심볼: getSymbol(symbol), // 미완
+    하이퍼스탯: getHyper(hyper), // 미완
 
-    어빌리티: getAbility(ability),
-    유니온: getUnion(union),
-    아티팩트: getArtifact(artifact),
-    챔피언: getChampion(champion),
+    어빌리티: getAbility(ability), // 미완
+    유니온: getUnion(union), // 미완
+    아티팩트: getArtifact(artifact), // 미완
+    챔피언: getChampion(champion), // 미완
 
-    성향: getPropensity(propensity),
+    성향: getPropensity(propensity), // 미완
 
 
-    길드스킬: getGuild(guild),
-    캐시장비: getCash(cash),
-    링크스킬: getLink(link),
+    길드스킬: getGuild(guild), // 미완
+    캐시장비: getCash(cash), // 미완
+    링크스킬: getLink(link), // 미완
 
     메이플용사: getMapleWarrior(skill4),
     크리티컬리인포스: getCriticalReinforce(skill5),
     스킬_0차: getSkill0(skill0),
-    스킬: getSkill(skill1, skill2, skill3, skill4, hyperPassive, hyperActive, skill5),
-  헥사스탯: getHexaStat(hexa),
+    스킬: getSkill(skill1, skill2, skill3, skill4, hyperPassive, hyperActive, skill5), // 미완
+  헥사스탯: getHexaStat(hexa), // 미완
   };
 }
 

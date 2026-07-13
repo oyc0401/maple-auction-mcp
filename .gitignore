@@ -20,4 +20,5 @@ dev/
 MEMO.md
 
 *.json
+!biome.json
 server/src/scouter/

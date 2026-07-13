@@ -1,13 +1,25 @@
 import type { SkillRes } from '../../nexon/index.js';
 import type { SkillStats, StatBlock } from '../stat-interface.js';
 import {
+  COMMON,
   CRITICAL_REINFORCE_TEMPLATES,
   MAPLE_WARRIOR_TEMPLATES,
 } from './skill-db.js';
 import { parseMapleTemplates } from './template-parser.js';
 
-export function getSkill0(_skill: SkillRes): Record<string, StatBlock> {
-  throw new Error('TODO: getSkill0');
+export function getSkill0(skill0: SkillRes): Record<string, StatBlock> {
+  const result: Record<string, StatBlock> = {};
+  const rules = COMMON['0'];
+
+  for (const skill of skill0.character_skill) {
+    const templates = rules[skill.skill_name];
+    if (!templates) continue;
+
+    const { block } = parseMapleTemplates(skill.skill_effect, templates);
+    if (Object.keys(block).length > 0) result[skill.skill_name] = block;
+  }
+
+  return result;
 }
 
 // 등급 간 중복과 배타 규칙을 판단해야 하므로 1차 이후 응답을 함께 변환한다.

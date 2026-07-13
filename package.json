@@ -5,9 +5,13 @@
   "scripts": {
     "test": "vitest run",
     "typecheck": "tsc -b server extension shared || pnpm -r exec tsc --noEmit",
-    "build": "pnpm -r run build"
+    "build": "pnpm -r run build",
+    "lint": "biome lint .",
+    "format": "biome format --write .",
+    "check": "biome check --write ."
   },
   "devDependencies": {
+    "@biomejs/biome": "^2.5.3",
     "typescript": "^5.5.0",
     "vitest": "^2.0.0"
   }

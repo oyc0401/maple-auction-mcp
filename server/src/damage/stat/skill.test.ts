@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { SkillEntry, SkillGrade, SkillRes } from '../../nexon/index.js';
-import { getCriticalReinforce, getMapleWarrior } from './skill.js';
+import { getCriticalReinforce, getMapleWarrior, getSkill0 } from './skill.js';
 
 function createSkillRes(grade: SkillGrade, skills: Array<Partial<SkillEntry>>): SkillRes {
   return {
@@ -60,5 +60,54 @@ describe('특수 스킬 수치 변환', () => {
 
     expect(getMapleWarrior(skill4)).toBe(0);
     expect(getCriticalReinforce(skill5)).toBe(0);
+  });
+});
+
+describe('0차 스킬 수치 변환', () => {
+  it('등록된 0차 스킬을 스킬별 StatBlock으로 변환한다', () => {
+    const skill0 = createSkillRes('0', [
+      {
+        skill_name: '연합의 의지',
+        skill_effect: '힘 5, 민첩 5, 지능 5, 행운 5, 공격력 5, 마력 5 증가',
+      },
+      {
+        skill_name: '훈련 일지',
+        skill_effect: [
+          '공격력/마력 15 증가',
+          '보스 몬스터 공격 시 데미지 40% 증가',
+          '몬스터 방어율 무시 20% 증가',
+          '올스탯 30 증가',
+          '크리티컬 확률 10% 증가',
+        ].join('\n'),
+      },
+    ]);
+
+    expect(getSkill0(skill0)).toEqual({
+      '연합의 의지': {
+        STR: 5,
+        DEX: 5,
+        INT: 5,
+        LUK: 5,
+        공격력: 5,
+        마력: 5,
+      },
+      '훈련 일지': {
+        공격력: 15,
+        마력: 15,
+        보공: 40,
+        방무: [20],
+        올스탯: 30,
+        크확: 10,
+      },
+    });
+  });
+
+  it('등록되지 않았거나 효과가 매칭되지 않는 스킬은 제외한다', () => {
+    const skill0 = createSkillRes('0', [
+      { skill_name: '달팽이 세마리', skill_effect: '달팽이 껍질을 던진다' },
+      { skill_name: '여제의 축복', skill_effect: null },
+    ]);
+
+    expect(getSkill0(skill0)).toEqual({});
   });
 });
