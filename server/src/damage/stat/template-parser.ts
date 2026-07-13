@@ -26,6 +26,11 @@ const PLACEHOLDER_STATS: Record<string, readonly MapleStat[]> = {
   DEX: [MapleStat.DEX],
   INT: [MapleStat.INT],
   LUK: [MapleStat.LUK],
+  // 미적용 = 주스탯%·올스탯% 미적용 버킷(심볼·하이퍼 주스탯 등). 템플릿 작성자가 소스별로 지정.
+  STR미적용: [MapleStat.STR미적용],
+  DEX미적용: [MapleStat.DEX미적용],
+  INT미적용: [MapleStat.INT미적용],
+  LUK미적용: [MapleStat.LUK미적용],
   올스탯: [MapleStat.올스탯],
   STR퍼: [MapleStat.STR퍼],
   DEX퍼: [MapleStat.DEX퍼],

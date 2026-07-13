@@ -22,7 +22,7 @@ export enum MapleStat {
   데미지 = '데미지',
   보공 = '보공',
   추가뎀 = '추가뎀',
-  방무 = '방무',     // 곱연산 — UserStat에선 계수 배열에 push
+  방무 = '방무', // 곱연산 — UserStat에선 계수 배열에 push
   최종뎀 = '최종뎀', // 곱연산 — UserStat에선 계수 배열에 push
   크확 = '크확',
   크뎀 = '크뎀',
@@ -112,9 +112,11 @@ export interface CharacterStats {
   AP: StatBlock;
   메이플용사?: number;
   크리티컬리인포스?: number;
+
   장비?: GearStats;
   세트효과?: Record<string, StatBlock>;
   심볼?: StatBlock;
+
   하이퍼스탯?: StatBlock;
   어빌리티?: StatBlock;
   유니온?: StatBlock;
@@ -126,8 +128,10 @@ export interface CharacterStats {
   스킬?: SkillStats;
   링크스킬?: Record<string, StatBlock>;
   길드스킬?: StatBlock;
-  캐시장비?: StatBlock;
   헥사스탯?: StatBlock;
+
+  캐시장비?: StatBlock;
+  펫장비?: StatBlock;
 
   도핑?: StatBlock;
 }
