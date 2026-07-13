@@ -97,6 +97,16 @@ export interface GearStats {
   칭호?: StatBlock;
 }
 
+export interface SkillStats {
+  스킬_1차?: Record<string, StatBlock>;
+  스킬_2차?: Record<string, StatBlock>;
+  스킬_3차?: Record<string, StatBlock>;
+  스킬_4차?: Record<string, StatBlock>;
+  스킬_하이퍼_패시브?: Record<string, StatBlock>;
+  스킬_하이퍼_액티브?: Record<string, StatBlock>;
+  스킬_5차?: Record<string, StatBlock>;
+}
+
 export interface CharacterStats {
   기본: StatBlock;
   AP: StatBlock;
@@ -113,20 +123,11 @@ export interface CharacterStats {
   성향?: StatBlock;
 
   스킬_0차?: Record<string, StatBlock>;
-  스킬_1차?: Record<string, StatBlock>;
-  스킬_2차?: Record<string, StatBlock>;
-  스킬_3차?: Record<string, StatBlock>;
-  스킬_4차?: Record<string, StatBlock>;
-  스킬_하이퍼?: Record<string, StatBlock>;
-  스킬_5차?: Record<string, StatBlock>;
+  스킬?: SkillStats;
   링크스킬?: Record<string, StatBlock>;
   길드스킬?: StatBlock;
   캐시장비?: StatBlock;
   헥사스탯?: StatBlock;
 
   도핑?: StatBlock;
-
-  챌린저스?: StatBlock;
-  버닝?: StatBlock;
-  불릿?: StatBlock;
 }

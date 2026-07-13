@@ -1,70 +1,113 @@
-// 리팩토링용 스켈레톤 — CharacterStats 조립이 지향하는 모양(파이프라인 미연결, 내부 미구현).
-// character.ts(buildCharacterStats)의 인라인 조립을 파트별 get*로 하나씩 옮겨 이 모양으로 수렴시킨다.
-// 지금은 스킬 파트(getSkill)만 실제 이관됨. 나머지 get*는 시그니처만 — 바디는 아직 안 채운다.
-import type { CharacterStats, StatBlock, GearStats } from './stat-interface.js';
-import type { RawBundle } from '../damage/nexon.js';
-import { getSkill } from './stat/skill.js';
+import {
+  getAbility as fetchAbility,
+  getCashItemEquipment,
+  getCharacterBasic,
+  getCharacterStat,
+  getGuildBasic,
+  getGuildId,
+  getHexaMatrixStat,
+  getHyperStat,
+  getItemEquipment,
+  getLinkSkill,
+  getPropensity as fetchPropensity,
+  getSetEffect,
+  getSkill as fetchSkill,
+  getSymbolEquipment,
+  getUnionArtifact,
+  getUnionChampion,
+  getUnionRaider,
+  type AbilityRes,
+  type CashItemEquipmentRes,
+  type CharacterBasic,
+  type CharacterStat,
+  type GuildBasicRes,
+  type HexaMatrixStatRes,
+  type HyperStatRes,
+  type ItemEquipmentRes,
+  type LinkSkillRes,
+  type PropensityRes,
+  type SetEffectRes,
+  type SkillRes,
+  type SymbolEquipmentRes,
+  type UnionArtifactRes,
+  type UnionChampionRes,
+  type UnionRaiderRes,
+} from '../nexon/index.js';
+import type { CharacterStats, GearStats, StatBlock } from './stat-interface.js';
+import { getSkill, getSkill0 } from './stat/skill.js';
 
-export function getCharacterStats(bundle: RawBundle): CharacterStats {
-  const job: string = bundle.stat?.character_class ?? '';
-  const skill = getSkill(job, bundle);
+export async function getCharacterStats(ocid: string): Promise<CharacterStats> {
+  const stat = await getCharacterStat(ocid);
+  const basic = await getCharacterBasic(ocid);
+  const equip = await getItemEquipment(ocid);
+  const setEffect = await getSetEffect(ocid);
+  const symbol = await getSymbolEquipment(ocid);
+  const hyper = await getHyperStat(ocid);
+  const ability = await fetchAbility(ocid);
+  const union = await getUnionRaider(ocid);
+  const artifact = await getUnionArtifact(ocid);
+  const champion = await getUnionChampion(ocid);
+  const propensity = await fetchPropensity(ocid);
+  const hexa = await getHexaMatrixStat(ocid);
+  const cash = await getCashItemEquipment(ocid);
+  const link = await getLinkSkill(ocid);
 
-  // prune: 빈 블록(isEmptyBlock)인 파트는 키 자체를 드롭 → optional 키는 부재로 남는다.
+  const skill0 = await fetchSkill(ocid, '0');
+  const skill1 = await fetchSkill(ocid, '1');
+  const skill2 = await fetchSkill(ocid, '2');
+  const skill3 = await fetchSkill(ocid, '3');
+  const skill4 = await fetchSkill(ocid, '4');
+  const hyperPassive = await fetchSkill(ocid, 'hyperpassive');
+  const hyperActive = await fetchSkill(ocid, 'hyperactive');
+  const skill5 = await fetchSkill(ocid, '5');
+
+  let guild: GuildBasicRes | null = null;
+  if (basic.character_guild_name) {
+    const { oguild_id } = await getGuildId(basic.character_guild_name, basic.world_name);
+    guild = await getGuildBasic(oguild_id);
+  }
+
   return {
     기본: { 크확: 5, 크뎀: 35 },
-    AP: getAP(bundle),
+    AP: getAP(stat, basic.character_level),
+    장비: getGear(equip, basic.character_level),
+    세트효과: getSet(setEffect),
+    심볼: getSymbol(symbol),
+    하이퍼스탯: getHyper(hyper),
 
-    장비:      getGear(bundle),
-    세트효과:   getSet(bundle),
-    심볼:      getSymbol(bundle),
-    하이퍼스탯:  getHyper(bundle),
-    어빌리티:   getAbility(bundle),
-    유니온:    getUnion(bundle),
-    아티팩트:   getArtifact(bundle),
-    챔피언:    getChampion(bundle),
-    성향:      getPropensity(bundle),
-    헥사스탯:   getHexaStat(bundle),
-    챌린저스:   getChallenger(bundle),
-    버닝:      getBurning(bundle),
-    길드스킬:   getGuild(bundle),
-    캐시장비:   getCash(bundle),
-    링크스킬:   getLink(bundle),
-    불릿:      getBullet(bundle),
+    어빌리티: getAbility(ability),
+    유니온: getUnion(union),
+    아티팩트: getArtifact(artifact),
+    챔피언: getChampion(champion),
 
-    // 스킬 파트만 이미 이관됨 (skill.ts / getSkill)
-    메이플용사:     skill.메이플용사,
-    크리티컬리인포스: skill.크리티컬리인포스,
-    스킬_0차:  skill.스킬_0차,
-    스킬_1차:  skill.스킬_1차,
-    스킬_2차:  skill.스킬_2차,
-    스킬_3차:  skill.스킬_3차,
-    스킬_4차:  skill.스킬_4차,
-    스킬_하이퍼: skill.스킬_하이퍼,
-    스킬_5차:  skill.스킬_5차,
-  }
+    성향: getPropensity(propensity),
+    헥사스탯: getHexaStat(hexa),
+
+    길드스킬: getGuild(guild),
+    캐시장비: getCash(cash),
+    링크스킬: getLink(link),
+
+    메이플용사: getMapleWarrior(skill4),
+    크리티컬리인포스: getCriticalReinforce(skill5),
+    스킬_0차: getSkill0(skill0),
+    스킬: getSkill(skill1, skill2, skill3, skill4, hyperPassive, hyperActive, skill5),
+  };
 }
 
-// ── 이관 대상 get* (시그니처만 — character.ts의 blockOf((u)=>collect*(...)) 한 줄씩을 흡수한다) ──
-
-// AP 배분 STR/DEX/INT/LUK/HP를 final_stat에서 직독. HP는 데벤 대응(넥슨 값이 0이면 레벨 역산 분기).
-function getAP(bundle: RawBundle): StatBlock { throw new Error('TODO: getAP'); }
-
-function getGear(bundle: RawBundle): GearStats { throw new Error('TODO: getGear'); }
-function getSet(bundle: RawBundle): Record<string, StatBlock> { throw new Error('TODO: getSet'); }
-function getSymbol(bundle: RawBundle): StatBlock { throw new Error('TODO: getSymbol'); }
-function getHyper(bundle: RawBundle): StatBlock { throw new Error('TODO: getHyper'); }
-function getAbility(bundle: RawBundle): StatBlock { throw new Error('TODO: getAbility'); }
-function getUnion(bundle: RawBundle): StatBlock { throw new Error('TODO: getUnion'); }
-function getArtifact(bundle: RawBundle): StatBlock { throw new Error('TODO: getArtifact'); }
-function getChampion(bundle: RawBundle): StatBlock { throw new Error('TODO: getChampion'); }
-function getPropensity(bundle: RawBundle): StatBlock { throw new Error('TODO: getPropensity'); }
-
-// 넥슨 API가 값 없이 이름+레벨(1~10)만 줌 → 내부에서 레벨→값 테이블로 역산해 block 반환.
-function getHexaStat(bundle: RawBundle): StatBlock { throw new Error('TODO: getHexaStat'); }
-
-function getChallenger(bundle: RawBundle): StatBlock { throw new Error('TODO: getChallenger'); }
-function getBurning(bundle: RawBundle): StatBlock { throw new Error('TODO: getBurning'); }
-function getGuild(bundle: RawBundle): StatBlock { throw new Error('TODO: getGuild'); }
-function getCash(bundle: RawBundle): StatBlock { throw new Error('TODO: getCash'); }
-function getLink(bundle: RawBundle): Record<string, StatBlock> { throw new Error('TODO: getLink'); }
-function getBullet(bundle: RawBundle): StatBlock { throw new Error('TODO: getBullet'); }
+// 각 변환 함수는 필요한 넥슨 응답만 받는다. 구현은 파트별로 이관한다.
+function getAP(_stat: CharacterStat, _level: CharacterBasic['character_level']): StatBlock { throw new Error('TODO: getAP'); }
+function getGear(_equip: ItemEquipmentRes, _level: number): GearStats { throw new Error('TODO: getGear'); }
+function getSet(_setEffect: SetEffectRes): Record<string, StatBlock> { throw new Error('TODO: getSet'); }
+function getSymbol(_symbol: SymbolEquipmentRes): StatBlock { throw new Error('TODO: getSymbol'); }
+function getHyper(_hyper: HyperStatRes): StatBlock { throw new Error('TODO: getHyper'); }
+function getAbility(_ability: AbilityRes): StatBlock { throw new Error('TODO: getAbility'); }
+function getUnion(_union: UnionRaiderRes): StatBlock { throw new Error('TODO: getUnion'); }
+function getArtifact(_artifact: UnionArtifactRes): StatBlock { throw new Error('TODO: getArtifact'); }
+function getChampion(_champion: UnionChampionRes): StatBlock { throw new Error('TODO: getChampion'); }
+function getPropensity(_propensity: PropensityRes): StatBlock { throw new Error('TODO: getPropensity'); }
+function getHexaStat(_hexa: HexaMatrixStatRes): StatBlock { throw new Error('TODO: getHexaStat'); }
+function getGuild(_guild: GuildBasicRes | null): StatBlock { throw new Error('TODO: getGuild'); }
+function getCash(_cash: CashItemEquipmentRes): StatBlock { throw new Error('TODO: getCash'); }
+function getLink(_link: LinkSkillRes): Record<string, StatBlock> { throw new Error('TODO: getLink'); }
+function getMapleWarrior(_skill4: SkillRes): number { throw new Error('TODO: getMapleWarrior'); }
+function getCriticalReinforce(_skill5: SkillRes): number { throw new Error('TODO: getCriticalReinforce'); }

@@ -1,22 +1,19 @@
-// 스킬 패시브 → CharacterStats 스킬 파트. getSkill 하나로 차수별 블록·메용%·크리인포를 다 뽑는다.
-// 값은 skill_effect(현재 레벨 수치)에서 파싱 — 스킬레벨 증가 효과로 만렙을 넘어도 반영된다.
-// 등재 기준과 절차는 fill-job-passives 스킬 참고.
+import type { SkillRes } from '../../nexon/index.js';
+import type { SkillStats, StatBlock } from '../stat-interface.js';
 
-import { StatBlock } from "../stat-interface";
-import { MapleJob } from "./skill-job";
-
-interface SkillBlocks{
-  스킬_0차  :StatBlock;
-  스킬_1차:StatBlock;
-  스킬_2차:StatBlock;
-  스킬_3차:StatBlock;
-  스킬_4차:StatBlock;
-  스킬_하이퍼:StatBlock;
-  스킬_5차:StatBlock;
+export function getSkill0(_skill: SkillRes): Record<string, StatBlock> {
+  throw new Error('TODO: getSkill0');
 }
 
-export function getSkill(): SkillBlocks {
-
-
-
+// 등급 간 중복과 배타 규칙을 판단해야 하므로 1차 이후 응답을 함께 변환한다.
+export function getSkill(
+  _skill1: SkillRes,
+  _skill2: SkillRes,
+  _skill3: SkillRes,
+  _skill4: SkillRes,
+  _hyperPassive: SkillRes,
+  _hyperActive: SkillRes,
+  _skill5: SkillRes
+): SkillStats {
+  throw new Error('TODO: getSkill');
 }

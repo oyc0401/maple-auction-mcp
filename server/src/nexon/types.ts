@@ -254,12 +254,12 @@ export interface PropensityRes {
   charm_level: number;
 }
 
-export type SkillGrade = '0' | '1' | '2' | '3' | '4' | '5' | 'hyperpassive';
+export type SkillGrade = '0' | '1' | '2' | '3' | '4' | '5' | 'hyperpassive' | 'hyperactive';
 
 export interface SkillRes {
-  date?: NexonDate;
-  character_class?: string;
-  character_skill_grade?: string;
+  date: NexonDate;
+  character_class: string;
+  character_skill_grade: SkillGrade;
   character_skill: SkillEntry[];
 }
 

@@ -1,7 +1,7 @@
 // 링크스킬 패시브 → StatBlock. skill-job.ts와 동일한 템플릿 기법(${맵키} + mul).
 // 리터럴은 실측 skill_effect의 부분문자열, ${키}는 template 맵 키로 해석. 값에 %가 붙으면 퍼 계열로 라우팅.
 // 키는 직업 접미("(캡틴)" 등)를 제거한 스킬명.
-import type { SkillTemplate } from './skill-job.js';
+import type { SkillTemplate } from './skill-db.js';
 
 export type LinkRules = Record<string, SkillTemplate[]>;
 
