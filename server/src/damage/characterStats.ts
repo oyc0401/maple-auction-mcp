@@ -18,7 +18,6 @@ import {
   getUnionRaider,
   type AbilityRes,
   type CashItemEquipmentRes,
-  type CharacterBasic,
   type CharacterStat,
   type GuildBasicRes,
   type HexaMatrixStatRes,
@@ -69,7 +68,7 @@ export async function getCharacterStats(ocid: string): Promise<CharacterStats> {
 
   return {
     기본: { 크확: 5, 크뎀: 35 },
-    AP: getAP(stat, basic.character_level),
+    AP: getAP(stat),
     장비: getGear(equip, basic.character_level),
     세트효과: getSet(setEffect),
     심볼: getSymbol(symbol),
@@ -81,7 +80,7 @@ export async function getCharacterStats(ocid: string): Promise<CharacterStats> {
     챔피언: getChampion(champion),
 
     성향: getPropensity(propensity),
-    헥사스탯: getHexaStat(hexa),
+
 
     길드스킬: getGuild(guild),
     캐시장비: getCash(cash),
@@ -91,11 +90,12 @@ export async function getCharacterStats(ocid: string): Promise<CharacterStats> {
     크리티컬리인포스: getCriticalReinforce(skill5),
     스킬_0차: getSkill0(skill0),
     스킬: getSkill(skill1, skill2, skill3, skill4, hyperPassive, hyperActive, skill5),
+  헥사스탯: getHexaStat(hexa),
   };
 }
 
 // 각 변환 함수는 필요한 넥슨 응답만 받는다. 구현은 파트별로 이관한다.
-function getAP(_stat: CharacterStat, _level: CharacterBasic['character_level']): StatBlock { throw new Error('TODO: getAP'); }
+function getAP(_stat: CharacterStat): StatBlock { throw new Error('TODO: getAP'); }
 function getGear(_equip: ItemEquipmentRes, _level: number): GearStats { throw new Error('TODO: getGear'); }
 function getSet(_setEffect: SetEffectRes): Record<string, StatBlock> { throw new Error('TODO: getSet'); }
 function getSymbol(_symbol: SymbolEquipmentRes): StatBlock { throw new Error('TODO: getSymbol'); }

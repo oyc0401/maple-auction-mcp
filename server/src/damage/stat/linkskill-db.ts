@@ -1,9 +1,9 @@
-// 링크스킬 패시브 → StatBlock. skill-job.ts와 동일한 템플릿 기법(${맵키} + mul).
-// 리터럴은 실측 skill_effect의 부분문자열, ${키}는 template 맵 키로 해석. 값에 %가 붙으면 퍼 계열로 라우팅.
+// 링크스킬 패시브 → StatBlock. 공용 MapleTemplate 형식(${맵키} + mul)을 사용한다.
+// 리터럴은 실측 skill_effect의 부분문자열이고, ${키}가 적용할 MapleStat을 직접 결정한다.
 // 키는 직업 접미("(캡틴)" 등)를 제거한 스킬명.
-import type { SkillTemplate } from './skill-db.js';
+import type { MapleTemplate } from './template-parser.js';
 
-export type LinkRules = Record<string, SkillTemplate[]>;
+export type LinkRules = Record<string, MapleTemplate[]>;
 
 export const LINK: LinkRules = {
   '소울 컨트랙트': ['데미지 ${추가뎀}% 증가'],
@@ -15,7 +15,7 @@ export const LINK: LinkRules = {
   '데몬스 퓨리': ['보스 몬스터 공격 시 데미지 ${보공}% 증가'],
   '와일드 레이지': ['데미지 ${데미지}% 증가'],
   '무아': ['발동 시 데미지 ${추가뎀}% 증가', { template: '중첩당 데미지 ${추가뎀}% 추가 증가', mul: 5 }],
-  '하이브리드 로직': ['모든 능력치 ${올스탯}% 증가'],
+  '하이브리드 로직': ['모든 능력치 ${올스탯퍼}% 증가'],
   '프라이어 프리퍼레이션': ['데미지 ${추가뎀}% 증가'],
   '전투의 흐름': [{ template: '중첩당 데미지 ${추가뎀}% 증가', mul: 4 }],
   '노블레스': ['보스 몬스터 공격 시 데미지 ${보공}% 증가', { template: '파티원 1명 당 데미지 ${추가뎀}% 증가', mul: 4 }],
@@ -30,5 +30,5 @@ export const LINK: LinkRules = {
   '이네이트 기프트': ['데미지 ${데미지}% 증가'],
   '자연의 벗': ['데미지 ${데미지}% 증가'],
   '륀느의 축복': ['방어율 무시 ${방무}% 증가'],
-  '아이언 윌': ['HP ${HP}% 증가'],
+  '아이언 윌': ['HP ${HP퍼}% 증가'],
 };

@@ -1,3 +1,4 @@
+import { readdir, readFile } from 'node:fs/promises';
 import { describe, expect, it, vi } from 'vitest';
 import { getCharacterStat, getOcid, NexonOpenApiError } from '../src/nexon/index.js';
 
@@ -11,6 +12,19 @@ function jsonResponse(data: unknown, status = 200): Response {
 }
 
 describe('넥슨 공식 OpenAPI 클라이언트', () => {
+  it('client.ts 밖에서 넥슨 API를 fetch로 직접 호출하지 않는다', async () => {
+    const nexonDir = new URL('../src/nexon/', import.meta.url);
+    const files = (await readdir(nexonDir)).filter((file) => file.endsWith('.ts') && file !== 'client.ts');
+    const violations: string[] = [];
+
+    for (const file of files) {
+      const source = await readFile(new URL(file, nexonDir), 'utf8');
+      if (/\bfetch\s*\(/.test(source)) violations.push(file);
+    }
+
+    expect(violations).toEqual([]);
+  });
+
   it('공식 base URL과 x-nxopen-api-key 헤더로 GET 호출한다', async () => {
     const fetchFn = vi.fn(async () => jsonResponse({ ocid: 'OCID' }));
 
@@ -18,7 +32,7 @@ describe('넥슨 공식 OpenAPI 클라이언트', () => {
 
     expect(result.ocid).toBe('OCID');
     expect(fetchFn).toHaveBeenCalledTimes(1);
-    const [url, init] = fetchFn.mock.calls[0] as [URL, RequestInit];
+    const [url, init] = fetchFn.mock.calls[0] as unknown as [URL, RequestInit];
     expect(url.href).toBe('https://open.api.nexon.com/maplestory/v1/id?character_name=%EC%98%A4%EC%9C%A0%EC%B0%AC');
     expect(init.headers).toEqual({ 'x-nxopen-api-key': 'test-key' });
   });

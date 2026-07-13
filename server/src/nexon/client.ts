@@ -1,3 +1,10 @@
+/**
+ * 넥슨 공식 OpenAPI의 유일한 네트워크 진입점.
+ *
+ * 429가 발생하면 API 키가 장시간 차단되어 개발 자체가 중단될 수 있다.
+ * 모든 엔드포인트 함수는 반드시 requestNexonOpenApi()를 사용해야 하며,
+ * 다른 모듈에서 넥슨 API를 fetch()로 직접 호출하거나 10초 간격을 우회하면 안 된다.
+ */
 export const NEXON_OPEN_API_BASE = 'https://open.api.nexon.com/maplestory/v1';
 export const NEXON_REQUEST_INTERVAL_MS = 10_000;
 
