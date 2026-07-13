@@ -2,6 +2,20 @@ import type { MapleTemplate } from './template-parser.js';
 
 export type JobRules = Record<string, Record<string, MapleTemplate[]>>;
 
+export const MAPLE_WARRIOR_TEMPLATES: Record<string, MapleTemplate[]> = {
+  '메이플 용사': ['[패시브 효과 : AP를 직접 투자한 모든 능력치 ${올스탯퍼}% 증가]'],
+  '시그너스 나이츠': ['[패시브 효과 : AP를 직접 투자한 모든 능력치 ${올스탯퍼}% 증가]'],
+  '노바의 용사': ['[패시브 효과 : AP를 직접 투자한 모든 능력치 ${올스탯퍼}% 증가]'],
+  '레프의 용사': ['[패시브 효과 : AP를 직접 투자한 모든 능력치 ${올스탯퍼}% 증가]'],
+  '아니마의 용사': ['[패시브 효과 : AP를 직접 투자한 모든 능력치 ${올스탯퍼}% 증가]'],
+  '이계의 용사': ['[패시브 효과 : AP를 직접 투자한 모든 능력치 ${올스탯퍼}% 증가]'],
+  '륀느의 가호': ['[패시브 효과 : AP를 직접 투자한 모든 능력치 ${올스탯퍼}% 증가]'],
+};
+
+export const CRITICAL_REINFORCE_TEMPLATES: Record<string, MapleTemplate[]> = {
+  '크리티컬 리인포스': ['크리티컬 확률의 ${크뎀}% 만큼 크리티컬 데미지 증가'],
+};
+
 export const COMMON: JobRules = {
   '0': {
     '연합의 의지': ['힘 ${STR}, 민첩 ${DEX}, 지능 ${INT}, 행운 ${LUK}, 공격력 ${공격력}, 마력 ${마력} 증가'],

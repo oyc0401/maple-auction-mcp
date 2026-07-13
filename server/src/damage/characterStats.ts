@@ -33,7 +33,12 @@ import {
   type UnionRaiderRes,
 } from '../nexon/index.js';
 import type { CharacterStats, GearStats, StatBlock } from './stat-interface.js';
-import { getSkill, getSkill0 } from './stat/skill.js';
+import {
+  getCriticalReinforce,
+  getMapleWarrior,
+  getSkill,
+  getSkill0,
+} from './stat/skill.js';
 
 export async function getCharacterStats(ocid: string): Promise<CharacterStats> {
   const stat = await getCharacterStat(ocid);
@@ -109,5 +114,3 @@ function getHexaStat(_hexa: HexaMatrixStatRes): StatBlock { throw new Error('TOD
 function getGuild(_guild: GuildBasicRes | null): StatBlock { throw new Error('TODO: getGuild'); }
 function getCash(_cash: CashItemEquipmentRes): StatBlock { throw new Error('TODO: getCash'); }
 function getLink(_link: LinkSkillRes): Record<string, StatBlock> { throw new Error('TODO: getLink'); }
-function getMapleWarrior(_skill4: SkillRes): number { throw new Error('TODO: getMapleWarrior'); }
-function getCriticalReinforce(_skill5: SkillRes): number { throw new Error('TODO: getCriticalReinforce'); }
