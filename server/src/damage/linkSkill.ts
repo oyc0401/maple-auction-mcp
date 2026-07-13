@@ -1,4 +1,4 @@
-import type { UserStat } from './statSheet.js';
+import type { UserStat } from '../dam/statSheet.js';
 import { apply } from './parse.js';
 
 function pick(effect: string, name: string): { val: number; pct: boolean } | null {

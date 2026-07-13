@@ -97,40 +97,6 @@ export interface GearStats {
   칭호?: StatBlock;
 }
 
-export interface LinkSkillStats {
-  '인빈서블 빌리프'?: StatBlock;
-  '임피리컬 널리지'?: StatBlock;
-  '어드벤쳐러 큐리어스'?: StatBlock;
-  '시프 커닝'?: StatBlock;
-  '파이렛 블레스'?: StatBlock;
-  '시그너스 블레스'?: StatBlock;
-  '빛의 수호'?: StatBlock;
-  '스피릿 오브 프리덤'?: StatBlock;
-  '하이브리드 로직'?: StatBlock;
-  '데몬스 퓨리'?: StatBlock;
-  '와일드 레이지'?: StatBlock;
-  '콤보킬 어드밴티지'?: StatBlock;
-  '룬 퍼시스턴스'?: StatBlock;
-  퍼미에이트?: StatBlock;
-  '엘프의 축복'?: StatBlock;
-  '데들리 인스팅트'?: StatBlock;
-  '구사 일생'?: StatBlock;
-  '아이언 윌'?: StatBlock;
-  '인텐시브 인썰트'?: StatBlock;
-  '소울 컨트랙트'?: StatBlock;
-  '프라이어 프리퍼레이션'?: StatBlock;
-  노블레스?: StatBlock;
-  '전투의 흐름'?: StatBlock;
-  무아?: StatBlock;
-  '이네이트 기프트'?: StatBlock;
-  자신감?: StatBlock;
-  '자연의 벗'?: StatBlock;
-  강체?: StatBlock;
-  '륀느의 축복'?: StatBlock;
-  판단?: StatBlock;
-  커버넌트?: StatBlock;
-}
-
 export interface CharacterStats {
   기본: StatBlock;
   AP: StatBlock;
@@ -153,7 +119,7 @@ export interface CharacterStats {
   스킬_4차?: Record<string, StatBlock>;
   스킬_하이퍼?: Record<string, StatBlock>;
   스킬_5차?: Record<string, StatBlock>;
-  링크스킬?: LinkSkillStats;
+  링크스킬?: Record<string, StatBlock>;
   길드스킬?: StatBlock;
   캐시장비?: StatBlock;
   헥사스탯?: StatBlock;

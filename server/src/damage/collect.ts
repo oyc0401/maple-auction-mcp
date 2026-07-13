@@ -1,4 +1,4 @@
-import type { UserStat } from './statSheet.js';
+import type { UserStat } from '../dam/statSheet.js';
 import { apply, accumPlus, accumIncrease } from './parse.js';
 
 const num = (v: unknown) => Number(v ?? 0) || 0;

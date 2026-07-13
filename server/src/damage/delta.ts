@@ -3,9 +3,10 @@ import { parseOptionLine } from '../hwansan2/optionDict.js';
 import { setSwapStatsByNames, normalizeSet } from '../hwansan2/sets.js';
 import type { StatBlock } from './stat-interface.js';
 import type { CharacterCollected } from './nexon.js';
-import { SLOT_KEY } from './character.js';
 import { addBlock, negateBlock } from './block.js';
 import { damageOf, type CombatStats } from './combat.js';
+
+const SLOT_KEY: Record<string, string> = { '보조무기 (포스실드)': '보조무기', '보조 무기': '보조무기' };
 
 export function itemStatsToBlock(s: ItemStats): StatBlock {
   const b: Record<string, number | number[]> = {};

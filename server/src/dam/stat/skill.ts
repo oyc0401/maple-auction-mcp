@@ -15,7 +15,7 @@ interface SkillBlocks{
   스킬_5차:StatBlock;
 }
 
-export function getSkill(name: string, job: MapleJob): SkillBlocks {
+export function getSkill(): SkillBlocks {
 
 
 
