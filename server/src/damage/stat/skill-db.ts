@@ -801,29 +801,29 @@ export enum MapleJob {
 }
 
 export const JOB_RULES: Record<MapleJob, JobRules> = {
-  [MapleJob.카데나]: CADENA,
-  [MapleJob.보우마스터]: BOWMASTER,
-  [MapleJob.캡틴]: CAPTAIN,
-  [MapleJob.키네시스]: KINESIS,
-  [MapleJob.나이트로드]: NIGHTLORD,
-  [MapleJob.카이저]: KAISER,
-  [MapleJob.비숍]: BISHOP,
-  [MapleJob.히어로]: HERO,
-  [MapleJob.아델]: ADELE,
-  [MapleJob.에반]: EVAN,
-  [MapleJob.제로]: ZERO,
-  [MapleJob.팔라딘]: PALADIN,
-  [MapleJob.다크나이트]: DARKKNIGHT,
-  [MapleJob.소울마스터]: SOULMASTER,
-  [MapleJob['아크메이지(불,독)']]: FIREPOISON,
-  [MapleJob['아크메이지(썬,콜)']]: THUNDERCOLD,
-  [MapleJob.신궁]: MARKSMAN,
-  [MapleJob.패스파인더]: PATHFINDER,
-  [MapleJob.섀도어]: SHADOWER,
-  [MapleJob.듀얼블레이드]: DUALBLADE,
-  [MapleJob.바이퍼]: VIPER,
-  [MapleJob.캐논마스터]: CANNONMASTER,
-  [MapleJob.렌]: REN,
+  [MapleJob.카데나]: CADENA, // 검증 oyc0401 2026.07.12
+  [MapleJob.보우마스터]: BOWMASTER, // api보고 자동생성
+  [MapleJob.캡틴]: CAPTAIN, // api보고 자동생성
+  [MapleJob.키네시스]: KINESIS, // api보고 자동생성
+  [MapleJob.나이트로드]: NIGHTLORD, // api보고 자동생성
+  [MapleJob.카이저]: KAISER, // api보고 자동생성
+  [MapleJob.비숍]: BISHOP, // api보고 자동생성
+  [MapleJob.히어로]: HERO, // api보고 자동생성
+  [MapleJob.아델]: ADELE, // api보고 자동생성
+  [MapleJob.에반]: EVAN, // api보고 자동생성
+  [MapleJob.제로]: ZERO, // api보고 자동생성
+  [MapleJob.팔라딘]: PALADIN, // api보고 자동생성
+  [MapleJob.다크나이트]: DARKKNIGHT, // api보고 자동생성
+  [MapleJob.소울마스터]: SOULMASTER, // api보고 자동생성
+  [MapleJob['아크메이지(불,독)']]: FIREPOISON, // api보고 자동생성
+  [MapleJob['아크메이지(썬,콜)']]: THUNDERCOLD, // api보고 자동생성
+  [MapleJob.신궁]: MARKSMAN, // api보고 자동생성
+  [MapleJob.패스파인더]: PATHFINDER, // api보고 자동생성
+  [MapleJob.섀도어]: SHADOWER, // api보고 자동생성
+  [MapleJob.듀얼블레이드]: DUALBLADE, // api보고 자동생성
+  [MapleJob.바이퍼]: VIPER, // api보고 자동생성
+  [MapleJob.캐논마스터]: CANNONMASTER, // api보고 자동생성
+  [MapleJob.렌]: REN, // 검증 Jxx502 2026.07.13
 };
 
 /*
