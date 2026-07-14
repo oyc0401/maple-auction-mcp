@@ -1,9 +1,25 @@
 import type { UnionRaiderRes } from '../../nexon/index.js';
 import type { StatBlock } from '../stat-interface.js';
-import { parseEffectLines } from './template-parser.js';
-import { UNION_RAIDER } from './unionRaider-db.js';
+import { parseEffectLines } from './effect-lines-parser.js';
 
-// 유니온 공격대원 배치 효과(union_raider_stat) → StatBlock. 주스탯·올스탯·HP 미적용. 상시.
 export function getUnionRaider(union: UnionRaiderRes): StatBlock {
-  return parseEffectLines(union.union_raider_stat ?? [], UNION_RAIDER);
+  const {
+    STR,
+    DEX,
+    INT,
+    LUK,
+    올스탯,
+    HP,
+    ...block
+  } = parseEffectLines(union.union_raider_stat ?? []);
+
+  return {
+    ...block,
+    ...(STR !== undefined && { STR미적용: STR }),
+    ...(DEX !== undefined && { DEX미적용: DEX }),
+    ...(INT !== undefined && { INT미적용: INT }),
+    ...(LUK !== undefined && { LUK미적용: LUK }),
+    ...(올스탯 !== undefined && { 올스탯미적용: 올스탯 }),
+    ...(HP !== undefined && { HP미적용: HP }),
+  };
 }

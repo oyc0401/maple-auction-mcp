@@ -7,20 +7,19 @@ export type MapleTemplate =
       mul: number;
     };
 
-export interface NormalizedMapleTemplate {
+interface NormalizedMapleTemplate {
   template: string;
   mul: number;
 }
 
-export function normalizeMapleTemplate(
+function normalizeMapleTemplate(
   rule: MapleTemplate
 ): NormalizedMapleTemplate {
   return typeof rule === 'string' ? { template: rule, mul: 1 } : rule;
 }
 
-export interface MapleTemplateParseResult {
+interface MapleTemplateParseResult {
   block: StatBlock;
-  unmatchedTemplates: string[];
 }
 
 const PLACEHOLDER_STATS: Record<string, readonly MapleStat[]> = {
@@ -127,21 +126,14 @@ export function parseMapleTemplates(
   rules: readonly MapleTemplate[]
 ): MapleTemplateParseResult {
   const block: StatBlock = {};
-  const unmatchedTemplates: string[] = [];
   const normalizedEffect = String(effect ?? '').replace(/\r\n?/g, '\n');
 
   for (const rule of rules) {
     const { template, mul } = normalizeMapleTemplate(rule);
-    if (!Number.isInteger(mul) || mul < 1) {
-      throw new Error(`MapleTemplate mul은 1 이상의 정수여야 함: ${mul}`);
-    }
 
     const { regex, targets } = compileTemplate(template);
     const match = regex.exec(normalizedEffect);
-    if (!match) {
-      unmatchedTemplates.push(template);
-      continue;
-    }
+    if (!match) continue;
 
     for (let index = 0; index < targets.length; index += 1) {
       const value = Number(match[index + 1].replaceAll(',', ''));
@@ -151,58 +143,5 @@ export function parseMapleTemplates(
     }
   }
 
-  return { block, unmatchedTemplates };
-}
-
-// 라인당 "첫 매칭 템플릿만" 채택. 부분문자열 충돌(바 '데미지' ⊂ '보스 몬스터 공격 시 데미지',
-// '일반 몬스터 공격 시 데미지') 방지 — 라인이 그 스탯명으로 시작할 때만 매칭(풀라인 앵커).
-// 구체적인 템플릿을 앞에 둘 것. parseMapleTemplates(all-fire)와 달리 하나만 문다.
-export function parseFirstTemplate(
-  line: string,
-  templates: readonly MapleTemplate[]
-): StatBlock {
-  const head = line.replace(/\r\n?/g, '\n').trimStart();
-  for (const rule of templates) {
-    const { template } = normalizeMapleTemplate(rule);
-    const lead = template.slice(0, template.indexOf('${')); // 첫 placeholder 앞 리터럴 = 스탯명
-    if (lead && !head.startsWith(lead)) continue; // 라인이 스탯명으로 시작해야 함
-    const { block } = parseMapleTemplates(line, [rule]);
-    if (Object.keys(block).length > 0) return block;
-  }
-  return {};
-}
-
-// 콤마 독립절("공격력 N, 마력 N")은 분해, 공유값("STR, DEX, LUK N")은 통째로.
-function splitClauses(line: string): string[] {
-  const segs = line.split(',').map((s) => s.trim());
-  return segs.length > 1 && segs.every((s) => /\d/.test(s)) ? segs : [line];
-}
-
-// 값이 이미 박힌 효과 문자열 여러 줄(유니온·어빌리티·아티팩트) → StatBlock. 반복 라인은 누산.
-export function parseEffectLines(
-  lines: readonly string[],
-  templates: readonly MapleTemplate[]
-): StatBlock {
-  const result: StatBlock = {};
-  for (const line of lines) {
-    for (const seg of splitClauses(line)) {
-      mergeStatBlock(result, parseFirstTemplate(seg, templates));
-    }
-  }
-  return result;
-}
-
-// 여러 줄을 각각 파싱해 누산할 때 쓴다(반복 등장하는 유니온·어빌리티 라인). 배열(방무·최종뎀)은 이어붙이고 스칼라는 더한다.
-export function mergeStatBlock(target: StatBlock, src: StatBlock): void {
-  for (const [key, value] of Object.entries(src)) {
-    if (value === undefined) continue;
-    if (Array.isArray(value)) {
-      const arr = (target as Record<string, number[]>)[key] ?? [];
-      arr.push(...value);
-      (target as Record<string, number[]>)[key] = arr;
-    } else {
-      const t = target as Record<string, number>;
-      t[key] = (t[key] ?? 0) + value;
-    }
-  }
+  return { block };
 }
