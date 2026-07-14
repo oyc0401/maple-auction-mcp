@@ -1,5 +1,4 @@
 import {
-  type CharacterStat,
   getAbility as fetchAbility,
   getPropensity as fetchPropensity,
   getSkill as fetchSkill,
@@ -21,6 +20,7 @@ import {
   type ItemEquipmentRes,
   type SetEffectRes,
 } from '../nexon/index.js';
+import { getAP } from './stat/ap.js';
 import { getAbility } from './stat/ability.js';
 import { getArtifact } from './stat/artifact.js';
 import { getCash } from './stat/cash.js';
@@ -77,7 +77,7 @@ export async function getCharacterStats(ocid: string): Promise<CharacterStats> {
 
   return {
     기본: { 크확: 5, 크뎀: 35 },
-    AP: getAP(stat), // 미완
+    AP: getAP(stat),
     장비: getGear(equip, basic.character_level), // 미완
     세트효과: getSet(setEffect), // 미완
     심볼: getSymbol(symbol),
@@ -107,14 +107,11 @@ export async function getCharacterStats(ocid: string): Promise<CharacterStats> {
       hyperActive,
       skill5
     ),
-    헥사스탯: getHexaStat(hexa), // 미완
+    헥사스탯: getHexaStat(hexa),
   };
 }
 
 // 각 변환 함수는 필요한 넥슨 응답만 받는다. 구현은 파트별로 이관한다.
-function getAP(_stat: CharacterStat): StatBlock {
-  throw new Error('TODO: getAP');
-}
 function getGear(_equip: ItemEquipmentRes, _level: number): GearStats {
   throw new Error('TODO: getGear');
 }
