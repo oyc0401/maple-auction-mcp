@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import type { SkillEntry, SkillGrade, SkillRes } from '../../nexon/index.js';
-import { getCriticalReinforce, getMapleWarrior, getSkill0 } from './skill.js';
+import {
+  getCriticalReinforce,
+  getMapleWarrior,
+  getSkill,
+  getSkill0,
+} from './skill.js';
 
 function createSkillRes(
   grade: SkillGrade,
@@ -118,5 +123,45 @@ describe('0차 스킬 수치 변환', () => {
     ]);
 
     expect(getSkill0(skill0)).toEqual({});
+  });
+});
+
+describe('일반 스킬(getSkill) 등급별 변환', () => {
+  const empty = createSkillRes('0', []);
+
+  it('직업(character_class) 등급별 룰로 각 차수를 변환한다', () => {
+    // 카데나: 1차 콜렉팅 포리프(LUK), 2차 피지컬 트레이닝(LUK·DEX)
+    const skill1 = {
+      ...createSkillRes('1', [
+        { skill_name: '콜렉팅 포리프', skill_effect: '행운 60 증가' },
+      ]),
+      character_class: '카데나',
+    };
+    const skill2 = createSkillRes('2', [
+      {
+        skill_name: '피지컬 트레이닝',
+        skill_effect: '행운 100, 민첩성 50 증가',
+      },
+      { skill_name: '모르는 스킬', skill_effect: '뭔가 함' }, // 룰 없음 → 제외
+    ]);
+
+    const result = getSkill(skill1, skill2, empty, empty, empty, empty, empty);
+    expect(result.스킬_1차).toEqual({ '콜렉팅 포리프': { LUK: 60 } });
+    expect(result.스킬_2차).toEqual({
+      '피지컬 트레이닝': { LUK: 100, DEX: 50 },
+    });
+    expect(result.스킬_3차).toEqual({});
+    expect(result.스킬_5차).toEqual({});
+  });
+
+  it('JOB_RULES 미등재 직업은 전부 빈 객체', () => {
+    const skill1 = {
+      ...createSkillRes('1', [
+        { skill_name: '콜렉팅 포리프', skill_effect: '행운 60 증가' },
+      ]),
+      character_class: '없는직업',
+    };
+    const result = getSkill(skill1, empty, empty, empty, empty, empty, empty);
+    expect(result.스킬_1차).toEqual({});
   });
 });

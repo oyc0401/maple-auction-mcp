@@ -19,15 +19,16 @@ import {
   getUnionArtifact,
   getUnionChampion,
   type ItemEquipmentRes,
-  type LinkSkillRes,
   type SetEffectRes,
 } from '../nexon/index.js';
 import { getAbility } from './stat/ability.js';
 import { getArtifact } from './stat/artifact.js';
 import { getCash } from './stat/cash.js';
 import { getChampion } from './stat/champion.js';
+import { getGuild } from './stat/guild.js';
 import { getHexaStat } from './stat/hexaStat.js';
 import { getHyper } from './stat/hyper.js';
+import { getLink } from './stat/link.js';
 import { getPropensity } from './stat/propensity.js';
 import {
   getCriticalReinforce,
@@ -90,9 +91,9 @@ export async function getCharacterStats(ocid: string): Promise<CharacterStats> {
 
     성향: getPropensity(propensity),
 
-    길드스킬: getGuild(guild), // 미완
+    길드스킬: getGuild(guild),
     캐시장비: getCash(cash),
-    링크스킬: getLink(link), // 미완
+    링크스킬: getLink(link),
 
     메이플용사: getMapleWarrior(skill4),
     크리티컬리인포스: getCriticalReinforce(skill5),
@@ -105,7 +106,7 @@ export async function getCharacterStats(ocid: string): Promise<CharacterStats> {
       hyperPassive,
       hyperActive,
       skill5
-    ), // 미완
+    ),
     헥사스탯: getHexaStat(hexa),
   };
 }
@@ -119,10 +120,4 @@ function getGear(_equip: ItemEquipmentRes, _level: number): GearStats {
 }
 function getSet(_setEffect: SetEffectRes): Record<string, StatBlock> {
   throw new Error('TODO: getSet');
-}
-function getGuild(_guild: GuildBasicRes | null): StatBlock {
-  throw new Error('TODO: getGuild');
-}
-function getLink(_link: LinkSkillRes): Record<string, StatBlock> {
-  throw new Error('TODO: getLink');
 }
