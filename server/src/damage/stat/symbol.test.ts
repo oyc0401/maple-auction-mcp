@@ -2,8 +2,28 @@ import { describe, expect, it } from 'vitest';
 import type { SymbolEquipmentRes } from '../../nexon/index.js';
 import { getSymbol } from './symbol.js';
 
-function symbolRes(lines: Array<Partial<Record<'symbol_str' | 'symbol_dex' | 'symbol_int' | 'symbol_luk' | 'symbol_hp', string>>>): SymbolEquipmentRes {
-  return { date: null, character_class: '', symbol: lines.map((l) => ({ symbol_str: '0', symbol_dex: '0', symbol_int: '0', symbol_luk: '0', symbol_hp: '0', ...l })) } as unknown as SymbolEquipmentRes;
+function symbolRes(
+  lines: Array<
+    Partial<
+      Record<
+        'symbol_str' | 'symbol_dex' | 'symbol_int' | 'symbol_luk' | 'symbol_hp',
+        string
+      >
+    >
+  >
+): SymbolEquipmentRes {
+  return {
+    date: null,
+    character_class: '',
+    symbol: lines.map((l) => ({
+      symbol_str: '0',
+      symbol_dex: '0',
+      symbol_int: '0',
+      symbol_luk: '0',
+      symbol_hp: '0',
+      ...l,
+    })),
+  } as unknown as SymbolEquipmentRes;
 }
 
 describe('심볼 → StatBlock', () => {

@@ -1,9 +1,9 @@
 import {
-  type AbilityRes,
   type CharacterStat,
   getAbility as fetchAbility,
   getPropensity as fetchPropensity,
   getSkill as fetchSkill,
+  getUnionRaider as fetchUnionRaider,
   type GuildBasicRes,
   getCashItemEquipment,
   getCharacterBasic,
@@ -18,16 +18,15 @@ import {
   getSymbolEquipment,
   getUnionArtifact,
   getUnionChampion,
-  getUnionRaider,
-  type HexaMatrixStatRes,
   type ItemEquipmentRes,
   type LinkSkillRes,
   type SetEffectRes,
-  type UnionArtifactRes,
-  type UnionRaiderRes,
 } from '../nexon/index.js';
+import { getAbility } from './stat/ability.js';
+import { getArtifact } from './stat/artifact.js';
 import { getCash } from './stat/cash.js';
 import { getChampion } from './stat/champion.js';
+import { getHexaStat } from './stat/hexaStat.js';
 import { getHyper } from './stat/hyper.js';
 import { getPropensity } from './stat/propensity.js';
 import {
@@ -37,6 +36,8 @@ import {
   getSkill0,
 } from './stat/skill.js';
 import { getSymbol } from './stat/symbol.js';
+import { getUnionRaider } from './stat/unionRaider.js';
+import { getUnionState } from './stat/unionState.js';
 import type { CharacterStats, GearStats, StatBlock } from './stat-interface.js';
 
 export async function getCharacterStats(ocid: string): Promise<CharacterStats> {
@@ -47,7 +48,7 @@ export async function getCharacterStats(ocid: string): Promise<CharacterStats> {
   const symbol = await getSymbolEquipment(ocid);
   const hyper = await getHyperStat(ocid);
   const ability = await fetchAbility(ocid);
-  const union = await getUnionRaider(ocid);
+  const union = await fetchUnionRaider(ocid);
   const artifact = await getUnionArtifact(ocid);
   const champion = await getUnionChampion(ocid);
   const propensity = await fetchPropensity(ocid);
@@ -81,9 +82,10 @@ export async function getCharacterStats(ocid: string): Promise<CharacterStats> {
     심볼: getSymbol(symbol),
     하이퍼스탯: getHyper(hyper),
 
-    어빌리티: getAbility(ability), // 미완
-    유니온: getUnion(union), // 미완
-    아티팩트: getArtifact(artifact), // 미완
+    어빌리티: getAbility(ability),
+    union_raider: getUnionRaider(union),
+    union_state: getUnionState(union),
+    아티팩트: getArtifact(artifact),
     챔피언: getChampion(champion),
 
     성향: getPropensity(propensity),
@@ -104,7 +106,7 @@ export async function getCharacterStats(ocid: string): Promise<CharacterStats> {
       hyperActive,
       skill5
     ), // 미완
-    헥사스탯: getHexaStat(hexa), // 미완
+    헥사스탯: getHexaStat(hexa),
   };
 }
 
@@ -117,18 +119,6 @@ function getGear(_equip: ItemEquipmentRes, _level: number): GearStats {
 }
 function getSet(_setEffect: SetEffectRes): Record<string, StatBlock> {
   throw new Error('TODO: getSet');
-}
-function getAbility(_ability: AbilityRes): StatBlock {
-  throw new Error('TODO: getAbility');
-}
-function getUnion(_union: UnionRaiderRes): StatBlock {
-  throw new Error('TODO: getUnion');
-}
-function getArtifact(_artifact: UnionArtifactRes): StatBlock {
-  throw new Error('TODO: getArtifact');
-}
-function getHexaStat(_hexa: HexaMatrixStatRes): StatBlock {
-  throw new Error('TODO: getHexaStat');
 }
 function getGuild(_guild: GuildBasicRes | null): StatBlock {
   throw new Error('TODO: getGuild');

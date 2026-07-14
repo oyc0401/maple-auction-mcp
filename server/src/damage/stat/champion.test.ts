@@ -25,6 +25,10 @@ describe('유니온 챔피언 뱃지 → StatBlock', () => {
   });
 
   it('챔피언이 없으면 빈 블록', () => {
-    expect(getChampion({ champion_badge_total_info: [] } as unknown as UnionChampionRes)).toEqual({});
+    expect(
+      getChampion({
+        champion_badge_total_info: [],
+      } as unknown as UnionChampionRes)
+    ).toEqual({});
   });
 });

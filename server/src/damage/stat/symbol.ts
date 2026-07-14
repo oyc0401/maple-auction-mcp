@@ -3,7 +3,11 @@ import type { StatBlock } from '../stat-interface.js';
 
 const num = (v: unknown): number => Number(v ?? 0) || 0;
 
-function add(block: StatBlock, key: 'STR미적용' | 'DEX미적용' | 'INT미적용' | 'LUK미적용' | 'HP미적용', value: number): void {
+function add(
+  block: StatBlock,
+  key: 'STR미적용' | 'DEX미적용' | 'INT미적용' | 'LUK미적용' | 'HP미적용',
+  value: number
+): void {
   if (value) block[key] = (block[key] ?? 0) + value;
 }
 

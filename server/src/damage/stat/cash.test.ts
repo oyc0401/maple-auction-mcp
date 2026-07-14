@@ -4,7 +4,14 @@ import { getCash } from './cash.js';
 
 function cashRes(options: Array<[string, string]>): CashItemEquipmentRes {
   return {
-    cash_item_equipment_base: [{ cash_item_option: options.map(([option_type, option_value]) => ({ option_type, option_value })) }],
+    cash_item_equipment_base: [
+      {
+        cash_item_option: options.map(([option_type, option_value]) => ({
+          option_type,
+          option_value,
+        })),
+      },
+    ],
   } as unknown as CashItemEquipmentRes;
 }
 

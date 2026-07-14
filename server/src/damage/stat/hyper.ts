@@ -6,9 +6,12 @@ import { parseMapleTemplates } from './template-parser.js';
 // 활성 프리셋만 반영. use_preset_no("1"|"2"|"3")가 가리키는 배열을 고른다.
 function selectPreset(hyper: HyperStatRes): HyperStatLine[] {
   switch (hyper.use_preset_no) {
-    case '2': return hyper.hyper_stat_preset_2 ?? [];
-    case '3': return hyper.hyper_stat_preset_3 ?? [];
-    default: return hyper.hyper_stat_preset_1 ?? [];
+    case '2':
+      return hyper.hyper_stat_preset_2 ?? [];
+    case '3':
+      return hyper.hyper_stat_preset_3 ?? [];
+    default:
+      return hyper.hyper_stat_preset_1 ?? [];
   }
 }
 

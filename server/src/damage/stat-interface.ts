@@ -119,7 +119,8 @@ export interface CharacterStats {
 
   하이퍼스탯?: StatBlock;
   어빌리티?: StatBlock;
-  유니온?: StatBlock;
+  union_raider?: StatBlock;
+  union_state?: StatBlock;
   아티팩트?: StatBlock;
   챔피언?: StatBlock;
   성향?: StatBlock;

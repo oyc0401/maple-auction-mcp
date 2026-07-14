@@ -4,7 +4,10 @@ import { getPropensity } from './propensity.js';
 
 describe('성향 → StatBlock', () => {
   it('카리스마만 방무(lv×0.1)로 반영한다', () => {
-    const propensity = { charisma_level: 100, insight_level: 100 } as PropensityRes;
+    const propensity = {
+      charisma_level: 100,
+      insight_level: 100,
+    } as PropensityRes;
     expect(getPropensity(propensity)).toEqual({ 방무: [10] });
   });
 

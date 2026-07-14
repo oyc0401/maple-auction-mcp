@@ -2,7 +2,10 @@ import { describe, expect, it } from 'vitest';
 import type { SkillEntry, SkillGrade, SkillRes } from '../../nexon/index.js';
 import { getCriticalReinforce, getMapleWarrior, getSkill0 } from './skill.js';
 
-function createSkillRes(grade: SkillGrade, skills: Array<Partial<SkillEntry>>): SkillRes {
+function createSkillRes(
+  grade: SkillGrade,
+  skills: Array<Partial<SkillEntry>>
+): SkillRes {
   return {
     date: null,
     character_class: '테스트',
@@ -28,28 +31,34 @@ describe('특수 스킬 수치 변환', () => {
     ['이계의 용사', 15],
     ['륀느의 가호', 15],
   ])('%s의 AP 증가율을 효과에서 추출한다', (skillName, expected) => {
-    const skill4 = createSkillRes('4', [{
-      skill_name: skillName,
-      skill_effect: `[패시브 효과 : AP를 직접 투자한 모든 능력치 ${expected}% 증가]`,
-    }]);
+    const skill4 = createSkillRes('4', [
+      {
+        skill_name: skillName,
+        skill_effect: `[패시브 효과 : AP를 직접 투자한 모든 능력치 ${expected}% 증가]`,
+      },
+    ]);
 
     expect(getMapleWarrior(skill4)).toBe(expected);
   });
 
   it('다른 AP 증가 스킬은 메이플 용사로 오인하지 않는다', () => {
-    const skill4 = createSkillRes('4', [{
-      skill_name: '파이렛 플래그',
-      skill_effect: '파티원의 AP를 직접 투자한 모든 능력치 25% 증가',
-    }]);
+    const skill4 = createSkillRes('4', [
+      {
+        skill_name: '파이렛 플래그',
+        skill_effect: '파티원의 AP를 직접 투자한 모든 능력치 25% 증가',
+      },
+    ]);
 
     expect(getMapleWarrior(skill4)).toBe(0);
   });
 
   it('크리티컬 리인포스의 크확 대비 크뎀 비율을 추출한다', () => {
-    const skill5 = createSkillRes('5', [{
-      skill_name: '크리티컬 리인포스',
-      skill_effect: '크리티컬 확률의 50% 만큼 크리티컬 데미지 증가',
-    }]);
+    const skill5 = createSkillRes('5', [
+      {
+        skill_name: '크리티컬 리인포스',
+        skill_effect: '크리티컬 확률의 50% 만큼 크리티컬 데미지 증가',
+      },
+    ]);
 
     expect(getCriticalReinforce(skill5)).toBe(50);
   });

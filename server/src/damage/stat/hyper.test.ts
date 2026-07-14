@@ -3,8 +3,16 @@ import type { HyperStatLine, HyperStatRes } from '../../nexon/index.js';
 import { getHyper } from './hyper.js';
 
 // 실측 문자열은 .nexon-raw-{티엘,오유찬,꽈숩노}.json 하이퍼 활성 프리셋에서 발췌.
-function hyperRes(usePreset: string, lines: Array<[string, string]>): HyperStatRes {
-  const preset: HyperStatLine[] = lines.map(([stat_type, stat_increase]) => ({ stat_type, stat_point: 0, stat_level: 1, stat_increase }));
+function hyperRes(
+  usePreset: string,
+  lines: Array<[string, string]>
+): HyperStatRes {
+  const preset: HyperStatLine[] = lines.map(([stat_type, stat_increase]) => ({
+    stat_type,
+    stat_point: 0,
+    stat_level: 1,
+    stat_increase,
+  }));
   const empty: HyperStatLine[] = [];
   return {
     use_preset_no: usePreset,
@@ -23,7 +31,10 @@ describe('하이퍼스탯 → StatBlock', () => {
       ['크리티컬 데미지', '크리티컬 데미지 10% 증가'],
       ['방어율 무시', '방어율 무시 30% 증가'],
       ['데미지', '데미지 36% 증가'],
-      ['보스 몬스터 공격 시 데미지 증가', '보스 몬스터 공격 시 데미지 51% 증가'],
+      [
+        '보스 몬스터 공격 시 데미지 증가',
+        '보스 몬스터 공격 시 데미지 51% 증가',
+      ],
     ]);
     expect(getHyper(hyper)).toEqual({
       LUK미적용: 180,
@@ -41,7 +52,10 @@ describe('하이퍼스탯 → StatBlock', () => {
     const hyper = hyperRes('2', [
       ['STR', '힘 30 증가'],
       ['획득 경험치', '획득 경험치 10.0% 증가'],
-      ['일반 몬스터 공격 시 데미지 증가', '일반 몬스터 공격 시 데미지 47% 증가'],
+      [
+        '일반 몬스터 공격 시 데미지 증가',
+        '일반 몬스터 공격 시 데미지 47% 증가',
+      ],
       ['상태 이상 내성', '상태 이상 내성 2 증가'],
     ]);
     expect(getHyper(hyper)).toEqual({ STR미적용: 30 });
