@@ -1,5 +1,5 @@
 // 유니온 공격대원 배치 효과(union_raider_stat) → MapleTemplate. 문자열에 최종 수치가 박혀 있음. 반복 라인은 누산.
-// 주스탯·올스탯·HP는 주스탯%·올스탯% 미적용(레거시 noPct=true) → ${…미적용}.
+// 주스탯·올스탯·HP는 주스탯%·올스탯% 미적용 → ${…미적용}.
 // 딜 무관 라인(경험치·메소·MP·버프지속·이속·회복·확률성·상태이상내성·소환수·스킬재사용 등)은 룰 없음 → 자동 스킵.
 import type { MapleTemplate } from './template-parser.js';
 

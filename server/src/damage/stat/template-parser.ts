@@ -155,7 +155,7 @@ export function parseMapleTemplates(
 }
 
 // 라인당 "첫 매칭 템플릿만" 채택. 부분문자열 충돌(바 '데미지' ⊂ '보스 몬스터 공격 시 데미지',
-// '일반 몬스터 공격 시 데미지') 방지 — 라인이 그 스탯명으로 시작할 때만 매칭(레거시 풀라인 앵커 계승).
+// '일반 몬스터 공격 시 데미지') 방지 — 라인이 그 스탯명으로 시작할 때만 매칭(풀라인 앵커).
 // 구체적인 템플릿을 앞에 둘 것. parseMapleTemplates(all-fire)와 달리 하나만 문다.
 export function parseFirstTemplate(
   line: string,
@@ -172,7 +172,7 @@ export function parseFirstTemplate(
   return {};
 }
 
-// 콤마 독립절("공격력 N, 마력 N")은 분해, 공유값("STR, DEX, LUK N")은 통째로 — 레거시 accumIncrease 규칙.
+// 콤마 독립절("공격력 N, 마력 N")은 분해, 공유값("STR, DEX, LUK N")은 통째로.
 function splitClauses(line: string): string[] {
   const segs = line.split(',').map((s) => s.trim());
   return segs.length > 1 && segs.every((s) => /\d/.test(s)) ? segs : [line];

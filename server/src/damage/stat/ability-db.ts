@@ -1,5 +1,5 @@
 // 어빌리티 라인(ability_info[].ability_value) → MapleTemplate. ability_value에 최종 수치가 박혀 있음.
-// 주스탯·공/마는 %적용(미적용 아님, 레거시 계승). 상태이상 대상 데미지는 추가뎀으로.
+// 주스탯·공/마는 %적용(미적용 아님). 상태이상 대상 데미지는 추가뎀으로.
 // ⚠️ 바 '데미지'는 '보스 …/상태 이상 … 데미지'의 부분문자열 → 반드시 뒤에 둘 것(첫 매칭 우선).
 import type { MapleTemplate } from './template-parser.js';
 

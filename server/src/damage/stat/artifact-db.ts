@@ -1,5 +1,5 @@
 // 유니온 아티팩트 크리스탈 효과(union_artifact_effect[].name) → MapleTemplate.
-// name에 최종 수치가 박혀 있어(레벨 무시) 그대로 파싱. 올스탯·공/마는 %적용(미적용 아님, 레거시 계승).
+// name에 최종 수치가 박혀 있어(레벨 무시) 그대로 파싱. 올스탯·공/마는 %적용(미적용 아님).
 // ⚠️ 바 '데미지'는 '보스/크리티컬 데미지'의 부분문자열 → 반드시 뒤에 둘 것(첫 매칭 우선).
 import type { MapleTemplate } from './template-parser.js';
 

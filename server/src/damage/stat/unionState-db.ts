@@ -1,5 +1,5 @@
 // 유니온 점령 효과(union_state_stat + union_occupied_stat) → MapleTemplate. 문자열에 최종 수치가 박혀 있음.
-// 주스탯은 %적용(레거시 noPct=false) → 일반 버킷. 딜 무관 라인(경험치·일반몹·버프지속 등)은 자동 스킵.
+// 주스탯은 %적용 → 일반 버킷. 딜 무관 라인(경험치·일반몹·버프지속 등)은 자동 스킵.
 // ⚠️ 바 '데미지'는 '보스/크리티컬 데미지'의 부분문자열 → 반드시 뒤에 둘 것(첫 매칭 우선).
 import type { MapleTemplate } from './template-parser.js';
 
