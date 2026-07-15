@@ -18,7 +18,11 @@ maple_auction.md
 docs/superpowers/
 dev/
 MEMO.md
+lecture/
+node/
 
 *.json
 !biome.json
+!node/package.json
+node/.pw-profile/
 server/src/scouter/

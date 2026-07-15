@@ -1,6 +1,7 @@
 import type { StatBlock } from '../stat-interface.js';
 
 const NUMBER = '[+-]?\\d+(?:\\.\\d+)?';
+const INCREASE = '(?:\\s*증가)?';
 
 function addScalar(block: StatBlock, key: string, value: number): void {
   const values = block as Record<string, number>;
@@ -44,7 +45,7 @@ export function parseEffectLines(
       if (!clause) continue;
 
       let match = new RegExp(
-        `^보스 몬스터 공격 시 데미지\\s+(${NUMBER})%\\s*증가$`
+        `^보스 몬스터 공격 시 데미지\\s+(${NUMBER})%${INCREASE}$`
       ).exec(clause);
       if (match) {
         addScalar(block, '보공', Number(match[1]));
@@ -52,7 +53,7 @@ export function parseEffectLines(
       }
 
       match = new RegExp(
-        `^상태 이상에 걸린 대상 공격 시 데미지\\s+(${NUMBER})%\\s*증가$`
+        `^상태 이상에 걸린 대상 공격 시 데미지\\s+(${NUMBER})%${INCREASE}$`
       ).exec(clause);
       if (match) {
         addScalar(block, '추가뎀', Number(match[1]));
@@ -60,14 +61,14 @@ export function parseEffectLines(
       }
 
       match = new RegExp(
-        `^(?:몬스터 )?방어율 무시\\s+(${NUMBER})%\\s*증가$`
+        `^(?:몬스터 )?방어율 무시\\s+(${NUMBER})%${INCREASE}$`
       ).exec(clause);
       if (match) {
         addStack(block, '방무', Number(match[1]));
         continue;
       }
 
-      match = new RegExp(`^크리티컬 데미지\\s+(${NUMBER})%\\s*증가$`).exec(
+      match = new RegExp(`^크리티컬 데미지\\s+(${NUMBER})%${INCREASE}$`).exec(
         clause
       );
       if (match) {
@@ -75,7 +76,7 @@ export function parseEffectLines(
         continue;
       }
 
-      match = new RegExp(`^크리티컬 확률\\s+(${NUMBER})%\\s*증가$`).exec(
+      match = new RegExp(`^크리티컬 확률\\s+(${NUMBER})%${INCREASE}$`).exec(
         clause
       );
       if (match) {
@@ -83,20 +84,35 @@ export function parseEffectLines(
         continue;
       }
 
-      match = new RegExp(`^데미지\\s+(${NUMBER})%\\s*증가$`).exec(clause);
+      match = new RegExp(
+        `^공격 시\\s+(${NUMBER})%의 확률로 데미지\\s+(${NUMBER})%${INCREASE}$`
+      ).exec(clause);
+      if (match) {
+        // 확률 발동 데미지는 가동률을 적용한 기대값으로 합산한다.
+        addScalar(
+          block,
+          '데미지',
+          (Number(match[1]) * Number(match[2])) / 100
+        );
+        continue;
+      }
+
+      match = new RegExp(`^데미지\\s+(${NUMBER})%${INCREASE}$`).exec(clause);
       if (match) {
         addScalar(block, '데미지', Number(match[1]));
         continue;
       }
 
-      match = new RegExp(`^최대 HP\\s+(${NUMBER})(%)?\\s*증가$`).exec(clause);
+      match = new RegExp(`^최대 HP\\s+(${NUMBER})(%)?${INCREASE}$`).exec(
+        clause
+      );
       if (match) {
         addScalar(block, match[2] ? 'HP퍼' : 'HP', Number(match[1]));
         continue;
       }
 
       match = new RegExp(
-        `^(STR|DEX|INT|LUK|올스탯|ALLSTAT|공격력|마력)\\s+(${NUMBER})\\s*(?:증가)?$`
+        `^(STR|DEX|INT|LUK|올스탯|ALLSTAT|공격력|마력)\\s+(${NUMBER})${INCREASE}$`
       ).exec(clause);
       if (match) {
         const key = match[1] === 'ALLSTAT' ? '올스탯' : match[1];

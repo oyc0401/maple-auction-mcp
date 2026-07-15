@@ -90,6 +90,24 @@ describe('parseEffectLines', () => {
     expect(result).toEqual({});
   });
 
+  it('공격 시 확률로 증가하는 데미지는 가동률을 적용한 기대값으로 파싱한다', () => {
+    const result = parseEffectLines([
+      '공격 시 20%의 확률로 데미지 20% 증가',
+      '공격 시 20%의 확률로 데미지 16% 증가',
+    ]);
+
+    expect(result).toEqual({ 데미지: 7.2 });
+  });
+
+  it('실제 조회된 대상·스킬 한정 효과를 일반 데미지로 잘못 파싱하지 않는다', () => {
+    const result = parseEffectLines([
+      '일반 몬스터 공격 시 데미지 8% 증가',
+      '파이널 어택류 스킬의 데미지 30% 증가',
+    ]);
+
+    expect(result).toEqual({});
+  });
+
   it('유니온 점령에서 제공하는 스탯 라인을 파싱한다', () => {
     const result = parseEffectLines([
       'STR 75 증가',
@@ -153,4 +171,9 @@ describe('parseEffectLines', () => {
     });
   });
 
+  it('아티팩트 HP·MP 복합 라인에서 증가가 생략된 HP를 파싱한다', () => {
+    const result = parseEffectLines(['최대 HP 7500, 최대 MP 7500 증가']);
+
+    expect(result).toEqual({ HP: 7500 });
+  });
 });
