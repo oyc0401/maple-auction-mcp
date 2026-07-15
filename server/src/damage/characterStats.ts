@@ -17,19 +17,19 @@ import {
   getSymbolEquipment,
   getUnionArtifact,
   getUnionChampion,
-  type ItemEquipmentRes,
-  type SetEffectRes,
 } from '../nexon/index.js';
-import { getAP } from './stat/ap.js';
 import { getAbility } from './stat/ability.js';
+import { getAP } from './stat/ap.js';
 import { getArtifact } from './stat/artifact.js';
 import { getCash } from './stat/cash.js';
 import { getChampion } from './stat/champion.js';
+import { getGear } from './stat/gear.js';
 import { getGuild } from './stat/guild.js';
 import { getHexaStat } from './stat/hexaStat.js';
 import { getHyper } from './stat/hyper.js';
 import { getLink } from './stat/link.js';
 import { getPropensity } from './stat/propensity.js';
+import { getSet } from './stat/set.js';
 import {
   getCriticalReinforce,
   getMapleWarrior,
@@ -39,7 +39,7 @@ import {
 import { getSymbol } from './stat/symbol.js';
 import { getUnionRaider } from './stat/unionRaider.js';
 import { getUnionState } from './stat/unionState.js';
-import type { CharacterStats, GearStats, StatBlock } from './stat-interface.js';
+import type { CharacterStats } from './stat-interface.js';
 
 export async function getCharacterStats(ocid: string): Promise<CharacterStats> {
   const stat = await getCharacterStat(ocid);
@@ -78,8 +78,8 @@ export async function getCharacterStats(ocid: string): Promise<CharacterStats> {
   return {
     기본: { 크확: 5, 크뎀: 35 },
     AP: getAP(stat),
-    장비: getGear(equip, basic.character_level), // 미완
-    세트효과: getSet(setEffect), // 미완
+    장비: getGear(equip, basic.character_level),
+    세트효과: getSet(setEffect),
     심볼: getSymbol(symbol),
     하이퍼스탯: getHyper(hyper),
 
@@ -109,12 +109,4 @@ export async function getCharacterStats(ocid: string): Promise<CharacterStats> {
     ),
     헥사스탯: getHexaStat(hexa),
   };
-}
-
-// 각 변환 함수는 필요한 넥슨 응답만 받는다. 구현은 파트별로 이관한다.
-function getGear(_equip: ItemEquipmentRes, _level: number): GearStats {
-  throw new Error('TODO: getGear');
-}
-function getSet(_setEffect: SetEffectRes): Record<string, StatBlock> {
-  throw new Error('TODO: getSet');
 }

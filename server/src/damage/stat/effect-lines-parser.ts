@@ -45,7 +45,7 @@ export function parseEffectLines(
       if (!clause) continue;
 
       let match = new RegExp(
-        `^보스 몬스터 공격 시 데미지\\s+(${NUMBER})%${INCREASE}$`
+        `^보스 몬스터(?: 공격 시)? 데미지\\s+(${NUMBER})%${INCREASE}$`
       ).exec(clause);
       if (match) {
         addScalar(block, '보공', Number(match[1]));
@@ -61,7 +61,7 @@ export function parseEffectLines(
       }
 
       match = new RegExp(
-        `^(?:몬스터 )?방어율 무시\\s+(${NUMBER})%${INCREASE}$`
+        `^(?:몬스터 )?방어율 무시\\s*:?\\s*(${NUMBER})%${INCREASE}$`
       ).exec(clause);
       if (match) {
         addStack(block, '방무', Number(match[1]));
