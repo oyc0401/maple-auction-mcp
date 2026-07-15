@@ -1,4 +1,4 @@
-import type { AuctionItem } from '../../type/auctionItem.js';
+import type { AuctionItem } from '../../auction/item.js';
 import type {
   ItemEquipment,
   ItemEquipmentRes,

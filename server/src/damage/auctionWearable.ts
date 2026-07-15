@@ -1,4 +1,4 @@
-import type { AuctionItem } from '../type/auctionItem.js';
+import type { AuctionItem } from '../auction/item.js';
 import { getJobClass } from './stat/job.js';
 
 // 착용 가능 여부도 검색 필터가 아니라 매물 JSON으로만 판단한다.

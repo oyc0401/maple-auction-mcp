@@ -18,21 +18,21 @@ import {
   type GetLimit,
 } from './mapping.js';
 import { summarizeSearch, summarizeItem, summarizeNexonEquip, type SearchSummary } from './summarize.js';
-import { listCharacters as listAccountCharacters, discoverIdentity, type CharacterInfo } from './characters.js';
-import { getAuctionEquipmentSlots } from './damage/auctionEquipmentSlot.js';
-import type { AuctionItem, AuctionSearchResponse } from './type/auctionItem.js';
-import { isAuctionItemWearable } from './damage/auctionWearable.js';
-import { getStatsAfterEquipmentReplacement } from './damage/equipmentReplacement.js';
-import { getFinalDamageChangeRate } from './damage/finalDamage.js';
-import { getEquipmentSlot, type EquipmentSlot } from './damage/equipmentSlot.js';
-import { getAuctionItemStats } from './damage/stat/gear.js';
-import { worldName } from './constants.js';
-import type { BridgeLike } from './nexon.js';
-import { nexonApiKey } from './nexon/index.js';
+import { listCharacters as listAccountCharacters, discoverIdentity, type CharacterInfo } from '../characters.js';
+import { getAuctionEquipmentSlots } from '../damage/auctionEquipmentSlot.js';
+import type { AuctionItem, AuctionSearchResponse } from './item.js';
+import { isAuctionItemWearable } from '../damage/auctionWearable.js';
+import { getStatsAfterEquipmentReplacement } from '../damage/equipmentReplacement.js';
+import { getFinalDamageChangeRate } from '../damage/finalDamage.js';
+import { getEquipmentSlot, type EquipmentSlot } from '../damage/equipmentSlot.js';
+import { getAuctionItemStats } from '../damage/stat/gear.js';
+import { worldName } from '../constants.js';
+import type { BridgeLike } from '../nexon.js';
+import { nexonApiKey } from '../nexon/index.js';
 import type {
   LoadCharacterSnapshot,
   RefreshCharacterSnapshot,
-} from './nexon/characterSnapshot.js';
+} from '../nexon/characterSnapshot.js';
 
 const NEXON_KEY_GUIDE =
   '넥슨 오픈 API 키가 설정되지 않아 이 도구를 쓸 수 없습니다. https://openapi.nexon.com 에서 키를 발급받아 ' +

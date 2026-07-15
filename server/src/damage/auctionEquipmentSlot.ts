@@ -1,4 +1,4 @@
-import type { AuctionItem } from '../type/auctionItem.js';
+import type { AuctionItem } from '../auction/item.js';
 import { getEquipmentSlot, type EquipmentSlot } from './equipmentSlot.js';
 
 // 한 매물이 여러 슬롯 후보를 갖는 부위. categories는 "반지"까지만 알려주고

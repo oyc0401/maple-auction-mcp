@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { summarizeSearch, summarizeItem } from '../src/summarize.js';
+import { summarizeSearch, summarizeItem } from '../src/auction/summarize.js';
 
 // 실측 응답(2026-07-08 검증)을 축약한 픽스처 — 키 이름은 실제와 동일
 const item = {

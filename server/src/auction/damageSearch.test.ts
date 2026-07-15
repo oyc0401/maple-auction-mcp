@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
-import { AuctionService } from './auction.js';
-import type { BridgeLike } from './nexon.js';
-import type { ItemEquipmentRes } from './nexon/types.js';
+import { AuctionService } from './service.js';
+import type { BridgeLike } from '../nexon.js';
+import type { ItemEquipmentRes } from '../nexon/types.js';
 
 describe('AuctionService 장비 검색 최종 데미지 자동 계산', () => {
   it('반지 매물 하나에 네 슬롯의 증감률을 함께 반환하고 0과 음수도 보존한다', async () => {

@@ -1,8 +1,8 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
-import { WISHLIST_MAX, SORTS, type SearchParams, type Sort, type GetLimit } from './mapping.js';
+import { WISHLIST_MAX, SORTS, type SearchParams, type Sort, type GetLimit } from './auction/mapping.js';
 import { loadKnowledge } from './knowledge.js';
-import { AuctionService } from './auction.js';
+import { AuctionService } from './auction/service.js';
 import {
   POTENTIAL_OPTION_KEYS,
   EX_OPTION_KEYS,

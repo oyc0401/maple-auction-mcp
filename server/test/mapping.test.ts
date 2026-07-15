@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildCreateBody, buildPageUrl, SEARCH_URL } from '../src/mapping.js';
+import { buildCreateBody, buildPageUrl, SEARCH_URL } from '../src/auction/mapping.js';
 
 const id = { worldId: 5, accountId: 99188397, characterId: 25631906 };
 
