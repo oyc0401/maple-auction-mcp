@@ -80,6 +80,7 @@ export interface GearStats {
   눈장식?: EquippedItem;
   귀고리?: EquippedItem;
   상의?: EquippedItem;
+  한벌옷?: EquippedItem;
   하의?: EquippedItem;
   신발?: EquippedItem;
   장갑?: EquippedItem;
@@ -101,6 +102,8 @@ export interface GearStats {
   기계심장?: EquippedItem;
   칭호?: EquippedItem;
 }
+
+export type CashGearStats = Record<string, EquippedItem>;
 
 export interface SkillStats {
   스킬_1차?: Record<string, StatBlock>;
@@ -136,7 +139,7 @@ export interface CharacterStats {
   길드스킬?: StatBlock;
   헥사스탯?: StatBlock;
 
-  캐시장비?: StatBlock;
+  캐시장비?: CashGearStats;
   펫장비?: StatBlock;
 
   도핑?: StatBlock;

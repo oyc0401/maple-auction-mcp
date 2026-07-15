@@ -1,5 +1,5 @@
 import type { CashItemEquipmentRes } from '../../nexon/index.js';
-import type { StatBlock } from '../stat-interface.js';
+import type { CashGearStats, StatBlock } from '../stat-interface.js';
 
 const num = (v: unknown): number => Number(v ?? 0) || 0;
 
@@ -16,16 +16,23 @@ const OPTION_KEY: Record<string, CashStat> = {
   마력: '마력',
 };
 
-// 캐시장비 → StatBlock. base 프리셋의 정형 옵션만 직접 합산한다(파싱 아님).
-export function getCash(cash: CashItemEquipmentRes): StatBlock {
-  const block: StatBlock = {};
+// 캐시장비 → 슬롯별 장비. 교체 계산에서 기존 캐시 옵션을 정확히 뺄 수 있도록 합산하지 않는다.
+export function getCash(cash: CashItemEquipmentRes): CashGearStats {
+  const gear: CashGearStats = {};
   for (const item of cash.cash_item_equipment_base ?? []) {
+    const block: StatBlock = {};
     for (const option of item.cash_item_option ?? []) {
       const key = OPTION_KEY[option.option_type];
       if (!key) continue;
       const value = num(option.option_value);
       if (value) block[key] = (block[key] ?? 0) + value;
     }
+    if (item.cash_item_equipment_slot) {
+      gear[item.cash_item_equipment_slot] = {
+        name: item.cash_item_name,
+        stat: block,
+      };
+    }
   }
-  return block;
+  return gear;
 }

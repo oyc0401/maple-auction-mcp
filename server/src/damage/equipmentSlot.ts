@@ -8,6 +8,7 @@ const EQUIPMENT_SLOT_MAP: Partial<Record<string, EquipmentSlot>> = {
   눈장식: '눈장식',
   귀고리: '귀고리',
   상의: '상의',
+  한벌옷: '한벌옷',
   하의: '하의',
   신발: '신발',
   장갑: '장갑',

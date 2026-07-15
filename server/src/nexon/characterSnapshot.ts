@@ -37,7 +37,7 @@ export type LoadCharacterSnapshot = (name: string) => Promise<CharacterSnapshot>
 export type RefreshCharacterSnapshot = LoadCharacterSnapshot;
 
 interface CachedCharacterSnapshot {
-  version: 1;
+  version: 2;
   fetchedAt: string;
   snapshot: CharacterSnapshot;
 }
@@ -73,7 +73,7 @@ function cacheFile(name: string): string {
 async function readCachedSnapshot(name: string): Promise<CachedCharacterSnapshot | null> {
   try {
     const parsed = JSON.parse(await readFile(cacheFile(name), 'utf8')) as Partial<CachedCharacterSnapshot>;
-    if (parsed.version !== 1 || !parsed.fetchedAt || !parsed.snapshot) return null;
+    if (parsed.version !== 2 || !parsed.fetchedAt || !parsed.snapshot) return null;
     if (parsed.snapshot.name !== name) return null;
     return parsed as CachedCharacterSnapshot;
   } catch {
@@ -186,7 +186,7 @@ export const refreshCharacterSnapshot: RefreshCharacterSnapshot = async (name) =
   const request = fetchCharacterSnapshot(name)
     .then(async (snapshot) => {
       const entry: CachedCharacterSnapshot = {
-        version: 1,
+        version: 2,
         fetchedAt: new Date().toISOString(),
         snapshot,
       };

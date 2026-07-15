@@ -24,7 +24,7 @@ describe('캐릭터 스냅샷 영구 캐시', () => {
     await writeFile(
       join(cacheDirectory, `${encodeURIComponent('영구캐릭터')}.json`),
       JSON.stringify({
-        version: 1,
+        version: 2,
         fetchedAt: '2026-07-16T00:00:00.000Z',
         snapshot: {
           name: '영구캐릭터',
