@@ -126,11 +126,10 @@ describe('summarizeItem (비장비: 소비·캐시·기타, toolTipType 5 — 20
       wishlistCount: 0,
       endDate: 'd',
       status: 'ON_SALE',
-      isCash: true,
       gender: 'NONE',
       royalSpecialType: 0,
       petGrade: 0,
-      toolTip: { itemName: '세이프티 실드', tradeDescs: ['1회 교환 가능 (거래 후 교환 불가)'], timeLimit: null, cashTradeInfo: null },
+      toolTip: { itemName: '세이프티 실드', tradeDescs: ['1회 교환 가능 (거래 후 교환 불가)'], timeLimit: null },
     }) as any;
     expect(s.tradeDesc).toBe('1회 교환 가능 (거래 후 교환 불가)');
     expect(s.quantity).toBe(3);

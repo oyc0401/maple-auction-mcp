@@ -20,6 +20,7 @@ import {
 import { summarizeSearch, summarizeItem, summarizeNexonEquip, type SearchSummary } from './summarize.js';
 import { listCharacters as listAccountCharacters, discoverIdentity, type CharacterInfo } from './characters.js';
 import { getAuctionEquipmentSlots } from './damage/auctionEquipmentSlot.js';
+import type { AuctionItem, AuctionSearchResponse } from './type/auctionItem.js';
 import { isAuctionItemWearable } from './damage/auctionWearable.js';
 import { getStatsAfterEquipmentReplacement } from './damage/equipmentReplacement.js';
 import { getFinalDamageChangeRate } from './damage/finalDamage.js';
@@ -86,13 +87,12 @@ export class AuctionService {
   ) {}
 
   private async summarizeSearchWithDamage(
-    data: any
+    data: AuctionSearchResponse
   ): Promise<SearchSummary & { finalDamageNote?: string }> {
     const summary = summarizeSearch(data);
     // 부위는 매물 JSON만으로 정한다 — 검색 조건을 보면 이름만으로 검색했을 때 슬롯을 잃는다.
-    const slotsByItem = summary.items.map((_, index) =>
-      getAuctionEquipmentSlots(data?.items?.[index] ?? {})
-    );
+    const rawItems = data.items ?? [];
+    const slotsByItem = rawItems.map(getAuctionEquipmentSlots);
     if (!slotsByItem.some((slots) => slots?.length)) return summary;
 
     const characterName = this.identity?.characterName;
@@ -108,10 +108,10 @@ export class AuctionService {
       const items = summary.items.map((item, index) => {
         const slots = slotsByItem[index];
         if (!slots?.length) return item;
-        const raw = data?.items?.[index];
+        const raw = rawItems[index];
         // 못 입는 장비의 증감률은 의미가 없다 — 카데나에게 마법사 스태프가 +26%로 뜨던 버그.
-        if (!isAuctionItemWearable(raw ?? {}, character.job)) return item;
-        const stat = getAuctionItemStats(raw ?? {}, character.level);
+        if (!raw || !isAuctionItemWearable(raw, character.job)) return item;
+        const stat = getAuctionItemStats(raw, character.level);
         const finalDamageChangeRate: Partial<Record<EquipmentSlot, number>> = {};
         for (const slot of slots) {
           if (!character.stats.장비?.[slot]) continue;
@@ -237,7 +237,7 @@ export class AuctionService {
     const sold = cachedEntry?.sold ?? false;
     // 실측: 결과 500건 초과면 API가 전투력 정렬을 조용히 무시한다 — 정렬됐다고 믿고 읽는 오판 방지
     const pageResult = async (data: unknown) => {
-      const summary = await this.summarizeSearchWithDamage(data);
+      const summary = await this.summarizeSearchWithDamage(data as AuctionSearchResponse);
       const note =
         sort === 'ATTACK_POWER_DESC' && summary.total > 500
           ? '결과가 500건을 초과해 전투력 정렬이 적용되지 않음 (다른 정렬로 반환될 수 있음)'
@@ -311,17 +311,17 @@ export class AuctionService {
     const reply = await this.bridge.request({ type: 'fetch', url: RECENT_SOLD_URL, method: 'POST', body });
     if (!reply.ok) return errorText(reply);
     try {
-      return summarizeSearch(reply.data);
+      return summarizeSearch(reply.data as AuctionSearchResponse);
     } catch {
       return reply.data; // 응답 형태가 검색과 다르면 원본 반환
     }
   }
 
   // 찜 목록 개수·남은 슬롯을 조회한다(무료 GET). 실패 시 에러 문자열.
-  private async wishlistState(id: Identity): Promise<{ count: number; remaining: number; items: unknown[] } | string> {
+  private async wishlistState(id: Identity): Promise<{ count: number; remaining: number; items: AuctionItem[] } | string> {
     const reply = await this.bridge.request({ type: 'fetch', url: buildWishlistGetUrl(id), method: 'GET' });
     if (!reply.ok) return errorText(reply);
-    const items = ((reply.data as any)?.items ?? []) as unknown[];
+    const items = (reply.data as { items?: AuctionItem[] } | null)?.items ?? [];
     return { count: items.length, remaining: Math.max(0, WISHLIST_MAX - items.length), items };
   }
 

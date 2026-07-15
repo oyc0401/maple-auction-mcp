@@ -1,3 +1,4 @@
+import type { AuctionItem } from '../../type/auctionItem.js';
 import type {
   ItemEquipment,
   ItemEquipmentRes,
@@ -134,26 +135,8 @@ function parseOptionText(
   }
 }
 
-interface AuctionOptionEntry {
-  text?: string | null;
-}
-
-interface AuctionItem {
-  [key: string]: unknown;
-  toolTip?: {
-    stat?: Record<string, unknown>;
-    upgradeInfo?: {
-      [key: string]: unknown;
-      potential?: { entries?: AuctionOptionEntry[] };
-      additionalPotential?: { entries?: AuctionOptionEntry[] };
-    };
-    soulWeapon?: { [key: string]: unknown; optionText?: string | null };
-    [key: string]: unknown;
-  };
-}
-
 export function getAuctionItemStats(
-  item: AuctionItem,
+  item: Pick<AuctionItem, 'toolTip'>,
   characterLevel: number
 ): StatBlock {
   const block: StatBlock = {};

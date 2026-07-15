@@ -8,8 +8,6 @@ describe('경매장 장비 StatBlock 변환', () => {
   it('툴팁 최종 스탯과 잠재·에디·소울을 하나의 StatBlock으로 변환한다', () => {
     const stat = getAuctionItemStats(
       {
-        _id: 'ring:1',
-        itemName: '테스트 링',
         toolTip: {
           stat: {
             str: 10,
@@ -20,12 +18,16 @@ describe('경매장 장비 StatBlock 변환', () => {
           },
           upgradeInfo: {
             potential: {
+              grade: 4,
+              description: '잠재능력 : 레전드리',
               entries: [
                 { text: 'LUK +9%' },
                 { text: '몬스터 방어율 무시 +10%' },
               ],
             },
             additionalPotential: {
+              grade: 3,
+              description: '에디셔널 잠재능력 : 유니크',
               entries: [{ text: '공격력 +6%' }],
             },
           },
@@ -52,8 +54,6 @@ describe('경매장 장비 StatBlock 변환', () => {
   it('toolTip.stat에 포함된 추가옵션·익셉셔널 수치를 다시 더하지 않는다', () => {
     const stat = getAuctionItemStats(
       {
-        _id: 'weapon:1',
-        itemName: '테스트 무기',
         toolTip: {
           stat: { str: 30, pad: 284 },
           exceptionalUpgrade: {
@@ -75,12 +75,12 @@ describe('경매장 장비 StatBlock 변환', () => {
   it('캐릭터 기준 9레벨당 스탯은 착용 캐릭터 레벨로 계산한다', () => {
     const stat = getAuctionItemStats(
       {
-        _id: 'hat:1',
-        itemName: '테스트 모자',
         toolTip: {
           stat: {},
           upgradeInfo: {
             additionalPotential: {
+              grade: 2,
+              description: '에디셔널 잠재능력 : 에픽',
               entries: [{ text: '캐릭터 기준 9레벨 당 LUK +2' }],
             },
           },
