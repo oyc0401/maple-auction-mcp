@@ -22,6 +22,7 @@ import {
 
 // 내부 API 계약은 nexon.ts 소유 (변환 계층과 함께) — 기존 소비처를 위해 re-export.
 import type { BridgeLike } from './nexon.js';
+import type { LoadCharacterSnapshot } from './nexon/characterSnapshot.js';
 export type { BridgeLike } from './nexon.js';
 
 function text(value: unknown) {
@@ -96,7 +97,10 @@ const seedRingSchema = {
   seedRingLevelMax: z.number().int().optional().describe('특수 스킬 반지 레벨 최대 (반지 전용)'),
 };
 
-export function createServer(bridge: BridgeLike): McpServer {
+export function createServer(
+  bridge: BridgeLike,
+  loadCharacterSnapshot: LoadCharacterSnapshot
+): McpServer {
   // 클라이언트가 시스템 프롬프트에 주입하는 도구 사용 규칙. 한국어 유지 — 응답·필터가 전부 한국어라 톤을 맞추고,
   // 방무·공퍼·보공 같은 단축어를 모델에 학습시키는 의미도 있음. (압축 유지)
   // 행동 규칙은 전부 여기에 둔다 — 도구 description에 행동 지시를 넣으면 디렉토리 심사에서 프롬프트 인젝션으로 간주됨.
@@ -111,12 +115,12 @@ export function createServer(bridge: BridgeLike): McpServer {
     '- 검색 결과를 보여줄 때 사용한 필터 조건을 함께 표기한다.',
     '- 가위(재거래) 잔여 횟수가 낮은 매물은 사용자에게 꼭 명시한다(tradeDesc 참고).',
     '- 매물 id("ynoFBr…:1" 류)는 도구 호출용 내부 값 — 사용자에게 노출하지 말 것. 별칭은 표에 넣지 말고 문장에서 사용.',
-    '- 정확한 효율 비교는 item_damage(최종 데미지 증감률) — 넥슨 오픈 API 기반이라 검색 횟수를 소진하지 않지만, 후보를 추린 뒤 소수만. 부위가 정해졌으면 slot을 지정한다.',
+    '- 지원되는 장비 검색 결과에는 현재 기준 캐릭터가 착용했을 때의 부위별 finalDamageChangeRate(최종 데미지 증감률 %)가 포함된다.',
   ].join('\n');
 
   const server = new McpServer({ name: 'maple-auction', version: '0.8.0' }, { instructions });
 
-  const service = new AuctionService(bridge);
+  const service = new AuctionService(bridge, loadCharacterSnapshot);
 
   server.registerResource(
     'maple-knowledge',
@@ -130,6 +134,7 @@ export function createServer(bridge: BridgeLike): McpServer {
   );
 
   // 리소스를 못 읽는 호스트(Claude Desktop 등)를 위한 도구 버전 — context7의 문서 서빙 패턴.
+  // get_knowledge
   server.registerTool(
     'get_knowledge',
     {
@@ -141,12 +146,13 @@ export function createServer(bridge: BridgeLike): McpServer {
     async () => text(loadKnowledge())
   );
 
+  // user_equip
   server.registerTool(
     'user_equip',
     {
       title: '캐릭터 착용 장비 조회',
       description:
-        '닉네임으로 임의 캐릭터가 현재 착용 중인 장비를 조회한다(넥슨 오픈 API, 마지막 로그아웃 기준, 10분 캐시, 검색 횟수 무관). slot 생략 시 전 부위 요약 목록, 지정 시 스탯·잠재·에디·소울 상세. 경매장 매물과의 교체 손익은 item_damage.',
+        '닉네임으로 임의 캐릭터가 현재 착용 중인 장비를 조회한다(넥슨 오픈 API, 마지막 로그아웃 기준, 10분 캐시, 검색 횟수 무관). slot 생략 시 전 부위 요약 목록, 지정 시 스탯·잠재·에디·소울 상세.',
       inputSchema: {
         characterName: z.string().optional().describe('조회할 캐릭터 닉네임. 생략 시 현재 검색 기준 캐릭터'),
         slot: z.string().optional().describe('부위 (예: "무기", "반지1", "펜던트2"). 생략 시 전체 목록'),
@@ -156,6 +162,7 @@ export function createServer(bridge: BridgeLike): McpServer {
     async ({ characterName, slot }) => text(await service.userEquip(characterName, slot))
   );
 
+  // search_items
   server.registerTool(
     'search_items',
     {
@@ -175,6 +182,7 @@ export function createServer(bridge: BridgeLike): McpServer {
     async (params) => text(await service.search(params as SearchParams))
   );
 
+  // search_weapon
   server.registerTool(
     'search_weapon',
     {
@@ -192,6 +200,7 @@ export function createServer(bridge: BridgeLike): McpServer {
     async ({ subCategory, sold, ...rest }) => text(await service.search({ ...(rest as SearchParams), category: subCategory as string }, sold))
   );
 
+  // search_armor
   server.registerTool(
     'search_armor',
     {
@@ -210,6 +219,7 @@ export function createServer(bridge: BridgeLike): McpServer {
     async ({ subCategory, sold, ...rest }) => text(await service.search({ ...(rest as SearchParams), category: subCategory as string }, sold))
   );
 
+  // search_consume
   server.registerTool(
     'search_consume',
     {
@@ -227,6 +237,7 @@ export function createServer(bridge: BridgeLike): McpServer {
     async ({ subCategory, sold, ...rest }) => text(await service.search({ ...(rest as SearchParams), category: subCategory as string }, sold))
   );
 
+  // search_cash
   server.registerTool(
     'search_cash',
     {
@@ -261,6 +272,7 @@ export function createServer(bridge: BridgeLike): McpServer {
       )
   );
 
+  // search_etc
   server.registerTool(
     'search_etc',
     {
@@ -276,6 +288,7 @@ export function createServer(bridge: BridgeLike): McpServer {
     async ({ subCategory, sold, ...rest }) => text(await service.search({ ...(rest as SearchParams), category: subCategory as string }, sold))
   );
 
+  // get_page
   server.registerTool(
     'get_page',
     {
@@ -298,21 +311,7 @@ export function createServer(bridge: BridgeLike): McpServer {
     async ({ searchKey, page, limit, sort }) => text(await service.getPage(searchKey, page, limit as GetLimit, sort as Sort))
   );
 
-  server.registerTool(
-    'item_damage',
-    {
-      title: '아이템 교체 시 최종 데미지 증감률',
-      description:
-        '매물 1개를 현재 캐릭터의 해당 부위 장비와 교체할 때의 최종 데미지 증감률(%) — 보스 방어율 380% 기준. 주스탯(%적용·미적용 분리)·공격력(깡·%)·보공·방무(곱연산)·크뎀·최종뎀·세트효과 반영 (powerDiff 전투력은 보공·방무 미반영). 넥슨 오픈 API 기반이라 검색 횟수 무관, 캐릭터 조회는 10분 캐시.',
-      inputSchema: {
-        itemId: z.string().describe('매물 id (검색 결과의 id 필드, "TRADESN:SUBIDX" 형식)'),
-        slot: z.string().optional().describe('특정 부위만 계산 (예: "반지1", "펜던트2"). 생략 시 착용 가능한 모든 부위'),
-      },
-      annotations: { readOnlyHint: true, destructiveHint: false },
-    },
-    async ({ itemId, slot }) => text(await service.itemDamage(itemId, slot))
-  );
-
+  // recent_sold
   server.registerTool(
     'recent_sold',
     {
@@ -325,6 +324,7 @@ export function createServer(bridge: BridgeLike): McpServer {
     async () => text(await service.recentSold())
   );
 
+  // get_wishlist
   server.registerTool(
     'get_wishlist',
     {
@@ -337,6 +337,7 @@ export function createServer(bridge: BridgeLike): McpServer {
     async () => text(await service.getWishlist())
   );
 
+  // add_wishlist
   server.registerTool(
     'add_wishlist',
     {
@@ -351,6 +352,7 @@ export function createServer(bridge: BridgeLike): McpServer {
     async ({ itemId }) => text(await service.addWishlist(itemId))
   );
 
+  // remove_wishlist
   server.registerTool(
     'remove_wishlist',
     {
@@ -366,6 +368,7 @@ export function createServer(bridge: BridgeLike): McpServer {
     async ({ itemId }) => text(await service.removeWishlist(itemId))
   );
 
+  // list_characters
   server.registerTool(
     'list_characters',
     {
@@ -378,6 +381,7 @@ export function createServer(bridge: BridgeLike): McpServer {
     async () => text(await service.listCharacters())
   );
 
+  // set_character
   server.registerTool(
     'set_character',
     {
@@ -394,6 +398,7 @@ export function createServer(bridge: BridgeLike): McpServer {
     async ({ characterName, characterId }) => text(await service.setCharacter(characterName, characterId))
   );
 
+  // get_status
   server.registerTool(
     'get_status',
     {

@@ -1,4 +1,5 @@
 import { ROYAL_LABEL_BY_VALUE, PET_GRADE_BY_VALUE } from './constants.js';
+import type { EquipmentSlot } from './damage/equipmentSlot.js';
 
 interface PotentialBlock {
   grade: number;
@@ -56,6 +57,7 @@ export interface ItemSummary {
   wishlist: number;
   isMyWorld: boolean; // 내 월드 매물 여부. false면 구매 시 가격의 10% 메이플포인트 수수료
   isAmazingHyperUpgradeUsed?: boolean; // 놀라운 장비강화 주문서(놀장) 사용 시에만 true
+  finalDamageChangeRate?: Partial<Record<EquipmentSlot, number>>;
 }
 
 export interface SearchSummary {

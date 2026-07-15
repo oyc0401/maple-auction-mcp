@@ -17,14 +17,16 @@ import {
   type Sort,
   type GetLimit,
 } from './mapping.js';
-import { summarizeSearch, summarizeItem, summarizeNexonEquip } from './summarize.js';
+import { summarizeSearch, summarizeItem, summarizeNexonEquip, type SearchSummary } from './summarize.js';
 import { listCharacters as listAccountCharacters, discoverIdentity, type CharacterInfo } from './characters.js';
-import { categoryToSlots, slotLabel } from './hwansan2/index.js';
-import { collectCharacter, nexonApiKey, type CharacterCollected } from './damage/nexon.js';
-import { buildCombatStats, type CombatStats } from './damage/combat.js';
-import { swapDamageDelta } from './damage/delta.js';
+import { getAuctionEquipmentSlots } from './damage/auctionEquipmentSlot.js';
+import { getStatsAfterEquipmentReplacement } from './damage/equipmentReplacement.js';
+import { getFinalDamageChangeRate } from './damage/finalDamage.js';
+import { getEquipmentSlot, type EquipmentSlot } from './damage/equipmentSlot.js';
+import { getAuctionItemStats } from './damage/stat/gear.js';
 import { worldName } from './constants.js';
 import type { BridgeLike } from './nexon.js';
+import type { LoadCharacterSnapshot } from './nexon/characterSnapshot.js';
 
 const NEXON_KEY_GUIDE =
   '넥슨 오픈 API 키가 설정되지 않아 이 도구를 쓸 수 없습니다. https://openapi.nexon.com 에서 키를 발급받아 ' +
@@ -47,8 +49,6 @@ function errorText(reply: Extract<BridgeReply, { ok: false }>): string {
   return `요청 실패 (${reply.code}): ${reply.error}${suffix}`;
 }
 
-const RAW_ITEM_CACHE_MAX = 300;
-
 // MCP 도구 뒤의 애플리케이션 서비스 — 세션 상태(신원·캐시)와 유스케이스를 소유한다.
 // 반환 규약: 실패는 한국어 안내 문자열, 성공은 요약 객체 (mcp.ts가 text()로 감싼다).
 export class AuctionService {
@@ -58,19 +58,55 @@ export class AuctionService {
   // 동일 조건(body+sold) → 살아있는 searchKey. 같은 조건 재검색을 POST 없이 재사용해 검색 횟수를 구조적으로 아낀다.
   // (searchKey는 조건만 저장하므로 GET 결과는 항상 실시간 — 재사용해도 낡은 데이터가 아니다)
   private readonly conditionCache = new Map<string, string>();
-  // 원본 매물 캐시(id → 원본 + 검색 카테고리). item_hwansan이 단일 매물의 부위별 Δ환산을
-  // 온디맨드로 계산할 때 쓴다. 검색·페이지 조회가 지날 때마다 채워지고, 상한 초과 시 오래된 것부터 버린다.
-  private readonly rawItemCache = new Map<string, { raw: any; category?: string }>();
-  constructor(private bridge: BridgeLike) {}
+  constructor(
+    private bridge: BridgeLike,
+    private loadCharacterSnapshot: LoadCharacterSnapshot
+  ) {}
 
-  private cacheRawItems(items: any[] | undefined, category?: string) {
-    for (const it of items ?? []) {
-      if (!it?._id) continue;
-      this.rawItemCache.set(it._id, { raw: it, category });
-      if (this.rawItemCache.size > RAW_ITEM_CACHE_MAX) {
-        const oldest = this.rawItemCache.keys().next().value;
-        if (oldest !== undefined) this.rawItemCache.delete(oldest);
-      }
+  private async summarizeSearchWithDamage(
+    data: any,
+    category?: string
+  ): Promise<SearchSummary & { finalDamageNote?: string }> {
+    const summary = summarizeSearch(data);
+    const slots = getAuctionEquipmentSlots(category);
+    if (!slots) return summary;
+
+    const characterName = this.identity?.characterName;
+    if (!characterName) {
+      return {
+        ...summary,
+        finalDamageNote: '현재 캐릭터 이름을 알 수 없어 최종 데미지 증감률을 계산하지 못했습니다.',
+      };
+    }
+
+    try {
+      const character = await this.loadCharacterSnapshot(characterName);
+      const items = summary.items.map((item, index) => {
+        const raw = data?.items?.[index];
+        const stat = getAuctionItemStats(raw ?? {}, character.level);
+        const finalDamageChangeRate: Partial<Record<EquipmentSlot, number>> = {};
+        for (const slot of slots) {
+          if (!character.stats.장비?.[slot]) continue;
+          const changedStats = getStatsAfterEquipmentReplacement(character.stats, {
+            slot,
+            name: item.name,
+            stat,
+          });
+          finalDamageChangeRate[slot] = getFinalDamageChangeRate(
+            { job: character.job, level: character.level, stats: character.stats },
+            changedStats
+          );
+        }
+        return Object.keys(finalDamageChangeRate).length
+          ? { ...item, finalDamageChangeRate }
+          : item;
+      });
+      return { ...summary, items };
+    } catch (error) {
+      return {
+        ...summary,
+        finalDamageNote: `최종 데미지 증감률 계산 실패: ${(error as Error).message}`,
+      };
     }
   }
 
@@ -145,9 +181,8 @@ export class AuctionService {
       });
       if (reused.ok) {
         const data = reused.data as any;
-        this.cacheRawItems(data?.items, params.category);
         const note = ['동일 조건의 기존 검색을 재사용 (검색 횟수 소진 없음)', this.searchNote(data?.total, params)].filter(Boolean).join(' / ');
-        return { ...summarizeSearch(data), searchRemaining: await this.searchRemaining(), note };
+        return { ...(await this.summarizeSearchWithDamage(data, params.category)), searchRemaining: await this.searchRemaining(), note };
       }
       this.conditionCache.delete(condKey);
     }
@@ -159,9 +194,8 @@ export class AuctionService {
       this.bodyCache.set(data.searchKey, { body, sold, category: params.category });
       this.conditionCache.set(condKey, data.searchKey);
     }
-    this.cacheRawItems(data?.items, params.category);
     const note = this.searchNote(data?.total, params);
-    return { ...summarizeSearch(data), searchRemaining: await this.searchRemaining(), ...(note ? { note } : {}) };
+    return { ...(await this.summarizeSearchWithDamage(data, params.category)), searchRemaining: await this.searchRemaining(), ...(note ? { note } : {}) };
   }
 
   async getPage(searchKey: string, page: number, limit: GetLimit, sort: Sort): Promise<unknown> {
@@ -171,8 +205,8 @@ export class AuctionService {
     const cachedEntry = this.bodyCache.get(searchKey);
     const sold = cachedEntry?.sold ?? false;
     // 실측: 결과 500건 초과면 API가 전투력 정렬을 조용히 무시한다 — 정렬됐다고 믿고 읽는 오판 방지
-    const pageResult = (data: unknown) => {
-      const summary = summarizeSearch(data);
+    const pageResult = async (data: unknown) => {
+      const summary = await this.summarizeSearchWithDamage(data, cachedEntry?.category);
       const note =
         sort === 'ATTACK_POWER_DESC' && summary.total > 500
           ? '결과가 500건을 초과해 전투력 정렬이 적용되지 않음 (다른 정렬로 반환될 수 있음)'
@@ -181,8 +215,7 @@ export class AuctionService {
     };
     const reply = await this.bridge.request({ type: 'fetch', url: buildPageUrl(searchKey, q, id, sold), method: 'GET' });
     if (reply.ok) {
-      this.cacheRawItems((reply.data as any)?.items, cachedEntry?.category);
-      return pageResult(reply.data);
+      return await pageResult(reply.data);
     }
 
     // searchKey 만료 추정 → 캐시된 조건으로 재검색(POST) 후 해당 페이지 재조회 (라이브/시세 각각의 URL로)
@@ -197,91 +230,12 @@ export class AuctionService {
           this.conditionCache.set(`${cached.sold ? 'sold' : 'live'}:${JSON.stringify(cached.body)}`, newKey);
           const retry = await this.bridge.request({ type: 'fetch', url: buildPageUrl(newKey, q, id, cached.sold), method: 'GET' });
           if (retry.ok) {
-            this.cacheRawItems((retry.data as any)?.items, cached.category);
-            return pageResult(retry.data);
+            return await pageResult(retry.data);
           }
         }
       }
     }
     return errorText(reply);
-  }
-
-  async itemDamage(itemId: string, slot?: string): Promise<unknown> {
-    const id = await this.ensureIdentity();
-    if (typeof id === 'string') return id;
-    return this.computeItemDamage(itemId, slot);
-  }
-
-  // 넥슨 캐릭터 조회(TTL 캐시)와 스왑 계산 캐시. CombatStats·스왑 결과는 collectCharacter 결과 객체에
-  // 묶어(WeakMap) TTL 갱신 시 자동 무효화된다 (구 swap.ts 캐시 패턴).
-  private readonly combatCache = new WeakMap<CharacterCollected, { cs: CombatStats; swaps: Map<string, ReturnType<typeof swapDamageDelta>> }>();
-
-  private async loadCharacter(name: string): Promise<CharacterCollected | string> {
-    if (!nexonApiKey()) return NEXON_KEY_GUIDE;
-    try {
-      return await collectCharacter(name);
-    } catch (e) {
-      return `넥슨 오픈 API 캐릭터 조회 실패: ${(e as Error).message}`;
-    }
-  }
-
-  private combatOf(collected: CharacterCollected) {
-    let entry = this.combatCache.get(collected);
-    if (!entry) {
-      entry = { cs: buildCombatStats(collected), swaps: new Map() };
-      this.combatCache.set(collected, entry);
-    }
-    return entry;
-  }
-
-  // 단일 매물의 부위별 최종 데미지 증감률(D_after/D_before − 1)을 계산한다.
-  // 원본 매물은 직전 검색(search/getPage)이 rawItemCache에 넣어둔 것을 쓴다. 에러는 안내 문자열로 반환.
-  private async computeItemDamage(itemId: string, onlySlot?: string): Promise<unknown> {
-    const entry = this.rawItemCache.get(itemId);
-    if (!entry) {
-      return '해당 매물의 원본을 찾을 수 없습니다. 먼저 search_weapon / search_armor / get_page 로 이 매물을 조회한 뒤 그 id로 다시 호출하세요.';
-    }
-    const slots = categoryToSlots(entry.category);
-    if (!slots) {
-      return '이 매물은 증감률 비교 대상(장비)이 아니거나 카테고리를 알 수 없습니다. search_weapon / search_armor 로 조회한 매물의 id를 사용하세요.';
-    }
-    let targetSlots = slots;
-    if (onlySlot) {
-      targetSlots = slots.filter((s) => slotLabel(s) === onlySlot || s === onlySlot);
-      if (!targetSlots.length) {
-        return `slot "${onlySlot}" 는 이 매물의 착용 부위가 아닙니다. 가능한 부위: ${slots.map(slotLabel).join(', ')}`;
-      }
-    }
-    const name = this.identity?.characterName;
-    if (!name) {
-      return '현재 캐릭터 이름을 알 수 없어 증감률을 계산할 수 없습니다. set_character 로 기준 캐릭터를 지정하세요.';
-    }
-    const collected = await this.loadCharacter(name);
-    if (typeof collected === 'string') return collected;
-    const { cs, swaps } = this.combatOf(collected);
-
-    const bySlot: Record<string, number> = {};
-    const unknown = new Set<string>();
-    for (const slot of targetSlots) {
-      const key = `${slot}:${itemId}`;
-      let r = swaps.get(key);
-      if (r === undefined) {
-        try { r = swapDamageDelta(collected, cs, slot, entry.raw); } catch { r = null; }
-        swaps.set(key, r);
-      }
-      if (r) {
-        bySlot[slotLabel(slot)] = r.delta380;
-        for (const u of r.unknown) unknown.add(u);
-      }
-    }
-    return {
-      id: itemId,
-      name: entry.raw?.itemName ?? null,
-      character: name,
-      deltaPct: bySlot, // 부위별 최종 데미지 증감률 % (보스 방어율 380% 기준)
-      ...(cs.notes.length ? { notes: cs.notes } : {}),
-      ...(unknown.size ? { unknown: [...unknown] } : {}),
-    };
   }
 
   async userEquip(characterName?: string, slot?: string): Promise<unknown> {
@@ -292,20 +246,25 @@ export class AuctionService {
       name = this.identity?.characterName;
       if (!name) return '현재 캐릭터 이름을 알 수 없습니다. characterName을 지정하거나 set_character로 기준 캐릭터를 정하세요.';
     }
-    const collected = await this.loadCharacter(name);
-    if (typeof collected === 'string') return collected;
-    const equips: any[] = collected.raw.equip?.item_equipment ?? [];
+    let snapshot;
+    try {
+      snapshot = await this.loadCharacterSnapshot(name);
+    } catch (error) {
+      if ((error as Error).message.includes('NEXON_DEVELOPER_KEY')) return NEXON_KEY_GUIDE;
+      return `넥슨 오픈 API 캐릭터 조회 실패: ${(error as Error).message}`;
+    }
+    const equips: any[] = snapshot.equipment.item_equipment ?? [];
     if (slot) {
-      const e = equips.find((x) => x.item_equipment_slot === slot || slotLabel(x.item_equipment_slot) === slot);
-      if (!e) return `slot "${slot}" 장비가 없습니다. 가능한 부위: ${equips.map((x) => slotLabel(x.item_equipment_slot)).join(', ')}`;
+      const e = equips.find((x) => x.item_equipment_slot === slot || getEquipmentSlot(x.item_equipment_slot) === slot);
+      if (!e) return `slot "${slot}" 장비가 없습니다. 가능한 부위: ${equips.map((x) => getEquipmentSlot(x.item_equipment_slot) ?? x.item_equipment_slot).join(', ')}`;
       return { character: name, ...summarizeNexonEquip(e) };
     }
     return {
       character: name,
-      class: collected.final.characterClass,
-      level: collected.final.level || undefined,
+      class: snapshot.job,
+      level: snapshot.level || undefined,
       items: equips.map((e) => ({
-        slot: slotLabel(e.item_equipment_slot),
+        slot: getEquipmentSlot(e.item_equipment_slot) ?? e.item_equipment_slot,
         name: e.item_name,
         star: Number(e.starforce) || undefined,
         pot: (e.potential_option_grade as string) || undefined,

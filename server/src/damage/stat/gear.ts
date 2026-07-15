@@ -94,7 +94,8 @@ function applyNamedOption(
 function parseOptionText(
   block: StatBlock,
   text: string | null | undefined,
-  characterLevel: number
+  characterLevel: number,
+  preservePerLevel = false
 ): void {
   if (!text) return;
 
@@ -109,11 +110,12 @@ function parseOptionText(
     if (perLevel) {
       const levelStep = Number(perLevel[1]);
       if (levelStep > 0) {
-        add(
-          block,
-          perLevel[2] as 'STR' | 'DEX' | 'INT' | 'LUK',
-          Math.floor(characterLevel / levelStep) * Number(perLevel[3])
-        );
+        const stat = perLevel[2] as 'STR' | 'DEX' | 'INT' | 'LUK';
+        if (preservePerLevel && levelStep === 9) {
+          add(block, `레벨당${stat}`, Number(perLevel[3]));
+        } else {
+          add(block, stat, Math.floor(characterLevel / levelStep) * Number(perLevel[3]));
+        }
       }
       continue;
     }
@@ -130,6 +132,53 @@ function parseOptionText(
 
     applyNamedOption(block, name, value, unit === '%');
   }
+}
+
+interface AuctionOptionEntry {
+  text?: string | null;
+}
+
+interface AuctionItem {
+  [key: string]: unknown;
+  toolTip?: {
+    stat?: Record<string, unknown>;
+    upgradeInfo?: {
+      [key: string]: unknown;
+      potential?: { entries?: AuctionOptionEntry[] };
+      additionalPotential?: { entries?: AuctionOptionEntry[] };
+    };
+    soulWeapon?: { [key: string]: unknown; optionText?: string | null };
+    [key: string]: unknown;
+  };
+}
+
+export function getAuctionItemStats(
+  item: AuctionItem,
+  characterLevel: number
+): StatBlock {
+  const block: StatBlock = {};
+  const stat = item.toolTip?.stat ?? {};
+  add(block, 'STR', numberValue(stat.str));
+  add(block, 'DEX', numberValue(stat.dex));
+  add(block, 'INT', numberValue(stat.int));
+  add(block, 'LUK', numberValue(stat.luk));
+  add(block, 'HP', numberValue(stat.mhp));
+  add(block, '공격력', numberValue(stat.pad));
+  add(block, '마력', numberValue(stat.mad));
+  add(block, '올스탯퍼', numberValue(stat.all));
+  add(block, '데미지', numberValue(stat.dam));
+  add(block, '보공', numberValue(stat.bdr));
+  add(block, '방무', numberValue(stat.imdr));
+
+  const upgradeInfo = item.toolTip?.upgradeInfo;
+  for (const entry of upgradeInfo?.potential?.entries ?? []) {
+    parseOptionText(block, entry.text, characterLevel, true);
+  }
+  for (const entry of upgradeInfo?.additionalPotential?.entries ?? []) {
+    parseOptionText(block, entry.text, characterLevel, true);
+  }
+  parseOptionText(block, item.toolTip?.soulWeapon?.optionText, characterLevel, true);
+  return block;
 }
 
 function collectTotalOption(block: StatBlock, option: ItemOption): void {
