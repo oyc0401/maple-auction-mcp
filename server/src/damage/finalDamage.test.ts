@@ -103,14 +103,14 @@ describe('getFinalDamageChangeRate', () => {
       AP: { STR: 100, DEX: 25 },
       메이플용사: 10,
       장비: {
-        모자: { STR퍼: 100 },
+        모자: { name: '모자', stat: { STR퍼: 100 } },
       },
     };
     const after: CharacterStats = {
       ...before,
       장비: {
         ...before.장비,
-        무기: { 공격력퍼: 10 },
+        무기: { name: '무기', stat: { 공격력퍼: 10 } },
       },
     };
 

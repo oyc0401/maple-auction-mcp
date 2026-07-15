@@ -93,6 +93,7 @@ function equipmentResponse(
 describe('getGear', () => {
   it('장비 총 옵션과 잠재·에디·소울을 슬롯별로 합산한다', () => {
     const weapon = equipmentItem('무기', {
+      item_name: '제네시스 투핸드소드',
       item_total_option: {
         ...ZERO_OPTION,
         str: '349',
@@ -110,26 +111,32 @@ describe('getGear', () => {
     });
 
     expect(getGear(equipmentResponse([weapon]), 285).무기).toEqual({
-      STR: 411,
-      DEX: 457,
-      공격력: 997,
-      보공: 87,
-      방무: [20],
-      올스탯퍼: 4,
-      공격력퍼: 26,
+      name: '제네시스 투핸드소드',
+      stat: {
+        STR: 411,
+        DEX: 457,
+        공격력: 997,
+        보공: 87,
+        방무: [20],
+        올스탯퍼: 4,
+        공격력퍼: 26,
+      },
     });
   });
 
   it('쿨감과 공백이 있는 API 슬롯명 및 칭호 옵션을 변환한다', () => {
     const hat = equipmentItem('모자', {
+      item_name: '에테르넬 나이트헬름',
       potential_option_1: '스킬 재사용 대기시간 -2초',
       potential_option_2: '스킬 재사용 대기시간 -2초',
       additional_potential_option_1: '스킬 재사용 대기시간 -1초',
     });
     const pocket = equipmentItem('포켓 아이템', {
+      item_name: '저주받은 적의 마도서',
       item_total_option: { ...ZERO_OPTION, attack_power: '30' },
     });
     const heart = equipmentItem('기계 심장', {
+      item_name: '컴플리트 언더컨트롤',
       item_total_option: { ...ZERO_OPTION, magic_power: '20' },
     });
     const title = {
@@ -147,15 +154,30 @@ describe('getGear', () => {
     expect(
       getGear(equipmentResponse([hat, pocket, heart], title), 285)
     ).toEqual({
-      모자: { 쿨감: 5 },
-      포켓아이템: { 공격력: 30 },
-      기계심장: { 마력: 20 },
-      칭호: {
-        보공: 30,
-        방무: [30],
-        공격력: 30,
-        마력: 30,
+      모자: { name: '에테르넬 나이트헬름', stat: { 쿨감: 5 } },
+      포켓아이템: {
+        name: '저주받은 적의 마도서',
+        stat: { 공격력: 30 },
       },
+      기계심장: { name: '컴플리트 언더컨트롤', stat: { 마력: 20 } },
+      칭호: {
+        name: 'SWEET WISH',
+        stat: {
+          보공: 30,
+          방무: [30],
+          공격력: 30,
+          마력: 30,
+        },
+      },
+    });
+  });
+
+  it('스탯이 없는 착용 장비도 이름과 빈 스탯을 보존한다', () => {
+    const ring = equipmentItem('반지1', { item_name: '이벤트 링' });
+
+    expect(getGear(equipmentResponse([ring]), 285).반지1).toEqual({
+      name: '이벤트 링',
+      stat: {},
     });
   });
 

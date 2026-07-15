@@ -69,32 +69,37 @@ export interface StatBlock {
   쿨감?: number;
 }
 
+export interface EquippedItem {
+  name: string;
+  stat: StatBlock;
+}
+
 export interface GearStats {
-  모자?: StatBlock;
-  얼굴장식?: StatBlock;
-  눈장식?: StatBlock;
-  귀고리?: StatBlock;
-  상의?: StatBlock;
-  하의?: StatBlock;
-  신발?: StatBlock;
-  장갑?: StatBlock;
-  망토?: StatBlock;
-  무기?: StatBlock;
-  보조무기?: StatBlock;
-  엠블렘?: StatBlock;
-  반지1?: StatBlock;
-  반지2?: StatBlock;
-  반지3?: StatBlock;
-  반지4?: StatBlock;
-  펜던트?: StatBlock;
-  펜던트2?: StatBlock;
-  벨트?: StatBlock;
-  어깨장식?: StatBlock;
-  포켓아이템?: StatBlock;
-  훈장?: StatBlock;
-  뱃지?: StatBlock;
-  기계심장?: StatBlock;
-  칭호?: StatBlock;
+  모자?: EquippedItem;
+  얼굴장식?: EquippedItem;
+  눈장식?: EquippedItem;
+  귀고리?: EquippedItem;
+  상의?: EquippedItem;
+  하의?: EquippedItem;
+  신발?: EquippedItem;
+  장갑?: EquippedItem;
+  망토?: EquippedItem;
+  무기?: EquippedItem;
+  보조무기?: EquippedItem;
+  엠블렘?: EquippedItem;
+  반지1?: EquippedItem;
+  반지2?: EquippedItem;
+  반지3?: EquippedItem;
+  반지4?: EquippedItem;
+  펜던트?: EquippedItem;
+  펜던트2?: EquippedItem;
+  벨트?: EquippedItem;
+  어깨장식?: EquippedItem;
+  포켓아이템?: EquippedItem;
+  훈장?: EquippedItem;
+  뱃지?: EquippedItem;
+  기계심장?: EquippedItem;
+  칭호?: EquippedItem;
 }
 
 export interface SkillStats {

@@ -170,13 +170,20 @@ export function getGear(
     const slot = getEquipmentSlot(item.item_equipment_slot);
     if (!slot) continue;
 
-    const block = getItemStats(item, characterLevel);
-    if (Object.keys(block).length > 0) gear[slot] = block;
+    gear[slot] = {
+      name: item.item_name,
+      stat: getItemStats(item, characterLevel),
+    };
   }
 
   const title: StatBlock = {};
   parseOptionText(title, equipment.title?.title_description, characterLevel);
-  if (Object.keys(title).length > 0) gear.칭호 = title;
+  if (equipment.title?.title_name && Object.keys(title).length > 0) {
+    gear.칭호 = {
+      name: equipment.title.title_name,
+      stat: title,
+    };
+  }
 
   return gear;
 }

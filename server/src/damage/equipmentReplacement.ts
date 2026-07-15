@@ -1,5 +1,4 @@
-import type { ItemEquipmentRes } from '../nexon/index.js';
-import { type EquipmentSlot, getEquipmentSlot } from './equipmentSlot.js';
+import type { EquipmentSlot } from './equipmentSlot.js';
 import { SET_DB } from './setDb.js';
 import {
   calculateSetEffects,
@@ -8,15 +7,10 @@ import {
 } from './setSimulation.js';
 import type { CharacterStats, StatBlock } from './stat-interface.js';
 
-export interface CharacterEquipmentState {
-  stats: CharacterStats;
-  equipment: ItemEquipmentRes;
-}
-
 export interface EquipmentReplacement {
   slot: EquipmentSlot;
   name: string;
-  stats: StatBlock;
+  stat: StatBlock;
 }
 
 function unsupportedCurrentEffects(
@@ -30,29 +24,28 @@ function unsupportedCurrentEffects(
 }
 
 export function getStatsAfterEquipmentReplacement(
-  current: CharacterEquipmentState,
+  current: CharacterStats,
   replacement: EquipmentReplacement
 ): CharacterStats {
-  const itemIndex = current.equipment.item_equipment.findIndex(
-    (item) => getEquipmentSlot(item.item_equipment_slot) === replacement.slot
-  );
-  if (itemIndex < 0) {
+  if (!current.장비?.[replacement.slot]) {
     throw new Error(`교체할 장비 슬롯을 찾을 수 없습니다: ${replacement.slot}`);
   }
 
-  const itemNames = current.equipment.item_equipment.map((item, index) =>
-    index === itemIndex ? replacement.name : item.item_name
-  );
+  const 장비 = {
+    ...current.장비,
+    [replacement.slot]: {
+      name: replacement.name,
+      stat: replacement.stat,
+    },
+  };
+  const itemNames = Object.values(장비).map((item) => item.name);
   const counts = countEquipmentSets(itemNames);
 
   return {
-    ...current.stats,
-    장비: {
-      ...current.stats.장비,
-      [replacement.slot]: replacement.stats,
-    },
+    ...current,
+    장비,
     세트효과: {
-      ...unsupportedCurrentEffects(current.stats.세트효과),
+      ...unsupportedCurrentEffects(current.세트효과),
       ...calculateSetEffects(counts),
     },
   };
