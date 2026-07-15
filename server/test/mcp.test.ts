@@ -1,15 +1,14 @@
-import { describe, it, expect, vi, afterEach } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import type { BridgeCommandInput, BridgeReply } from '@maple/shared';
 import { createServer, type BridgeLike } from '../src/mcp.js';
 import {
-  clearCharacterSnapshotCache,
   loadCharacterSnapshot,
   type CharacterSnapshot,
   type LoadCharacterSnapshot,
   type RefreshCharacterSnapshot,
-} from '../src/nexon/characterSnapshot.js';
+} from '../src/characterSnapshot.js';
 import type { ItemEquipmentRes } from '../src/nexon/types.js';
 
 const ID = { worldId: 5, accountId: 1, characterId: 2 };
@@ -161,10 +160,6 @@ describe('user_equip (캐릭터 착용 장비 조회, 넥슨 오픈 API)', () =>
     stats: { 기본: {}, AP: {} },
     equipment: { item_equipment: [weaponItem] } as unknown as ItemEquipmentRes,
   };
-
-  afterEach(() => {
-    clearCharacterSnapshotCache();
-  });
 
   it('넥슨 키가 없으면 발급·설정 안내를 반환한다', async () => {
     const c = await client(noopBridge(), async () => {

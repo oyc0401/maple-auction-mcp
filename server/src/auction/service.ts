@@ -32,7 +32,7 @@ import { nexonApiKey } from '../nexon/index.js';
 import type {
   LoadCharacterSnapshot,
   RefreshCharacterSnapshot,
-} from '../nexon/characterSnapshot.js';
+} from '../characterSnapshot.js';
 
 // 키 설정은 MCP 서버 등록을 다시 해야 해서 AI가 대신 해줄 수 없다 — 사용자가 직접 할 일임을 명시한다
 // (주체를 안 밝히면 AI가 자기 일로 해석해 코드/설정 디버깅에 빠진다. shared의 DISCONNECTED_MSG 주석 참고).

@@ -5,7 +5,7 @@ import { createServer } from './mcp.js';
 import {
   loadCharacterSnapshot,
   refreshCharacterSnapshot,
-} from './nexon/characterSnapshot.js';
+} from './characterSnapshot.js';
 
 // --api-key <key> / --api-key=<key> → NEXON_DEVELOPER_KEY.
 // MCP 설정에서 `npx maple-auction-mcp --api-key YOUR_NEXON_API_KEY`처럼 넣는 설치 인터페이스.

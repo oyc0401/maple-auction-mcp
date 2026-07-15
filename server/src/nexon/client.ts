@@ -5,6 +5,8 @@
  * 모든 엔드포인트 함수는 반드시 requestNexonOpenApi()를 사용해야 하며,
  * 다른 모듈에서 넥슨 API를 fetch()로 직접 호출하거나 1초 간격을 우회하면 안 된다.
  */
+import { readCachedResponse, writeCachedResponse } from './responseCache.js';
+
 export const NEXON_OPEN_API_BASE = 'https://open.api.nexon.com/maplestory/v1';
 export const NEXON_REQUEST_INTERVAL_MS = 1_000;
 
@@ -12,6 +14,8 @@ export interface NexonApiOptions {
   apiKey?: string;
   fetchFn?: typeof fetch;
   signal?: AbortSignal;
+  /** 캐시된 응답을 무시하고 다시 받는다. 받은 응답은 캐시에 덮어쓴다. */
+  noCache?: boolean;
 }
 
 export type NexonApiKeyOrOptions = string | NexonApiOptions;
@@ -71,6 +75,8 @@ async function readErrorDetail(res: Response): Promise<unknown> {
   }
 }
 
+const inFlight = new Map<string, Promise<unknown>>();
+
 export async function requestNexonOpenApi<T>(
   path: string,
   params: Record<string, string | undefined>,
@@ -84,16 +90,36 @@ export async function requestNexonOpenApi<T>(
   for (const [key, value] of Object.entries(params)) {
     if (value !== undefined) url.searchParams.set(key, value);
   }
+  const href = url.toString();
 
+  if (!options.noCache) {
+    const cached = await readCachedResponse(href);
+    if (cached) return cached.data as T;
+  }
+
+  // 같은 URL을 동시에 요청하면 하나만 네트워크를 탄다.
+  const pending = inFlight.get(href);
+  if (pending) return (await pending) as T;
+
+  const request = fetchAndCache(url, path, apiKey, options).finally(() => inFlight.delete(href));
+  inFlight.set(href, request);
+  return (await request) as T;
+}
+
+async function fetchAndCache(url: URL, path: string, apiKey: string, options: NexonApiOptions): Promise<unknown> {
   const fetchFn = options.fetchFn ?? fetch;
   await waitForRequestSlot(apiKey);
   const res = await fetchFn(url, {
     signal: options.signal,
     headers: { 'x-nxopen-api-key': apiKey },
   });
-  if (res.ok) return (await res.json()) as T;
+  if (!res.ok) {
+    const detail = await readErrorDetail(res);
+    const suffix = detail === undefined ? '' : ` ${JSON.stringify(detail)}`;
+    throw new NexonOpenApiError(`넥슨 오픈 API ${res.status} ${path}${suffix}`, res.status, path, detail);
+  }
 
-  const detail = await readErrorDetail(res);
-  const suffix = detail === undefined ? '' : ` ${JSON.stringify(detail)}`;
-  throw new NexonOpenApiError(`넥슨 오픈 API ${res.status} ${path}${suffix}`, res.status, path, detail);
+  const data = (await res.json()) as unknown;
+  await writeCachedResponse(url.toString(), data);
+  return data;
 }

@@ -25,7 +25,7 @@ import type { BridgeLike } from './nexon.js';
 import type {
   LoadCharacterSnapshot,
   RefreshCharacterSnapshot,
-} from './nexon/characterSnapshot.js';
+} from './characterSnapshot.js';
 export type { BridgeLike } from './nexon.js';
 
 function text(value: unknown) {

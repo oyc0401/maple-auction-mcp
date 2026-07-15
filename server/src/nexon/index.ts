@@ -8,5 +8,6 @@ export {
   type NexonApiKeyOrOptions,
   type NexonApiOptions,
 } from './client.js';
+export { clearNexonResponseCache, getNexonResponseCacheDirectory } from './responseCache.js';
 export * from './character.js';
 export type * from './types.js';
