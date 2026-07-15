@@ -2,7 +2,10 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { Bridge } from './bridge.js';
 import { NexonBridge } from './nexon.js';
 import { createServer } from './mcp.js';
-import { loadCharacterSnapshot } from './nexon/characterSnapshot.js';
+import {
+  loadCharacterSnapshot,
+  refreshCharacterSnapshot,
+} from './nexon/characterSnapshot.js';
 
 // --api-key <key> / --api-key=<key> → NEXON_DEVELOPER_KEY.
 // MCP 설정에서 `npx maple-auction-mcp --api-key YOUR_NEXON_API_KEY`처럼 넣는 설치 인터페이스.
@@ -14,7 +17,11 @@ for (let i = 2; i < process.argv.length; i++) {
 }
 
 const bridge = new NexonBridge(new Bridge());
-const server = createServer(bridge, loadCharacterSnapshot);
+const server = createServer(
+  bridge,
+  loadCharacterSnapshot,
+  refreshCharacterSnapshot
+);
 await server.connect(new StdioServerTransport());
 // stdio 종료 시 정리
 process.stdin.on('close', () => {

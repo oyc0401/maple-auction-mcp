@@ -26,11 +26,31 @@ import { getEquipmentSlot, type EquipmentSlot } from './damage/equipmentSlot.js'
 import { getAuctionItemStats } from './damage/stat/gear.js';
 import { worldName } from './constants.js';
 import type { BridgeLike } from './nexon.js';
-import type { LoadCharacterSnapshot } from './nexon/characterSnapshot.js';
+import { nexonApiKey } from './nexon/index.js';
+import type {
+  LoadCharacterSnapshot,
+  RefreshCharacterSnapshot,
+} from './nexon/characterSnapshot.js';
 
 const NEXON_KEY_GUIDE =
   '넥슨 오픈 API 키가 설정되지 않아 이 도구를 쓸 수 없습니다. https://openapi.nexon.com 에서 키를 발급받아 ' +
-  'MCP 설정의 실행 인자에 --api-key <키> 를 추가하거나 NEXON_DEVELOPER_KEY 환경변수로 지정하세요. (검색 도구는 키 없이 정상 동작)';
+  'MCP 실행 인자에 --api-key YOUR_NEXON_API_KEY를 추가하거나 NEXON_DEVELOPER_KEY 환경변수로 지정하세요. ' +
+  '실행 예: npx -y maple-auction-mcp --api-key YOUR_NEXON_API_KEY (일반 경매장 검색은 키 없이도 동작)';
+
+function nexonOpenApiStatus(): Record<string, unknown> {
+  if (nexonApiKey()) return { configured: true };
+  return {
+    configured: false,
+    requiredFor: ['finalDamageChangeRate', 'user_equip', 'refresh_character'],
+    setup: {
+      issueUrl: 'https://openapi.nexon.com',
+      argument: '--api-key YOUR_NEXON_API_KEY',
+      example: 'npx -y maple-auction-mcp --api-key YOUR_NEXON_API_KEY',
+      environmentVariable: 'NEXON_DEVELOPER_KEY',
+    },
+    note: NEXON_KEY_GUIDE,
+  };
+}
 
 function errorText(reply: Extract<BridgeReply, { ok: false }>): string {
   const apiCode = (reply.data as { code?: number } | null)?.code;
@@ -60,7 +80,8 @@ export class AuctionService {
   private readonly conditionCache = new Map<string, string>();
   constructor(
     private bridge: BridgeLike,
-    private loadCharacterSnapshot: LoadCharacterSnapshot
+    private loadCharacterSnapshot: LoadCharacterSnapshot,
+    private refreshCharacterSnapshot: RefreshCharacterSnapshot = loadCharacterSnapshot
   ) {}
 
   private async summarizeSearchWithDamage(
@@ -103,6 +124,9 @@ export class AuctionService {
       });
       return { ...summary, items };
     } catch (error) {
+      if ((error as Error).message.includes('NEXON_DEVELOPER_KEY')) {
+        return { ...summary, finalDamageNote: NEXON_KEY_GUIDE };
+      }
       return {
         ...summary,
         finalDamageNote: `최종 데미지 증감률 계산 실패: ${(error as Error).message}`,
@@ -378,15 +402,46 @@ export class AuctionService {
     }
     const c = matches[0];
     this.identity = { worldId: c.worldId, accountId: c.accountId, characterId: c.characterId, characterName: c.characterName };
+    void this.refreshCharacterSnapshot(c.characterName).catch(() => undefined);
     return { switched: { world: c.worldName, name: c.characterName, level: c.level, characterId: c.characterId } };
+  }
+
+  async refreshCharacter(characterName?: string): Promise<unknown> {
+    let name = characterName;
+    if (!name) {
+      const id = await this.ensureIdentity();
+      if (typeof id === 'string') return id;
+      name = this.identity?.characterName;
+      if (!name) return '현재 캐릭터 이름을 알 수 없습니다. characterName을 지정하거나 set_character로 기준 캐릭터를 정하세요.';
+    }
+
+    try {
+      const snapshot = await this.refreshCharacterSnapshot(name);
+      return {
+        refreshed: true,
+        character: snapshot.name,
+        class: snapshot.job,
+        level: snapshot.level,
+        equipmentCount: snapshot.equipment.item_equipment?.length ?? 0,
+      };
+    } catch (error) {
+      if ((error as Error).message.includes('NEXON_DEVELOPER_KEY')) return NEXON_KEY_GUIDE;
+      return `넥슨 오픈 API 캐릭터 재갱신 실패: ${(error as Error).message}`;
+    }
   }
 
   async status(): Promise<unknown> {
     if (!this.bridge.connected) {
-      return { connected: false, state: 'no_extension', note: DISCONNECTED_MSG };
+      return { connected: false, state: 'no_extension', nexonOpenApi: nexonOpenApiStatus(), note: DISCONNECTED_MSG };
     }
     const id = await this.ensureIdentity();
-    if (typeof id === 'string') return { connected: true, state: 'no_session', identity: null, note: id };
+    if (typeof id === 'string') {
+      return { connected: true, state: 'no_session', identity: null, nexonOpenApi: nexonOpenApiStatus(), note: id };
+    }
+    const characterName = this.identity?.characterName;
+    if (characterName) {
+      void this.refreshCharacterSnapshot(characterName).catch(() => undefined);
+    }
     // identity는 캐시일 수 있으니 무료 GET으로 세션 생존을 실측한다.
     // 옥션 페이지가 다른 곳에서 새 세션을 만들면 이 세션은 소리 없이 죽는다(단일 활성).
     const dl = await this.bridge.request({ type: 'fetch', url: DAILY_LIMIT_URL, method: 'GET' });
@@ -395,6 +450,7 @@ export class AuctionService {
         connected: true,
         state: 'session_expired',
         identity: { ...id, worldName: worldName(id.worldId) },
+        nexonOpenApi: nexonOpenApiStatus(),
         note: errorText(dl),
       };
     }
@@ -402,6 +458,7 @@ export class AuctionService {
       connected: true,
       state: 'ready',
       identity: { ...id, worldName: worldName(id.worldId) },
+      nexonOpenApi: nexonOpenApiStatus(),
       dailyLimit: dl.data,
       balance: await this.fetchBalance(id),
     };

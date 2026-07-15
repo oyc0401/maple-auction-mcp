@@ -214,7 +214,7 @@ describe('AuctionService 장비 검색 최종 데미지 자동 계산', () => {
 
     expect(result.items).toHaveLength(1);
     expect(result.items[0]).not.toHaveProperty('finalDamageChangeRate');
-    expect(result.finalDamageNote).toContain('NEXON_DEVELOPER_KEY 미설정');
+    expect(result.finalDamageNote).toContain('--api-key YOUR_NEXON_API_KEY');
   });
 
   it('get_page로 가져온 장비에도 같은 증감률 필드를 붙인다', async () => {

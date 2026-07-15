@@ -22,7 +22,10 @@ import {
 
 // 내부 API 계약은 nexon.ts 소유 (변환 계층과 함께) — 기존 소비처를 위해 re-export.
 import type { BridgeLike } from './nexon.js';
-import type { LoadCharacterSnapshot } from './nexon/characterSnapshot.js';
+import type {
+  LoadCharacterSnapshot,
+  RefreshCharacterSnapshot,
+} from './nexon/characterSnapshot.js';
 export type { BridgeLike } from './nexon.js';
 
 function text(value: unknown) {
@@ -99,7 +102,8 @@ const seedRingSchema = {
 
 export function createServer(
   bridge: BridgeLike,
-  loadCharacterSnapshot: LoadCharacterSnapshot
+  loadCharacterSnapshot: LoadCharacterSnapshot,
+  refreshCharacterSnapshot: RefreshCharacterSnapshot = loadCharacterSnapshot
 ): McpServer {
   // 클라이언트가 시스템 프롬프트에 주입하는 도구 사용 규칙. 한국어 유지 — 응답·필터가 전부 한국어라 톤을 맞추고,
   // 방무·공퍼·보공 같은 단축어를 모델에 학습시키는 의미도 있음. (압축 유지)
@@ -110,7 +114,7 @@ export function createServer(
   const instructions = [
     '메이플스토리(KMS) 거래소 검색 MCP.',
     '매물 추천·가치 판단·시세 해석·검색 전략 수립 전에 get_knowledge(같은 내용의 maple://knowledge 리소스)를 읽는다 — 게임 지식(추옵·잠재·가위·별칭·타월드)과 경매장 검색 팁이 있다. 읽지 않은 채 도메인 규칙을 임의 추론하지 말 것.',
-    '- 첫 검색 전 get_status로 검색 기준 캐릭터(월드·닉네임)를 확인해 사용자에게 알린다. 월드 전환은 set_character.',
+    '- 첫 검색 전 get_status로 검색 기준 캐릭터(월드·닉네임)를 확인해 사용자에게 알린다. nexonOpenApi.configured=false면 응답의 setup대로 API 키 설정 방법도 안내한다. 월드 전환은 set_character.',
     '- 검색 생성(search_* 도구, sold 포함)만 일일 한도(100회)를 1회 소진 — 한도는 검색 품질을 깎을 만큼 빡빡하지 않다(잔여는 응답의 searchRemaining). 같은 조건 재조회만 재검색 대신 searchKey + get_page(무료). limit 40/60은 조건이 확정된 뒤에.',
     '- 검색 결과를 보여줄 때 사용한 필터 조건을 함께 표기한다.',
     '- 가위(재거래) 잔여 횟수가 낮은 매물은 사용자에게 꼭 명시한다(tradeDesc 참고).',
@@ -120,7 +124,11 @@ export function createServer(
 
   const server = new McpServer({ name: 'maple-auction', version: '0.8.0' }, { instructions });
 
-  const service = new AuctionService(bridge, loadCharacterSnapshot);
+  const service = new AuctionService(
+    bridge,
+    loadCharacterSnapshot,
+    refreshCharacterSnapshot
+  );
 
   server.registerResource(
     'maple-knowledge',
@@ -152,7 +160,7 @@ export function createServer(
     {
       title: '캐릭터 착용 장비 조회',
       description:
-        '닉네임으로 임의 캐릭터가 현재 착용 중인 장비를 조회한다(넥슨 오픈 API, 마지막 로그아웃 기준, 10분 캐시, 검색 횟수 무관). slot 생략 시 전 부위 요약 목록, 지정 시 스탯·잠재·에디·소울 상세.',
+        '닉네임으로 임의 캐릭터가 현재 착용 중인 장비를 조회한다(넥슨 오픈 API, 마지막 로그아웃 기준, 영구 로컬 캐시, 검색 횟수 무관). slot 생략 시 전 부위 요약 목록, 지정 시 스탯·잠재·에디·소울 상세.',
       inputSchema: {
         characterName: z.string().optional().describe('조회할 캐릭터 닉네임. 생략 시 현재 검색 기준 캐릭터'),
         slot: z.string().optional().describe('부위 (예: "무기", "반지1", "펜던트2"). 생략 시 전체 목록'),
@@ -160,6 +168,21 @@ export function createServer(
       annotations: { readOnlyHint: true, destructiveHint: false },
     },
     async ({ characterName, slot }) => text(await service.userEquip(characterName, slot))
+  );
+
+  // refresh_character
+  server.registerTool(
+    'refresh_character',
+    {
+      title: '캐릭터 정보 강제 재갱신',
+      description:
+        '지정한 캐릭터의 넥슨 OpenAPI 정보를 다시 조회해 영구 로컬 캐시를 최신 데이터로 교체한다. characterName 생략 시 현재 검색 기준 캐릭터를 갱신한다.',
+      inputSchema: {
+        characterName: z.string().optional().describe('재갱신할 캐릭터 닉네임. 생략 시 현재 검색 기준 캐릭터'),
+      },
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
+    },
+    async ({ characterName }) => text(await service.refreshCharacter(characterName))
   );
 
   // search_items
@@ -404,7 +427,7 @@ export function createServer(
     {
       title: '연결 상태 확인',
       description:
-        '크롬 확장 연결·넥슨 계정·현재 검색 기준 캐릭터(월드)·일일 검색 잔여 횟수 확인. state: no_extension(확장 미연결) / no_session(거래소 세션 없음) / session_expired(세션 만료·회전) / ready.',
+        '크롬 확장 연결·넥슨 계정·현재 검색 기준 캐릭터(월드)·넥슨 OpenAPI 키 설정 여부·일일 검색 잔여 횟수 확인. API 키가 없으면 nexonOpenApi.setup에 발급 및 실행 인자 설정법을 반환한다. state: no_extension(확장 미연결) / no_session(거래소 세션 없음) / session_expired(세션 만료·회전) / ready.',
       inputSchema: {},
       annotations: { readOnlyHint: true, destructiveHint: false },
     },

@@ -1,3 +1,6 @@
+import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
+import { homedir } from 'node:os';
+import { join } from 'node:path';
 import { getCharacterStats } from '../damage/characterStats.js';
 import type { CharacterStats } from '../damage/stat-interface.js';
 import {
@@ -31,10 +34,68 @@ export interface CharacterSnapshot {
 }
 
 export type LoadCharacterSnapshot = (name: string) => Promise<CharacterSnapshot>;
+export type RefreshCharacterSnapshot = LoadCharacterSnapshot;
 
-const CHARACTER_SNAPSHOT_TTL_MS = 10 * 60 * 1000;
-const cache = new Map<string, { expiresAt: number; snapshot: CharacterSnapshot }>();
+interface CachedCharacterSnapshot {
+  version: 1;
+  fetchedAt: string;
+  snapshot: CharacterSnapshot;
+}
+
+const cache = new Map<string, CachedCharacterSnapshot>();
 const inFlight = new Map<string, Promise<CharacterSnapshot>>();
+
+export function getCharacterSnapshotCacheDirectory(): string {
+  if (process.env.MAPLE_AUCTION_DATA_DIR) {
+    return join(process.env.MAPLE_AUCTION_DATA_DIR, 'character-snapshots');
+  }
+  if (process.platform === 'darwin') {
+    return join(homedir(), 'Library', 'Application Support', 'maple-auction-mcp', 'character-snapshots');
+  }
+  if (process.platform === 'win32') {
+    return join(
+      process.env.LOCALAPPDATA ?? join(homedir(), 'AppData', 'Local'),
+      'maple-auction-mcp',
+      'character-snapshots'
+    );
+  }
+  return join(
+    process.env.XDG_DATA_HOME ?? join(homedir(), '.local', 'share'),
+    'maple-auction-mcp',
+    'character-snapshots'
+  );
+}
+
+function cacheFile(name: string): string {
+  return join(getCharacterSnapshotCacheDirectory(), `${encodeURIComponent(name)}.json`);
+}
+
+async function readCachedSnapshot(name: string): Promise<CachedCharacterSnapshot | null> {
+  try {
+    const parsed = JSON.parse(await readFile(cacheFile(name), 'utf8')) as Partial<CachedCharacterSnapshot>;
+    if (parsed.version !== 1 || !parsed.fetchedAt || !parsed.snapshot) return null;
+    if (parsed.snapshot.name !== name) return null;
+    return parsed as CachedCharacterSnapshot;
+  } catch {
+    return null;
+  }
+}
+
+async function writeCachedSnapshot(entry: CachedCharacterSnapshot): Promise<void> {
+  const directory = getCharacterSnapshotCacheDirectory();
+  const destination = cacheFile(entry.snapshot.name);
+  const temporary = `${destination}.${process.pid}.${Date.now()}.tmp`;
+  await mkdir(directory, { recursive: true, mode: 0o700 });
+  await writeFile(temporary, JSON.stringify(entry), { encoding: 'utf8', mode: 0o600 });
+  try {
+    await rename(temporary, destination);
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    if (process.platform !== 'win32' || (code !== 'EEXIST' && code !== 'EPERM')) throw error;
+    await rm(destination, { force: true });
+    await rename(temporary, destination);
+  }
+}
 
 async function fetchCharacterSnapshot(name: string): Promise<CharacterSnapshot> {
   const { ocid } = await getOcid(name);
@@ -104,18 +165,33 @@ async function fetchCharacterSnapshot(name: string): Promise<CharacterSnapshot> 
 
 export const loadCharacterSnapshot: LoadCharacterSnapshot = async (name) => {
   const cached = cache.get(name);
-  if (cached && cached.expiresAt > Date.now()) return cached.snapshot;
-  if (cached) cache.delete(name);
+  if (cached) return cached.snapshot;
+
+  const persisted = await readCachedSnapshot(name);
+  if (persisted) {
+    cache.set(name, persisted);
+    return persisted.snapshot;
+  }
 
   const pending = inFlight.get(name);
   if (pending) return pending;
 
+  return refreshCharacterSnapshot(name);
+};
+
+export const refreshCharacterSnapshot: RefreshCharacterSnapshot = async (name) => {
+  const pending = inFlight.get(name);
+  if (pending) return pending;
+
   const request = fetchCharacterSnapshot(name)
-    .then((snapshot) => {
-      cache.set(name, {
-        expiresAt: Date.now() + CHARACTER_SNAPSHOT_TTL_MS,
+    .then(async (snapshot) => {
+      const entry: CachedCharacterSnapshot = {
+        version: 1,
+        fetchedAt: new Date().toISOString(),
         snapshot,
-      });
+      };
+      await writeCachedSnapshot(entry);
+      cache.set(name, entry);
       return snapshot;
     })
     .finally(() => inFlight.delete(name));

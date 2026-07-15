@@ -8,6 +8,7 @@ import {
   loadCharacterSnapshot,
   type CharacterSnapshot,
   type LoadCharacterSnapshot,
+  type RefreshCharacterSnapshot,
 } from '../src/nexon/characterSnapshot.js';
 import type { ItemEquipmentRes } from '../src/nexon/types.js';
 
@@ -44,9 +45,10 @@ function identityFetch(cmd: BridgeCommandInput): BridgeReply | null {
 
 async function client(
   bridge: BridgeLike,
-  loadSnapshot: LoadCharacterSnapshot = loadCharacterSnapshot
+  loadSnapshot: LoadCharacterSnapshot = loadCharacterSnapshot,
+  refreshSnapshot: RefreshCharacterSnapshot = loadSnapshot
 ) {
-  const server = createServer(bridge, loadSnapshot);
+  const server = createServer(bridge, loadSnapshot, refreshSnapshot);
   const [ct, st] = InMemoryTransport.createLinkedPair();
   await server.connect(st);
   const c = new Client({ name: 't', version: '0' });
@@ -109,6 +111,35 @@ describe('MCP 도구 표면', () => {
     const tools = await c.listTools();
 
     expect(tools.tools.map((tool) => tool.name)).not.toContain('item_damage');
+    expect(tools.tools.map((tool) => tool.name)).toContain('refresh_character');
+  });
+
+  it('refresh_character는 지정한 캐릭터를 강제로 재갱신한다', async () => {
+    const refreshSnapshot = vi.fn(async (name: string) => ({
+      name,
+      job: '카데나',
+      level: 290,
+      stats: { 기본: {}, AP: {} },
+      equipment: { item_equipment: [] } as unknown as ItemEquipmentRes,
+    }));
+    const c = await client(
+      fakeBridge(() => ({ id: '1', ok: true, data: ID })),
+      refreshSnapshot,
+      refreshSnapshot
+    );
+
+    const result = await c.callTool({
+      name: 'refresh_character',
+      arguments: { characterName: '재갱신캐릭터' },
+    });
+
+    expect(refreshSnapshot).toHaveBeenCalledWith('재갱신캐릭터');
+    expect(JSON.parse(textOf(result))).toMatchObject({
+      refreshed: true,
+      character: '재갱신캐릭터',
+      class: '카데나',
+      level: 290,
+    });
   });
 });
 
@@ -380,16 +411,28 @@ describe('list_characters / set_character', () => {
 
   it('set_character로 다른 월드 캐릭터로 전환하면 이후 검색이 그 월드로 나간다', async () => {
     const posts: any[] = [];
-    const c = await client(authBridge((cmd: any) => {
-      if (cmd.type === 'fetch' && cmd.method === 'POST' && /tool-tip/.test(cmd.url)) {
-        posts.push(cmd.body);
-        return { id: '6', ok: true, status: 201, data: pageResp('k', 1, 10, 1, false) };
-      }
-      if (cmd.type === 'fetch' && /daily-limit/.test(cmd.url)) return { id: '7', ok: true, data: { search: { remaining: 1 } } };
-      return null;
+    const refreshSnapshot = vi.fn(async (name: string) => ({
+      name,
+      job: '카데나',
+      level: 200,
+      stats: { 기본: {}, AP: {} },
+      equipment: { item_equipment: [] } as unknown as ItemEquipmentRes,
     }));
+    const c = await client(
+      authBridge((cmd: any) => {
+        if (cmd.type === 'fetch' && cmd.method === 'POST' && /tool-tip/.test(cmd.url)) {
+          posts.push(cmd.body);
+          return { id: '6', ok: true, status: 201, data: pageResp('k', 1, 10, 1, false) };
+        }
+        if (cmd.type === 'fetch' && /daily-limit/.test(cmd.url)) return { id: '7', ok: true, data: { search: { remaining: 1 } } };
+        return null;
+      }),
+      refreshSnapshot,
+      refreshSnapshot
+    );
     const r = await c.callTool({ name: 'set_character', arguments: { characterName: '에오스캐릭' } });
     expect(JSON.parse(textOf(r)).switched.world).toBe('에오스');
+    expect(refreshSnapshot).toHaveBeenCalledWith('에오스캐릭');
     await c.callTool({ name: 'search_items', arguments: { keyword: 'x' } });
     expect(posts[0].worldId).toBe(45);
     expect(posts[0].characterId).toBe(9);
@@ -423,6 +466,66 @@ describe('recent_sold (최근 시세, 검색 횟수 무료)', () => {
 });
 
 describe('get_status', () => {
+  it('넥슨 API 키가 없으면 발급 URL과 실행 인자 설정법을 반환한다', async () => {
+    const savedKey = process.env.NEXON_DEVELOPER_KEY;
+    delete process.env.NEXON_DEVELOPER_KEY;
+    try {
+      const c = await client(fakeBridge((cmd) => identityFetch(cmd) ?? { id: '2', ok: true }));
+
+      const result = await c.callTool({ name: 'get_status', arguments: {} });
+      const parsed = JSON.parse(textOf(result));
+
+      expect(parsed.nexonOpenApi).toMatchObject({
+        configured: false,
+        setup: {
+          issueUrl: 'https://openapi.nexon.com',
+          argument: '--api-key YOUR_NEXON_API_KEY',
+          environmentVariable: 'NEXON_DEVELOPER_KEY',
+        },
+      });
+      expect(parsed.nexonOpenApi).not.toHaveProperty('apiKey');
+    } finally {
+      if (savedKey === undefined) delete process.env.NEXON_DEVELOPER_KEY;
+      else process.env.NEXON_DEVELOPER_KEY = savedKey;
+    }
+  });
+
+  it('현재 캐릭터가 확인되면 응답을 기다리지 않고 캐시 재갱신을 시작한다', async () => {
+    const refreshSnapshot = vi.fn(async (name: string) => ({
+      name,
+      job: '카데나',
+      level: 290,
+      stats: { 기본: {}, AP: {} },
+      equipment: { item_equipment: [] } as unknown as ItemEquipmentRes,
+    }));
+    const c = await client(
+      fakeBridge((cmd) => {
+        if (/\/accounts$/.test(cmd.url)) {
+          return { id: 'a', ok: true, status: 200, data: { accounts: [{ accountId: 1 }] } };
+        }
+        const world = cmd.url.match(/gameWorlds\/(\d+)\/characters$/);
+        if (world) {
+          return world[1] === '5'
+            ? {
+                id: 'c',
+                ok: true,
+                status: 200,
+                data: { characters: [{ characterId: 2, characterName: '상태캐릭터', level: 290 }] },
+              }
+            : { id: 'c', ok: false, code: 'HTTP_ERROR', status: 500, error: 'HTTP 500' };
+        }
+        return { id: 's', ok: true, status: 200, data: { search: { remaining: 99 } } };
+      }),
+      refreshSnapshot,
+      refreshSnapshot
+    );
+
+    const result = await c.callTool({ name: 'get_status', arguments: {} });
+
+    expect(JSON.parse(textOf(result)).state).toBe('ready');
+    expect(refreshSnapshot).toHaveBeenCalledWith('상태캐릭터');
+  });
+
   it('세션이 살아있으면 state ready + identity를 반환한다', async () => {
     const c = await client(fakeBridge((cmd) => identityFetch(cmd) ?? { id: '2', ok: true }));
     const r = await c.callTool({ name: 'get_status', arguments: {} });
@@ -595,7 +698,7 @@ describe('검색 하네스 (dedup · note)', () => {
 // Anthropic 디렉토리 심사 pass/fail 기준 (mcp-server-dev 스킬 references/tool-design.md):
 // 모든 도구에 title·readOnlyHint·destructiveHint, 설명에 행동 지시 금지(프롬프트 인젝션 간주).
 describe('디렉토리 심사 기준 (공개 배포)', () => {
-  const WRITE_TOOLS = new Set(['add_wishlist', 'remove_wishlist', 'set_character']);
+  const WRITE_TOOLS = new Set(['add_wishlist', 'remove_wishlist', 'set_character', 'refresh_character']);
 
   it('모든 도구에 title과 readOnlyHint·destructiveHint annotation이 있다', async () => {
     const c = await client(fakeBridge(() => ({ id: '1', ok: true })));

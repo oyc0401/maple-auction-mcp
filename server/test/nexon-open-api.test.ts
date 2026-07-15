@@ -58,7 +58,7 @@ describe('넥슨 공식 OpenAPI 클라이언트', () => {
     } satisfies Partial<NexonOpenApiError>);
   });
 
-  it('같은 API 키의 동시 요청을 10초 간격으로 시작한다', async () => {
+  it('같은 API 키의 동시 요청을 1초 간격으로 시작한다', async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-07-13T00:00:00Z'));
     try {
@@ -70,7 +70,7 @@ describe('넥슨 공식 OpenAPI 클라이언트', () => {
       await vi.advanceTimersByTimeAsync(0);
       expect(fetchFn).toHaveBeenCalledTimes(1);
 
-      await vi.advanceTimersByTimeAsync(9_999);
+      await vi.advanceTimersByTimeAsync(999);
       expect(fetchFn).toHaveBeenCalledTimes(1);
 
       await vi.advanceTimersByTimeAsync(1);
