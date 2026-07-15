@@ -3,34 +3,8 @@ import type {
   ItemEquipmentRes,
   ItemOption,
 } from '../../nexon/index.js';
+import { getEquipmentSlot } from '../equipmentSlot.js';
 import type { GearStats, StatBlock } from '../stat-interface.js';
-
-const SLOT_MAP: Partial<Record<string, keyof GearStats>> = {
-  모자: '모자',
-  얼굴장식: '얼굴장식',
-  눈장식: '눈장식',
-  귀고리: '귀고리',
-  상의: '상의',
-  하의: '하의',
-  신발: '신발',
-  장갑: '장갑',
-  망토: '망토',
-  무기: '무기',
-  보조무기: '보조무기',
-  엠블렘: '엠블렘',
-  반지1: '반지1',
-  반지2: '반지2',
-  반지3: '반지3',
-  반지4: '반지4',
-  펜던트: '펜던트',
-  펜던트2: '펜던트2',
-  벨트: '벨트',
-  어깨장식: '어깨장식',
-  '포켓 아이템': '포켓아이템',
-  훈장: '훈장',
-  뱃지: '뱃지',
-  '기계 심장': '기계심장',
-};
 
 const POTENTIAL_KEYS = [
   'potential_option_1',
@@ -173,7 +147,10 @@ function collectTotalOption(block: StatBlock, option: ItemOption): void {
   add(block, '방무', numberValue(option.ignore_monster_armor));
 }
 
-function getItemBlock(item: ItemEquipment, characterLevel: number): StatBlock {
+export function getItemStats(
+  item: ItemEquipment,
+  characterLevel: number
+): StatBlock {
   const block: StatBlock = {};
   collectTotalOption(block, item.item_total_option);
   for (const key of POTENTIAL_KEYS) {
@@ -190,10 +167,10 @@ export function getGear(
   const gear: GearStats = {};
 
   for (const item of equipment.item_equipment ?? []) {
-    const slot = SLOT_MAP[item.item_equipment_slot];
+    const slot = getEquipmentSlot(item.item_equipment_slot);
     if (!slot) continue;
 
-    const block = getItemBlock(item, characterLevel);
+    const block = getItemStats(item, characterLevel);
     if (Object.keys(block).length > 0) gear[slot] = block;
   }
 
