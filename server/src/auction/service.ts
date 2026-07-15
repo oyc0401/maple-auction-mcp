@@ -34,21 +34,32 @@ import type {
   RefreshCharacterSnapshot,
 } from '../nexon/characterSnapshot.js';
 
+// 키 설정은 MCP 서버 등록을 다시 해야 해서 AI가 대신 해줄 수 없다 — 사용자가 직접 할 일임을 명시한다
+// (주체를 안 밝히면 AI가 자기 일로 해석해 코드/설정 디버깅에 빠진다. shared의 DISCONNECTED_MSG 주석 참고).
 const NEXON_KEY_GUIDE =
-  '넥슨 오픈 API 키가 설정되지 않아 이 도구를 쓸 수 없습니다. https://openapi.nexon.com 에서 키를 발급받아 ' +
-  'MCP 실행 인자에 --api-key YOUR_NEXON_API_KEY를 추가하거나 NEXON_DEVELOPER_KEY 환경변수로 지정하세요. ' +
-  '실행 예: npx -y maple-auction-mcp --api-key YOUR_NEXON_API_KEY (일반 경매장 검색은 키 없이도 동작)';
+  '넥슨 오픈 API 키가 설정되지 않았습니다. 사용자에게 아래 2단계를 안내하세요 (AI가 대신 할 수 없음). ' +
+  '1) https://openapi.nexon.com 에서 로그인 후 API 키 발급(무료). ' +
+  '2) 터미널에서 유저 스코프로 재등록: ' +
+  'claude mcp remove maple-auction && claude mcp add --scope user maple-auction -- npx -y maple-auction-mcp --api-key 발급받은키 ' +
+  '(Claude Desktop은 claude_desktop_config.json의 args에 "--api-key", "발급받은키" 추가. ' +
+  'NEXON_DEVELOPER_KEY 환경변수도 가능. 재등록 후 클라이언트 재시작 필요.) ' +
+  '일반 경매장 검색은 키 없이도 동작합니다.';
 
 function nexonOpenApiStatus(): Record<string, unknown> {
   if (nexonApiKey()) return { configured: true };
   return {
     configured: false,
-    requiredFor: ['finalDamageChangeRate', 'user_equip', 'refresh_character'],
+    degradedResults:
+      '키가 없는 동안 장비 검색 결과에서 finalDamageChangeRate(최종 데미지 증감률)가 통째로 빠진다. ' +
+      '빠진 자리를 전투력(powerDiff)으로 대신하면 비교가 왜곡된다 — 전투력 공식은 방무를 반영하지 않아 ' +
+      '방무 매물이 저평가되고 보공 매물이 과대평가된다. user_equip(착용 장비)·refresh_character도 함께 막힌다.',
     setup: {
       issueUrl: 'https://openapi.nexon.com',
-      argument: '--api-key YOUR_NEXON_API_KEY',
-      example: 'npx -y maple-auction-mcp --api-key YOUR_NEXON_API_KEY',
+      claudeCode:
+        'claude mcp remove maple-auction && claude mcp add --scope user maple-auction -- npx -y maple-auction-mcp --api-key 발급받은키',
+      claudeDesktop: 'claude_desktop_config.json의 args에 "--api-key", "발급받은키" 추가',
       environmentVariable: 'NEXON_DEVELOPER_KEY',
+      afterSetup: '재등록 후 MCP 클라이언트를 재시작해야 적용됩니다.',
     },
     note: NEXON_KEY_GUIDE,
   };

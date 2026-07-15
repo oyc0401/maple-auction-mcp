@@ -466,7 +466,7 @@ describe('recent_sold (최근 시세, 검색 횟수 무료)', () => {
 });
 
 describe('get_status', () => {
-  it('넥슨 API 키가 없으면 발급 URL과 실행 인자 설정법을 반환한다', async () => {
+  it('넥슨 API 키가 없으면 발급 URL과 유저 스코프 재등록 설정법을 반환한다', async () => {
     const savedKey = process.env.NEXON_DEVELOPER_KEY;
     delete process.env.NEXON_DEVELOPER_KEY;
     try {
@@ -479,10 +479,12 @@ describe('get_status', () => {
         configured: false,
         setup: {
           issueUrl: 'https://openapi.nexon.com',
-          argument: '--api-key YOUR_NEXON_API_KEY',
+          claudeCode: expect.stringContaining('claude mcp add --scope user'),
           environmentVariable: 'NEXON_DEVELOPER_KEY',
         },
       });
+      // 키 없이 돌아가는 동안 결과가 어떻게 왜곡되는지도 알려야 AI가 전투력만으로 순위를 매기지 않는다.
+      expect(parsed.nexonOpenApi.degradedResults).toContain('finalDamageChangeRate');
       expect(parsed.nexonOpenApi).not.toHaveProperty('apiKey');
     } finally {
       if (savedKey === undefined) delete process.env.NEXON_DEVELOPER_KEY;
