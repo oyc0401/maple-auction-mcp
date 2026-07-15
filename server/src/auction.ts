@@ -20,6 +20,7 @@ import {
 import { summarizeSearch, summarizeItem, summarizeNexonEquip, type SearchSummary } from './summarize.js';
 import { listCharacters as listAccountCharacters, discoverIdentity, type CharacterInfo } from './characters.js';
 import { getAuctionEquipmentSlots } from './damage/auctionEquipmentSlot.js';
+import { isAuctionItemWearable } from './damage/auctionWearable.js';
 import { getStatsAfterEquipmentReplacement } from './damage/equipmentReplacement.js';
 import { getFinalDamageChangeRate } from './damage/finalDamage.js';
 import { getEquipmentSlot, type EquipmentSlot } from './damage/equipmentSlot.js';
@@ -85,12 +86,14 @@ export class AuctionService {
   ) {}
 
   private async summarizeSearchWithDamage(
-    data: any,
-    category?: string
+    data: any
   ): Promise<SearchSummary & { finalDamageNote?: string }> {
     const summary = summarizeSearch(data);
-    const slots = getAuctionEquipmentSlots(category);
-    if (!slots) return summary;
+    // 부위는 매물 JSON만으로 정한다 — 검색 조건을 보면 이름만으로 검색했을 때 슬롯을 잃는다.
+    const slotsByItem = summary.items.map((_, index) =>
+      getAuctionEquipmentSlots(data?.items?.[index] ?? {})
+    );
+    if (!slotsByItem.some((slots) => slots?.length)) return summary;
 
     const characterName = this.identity?.characterName;
     if (!characterName) {
@@ -103,7 +106,11 @@ export class AuctionService {
     try {
       const character = await this.loadCharacterSnapshot(characterName);
       const items = summary.items.map((item, index) => {
+        const slots = slotsByItem[index];
+        if (!slots?.length) return item;
         const raw = data?.items?.[index];
+        // 못 입는 장비의 증감률은 의미가 없다 — 카데나에게 마법사 스태프가 +26%로 뜨던 버그.
+        if (!isAuctionItemWearable(raw ?? {}, character.job)) return item;
         const stat = getAuctionItemStats(raw ?? {}, character.level);
         const finalDamageChangeRate: Partial<Record<EquipmentSlot, number>> = {};
         for (const slot of slots) {
@@ -206,7 +213,7 @@ export class AuctionService {
       if (reused.ok) {
         const data = reused.data as any;
         const note = ['동일 조건의 기존 검색을 재사용 (검색 횟수 소진 없음)', this.searchNote(data?.total, params)].filter(Boolean).join(' / ');
-        return { ...(await this.summarizeSearchWithDamage(data, params.category)), searchRemaining: await this.searchRemaining(), note };
+        return { ...(await this.summarizeSearchWithDamage(data)), searchRemaining: await this.searchRemaining(), note };
       }
       this.conditionCache.delete(condKey);
     }
@@ -219,7 +226,7 @@ export class AuctionService {
       this.conditionCache.set(condKey, data.searchKey);
     }
     const note = this.searchNote(data?.total, params);
-    return { ...(await this.summarizeSearchWithDamage(data, params.category)), searchRemaining: await this.searchRemaining(), ...(note ? { note } : {}) };
+    return { ...(await this.summarizeSearchWithDamage(data)), searchRemaining: await this.searchRemaining(), ...(note ? { note } : {}) };
   }
 
   async getPage(searchKey: string, page: number, limit: GetLimit, sort: Sort): Promise<unknown> {
@@ -230,7 +237,7 @@ export class AuctionService {
     const sold = cachedEntry?.sold ?? false;
     // 실측: 결과 500건 초과면 API가 전투력 정렬을 조용히 무시한다 — 정렬됐다고 믿고 읽는 오판 방지
     const pageResult = async (data: unknown) => {
-      const summary = await this.summarizeSearchWithDamage(data, cachedEntry?.category);
+      const summary = await this.summarizeSearchWithDamage(data);
       const note =
         sort === 'ATTACK_POWER_DESC' && summary.total > 500
           ? '결과가 500건을 초과해 전투력 정렬이 적용되지 않음 (다른 정렬로 반환될 수 있음)'

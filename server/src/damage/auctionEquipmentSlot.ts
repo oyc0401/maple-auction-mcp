@@ -1,34 +1,30 @@
-import type { EquipmentSlot } from './equipmentSlot.js';
+import { getEquipmentSlot, type EquipmentSlot } from './equipmentSlot.js';
 
-const CATEGORY_SLOTS: Partial<Record<string, EquipmentSlot[]>> = {
-  WEAPON_SUB: ['보조무기'],
-  ARMOR_ARMOR_CAP: ['모자'],
-  ARMOR_ARMOR_COAT: ['상의'],
-  ARMOR_ARMOR_PANTS: ['하의'],
-  ARMOR_ARMOR_SHOES: ['신발'],
-  ARMOR_ARMOR_GLOVE: ['장갑'],
-  ARMOR_ARMOR_CAPE: ['망토'],
-  ARMOR_ARMOR_SHIELD: ['보조무기'],
-  ARMOR_ACCESSORY_FACE: ['얼굴장식'],
-  ARMOR_ACCESSORY_EYE: ['눈장식'],
-  ARMOR_ACCESSORY_EAR: ['귀고리'],
-  ARMOR_ACCESSORY_RING: ['반지1', '반지2', '반지3', '반지4'],
-  ARMOR_ACCESSORY_PENDANT: ['펜던트', '펜던트2'],
-  ARMOR_ACCESSORY_BELT: ['벨트'],
-  ARMOR_ACCESSORY_SHOULDER: ['어깨장식'],
-  ARMOR_ACCESSORY_EMBLEM: ['엠블렘'],
-  ARMOR_ACCESSORY_MEDAL: ['훈장'],
-  ARMOR_ACCESSORY_BADGE: ['뱃지'],
-  ARMOR_ACCESSORY_POCKET: ['포켓아이템'],
-  ARMOR_ETC_MACHINE_HEART: ['기계심장'],
+interface AuctionRawItem {
+  toolTip?: { categories?: string[] | null };
+}
+
+// 한 매물이 여러 슬롯 후보를 갖는 부위. categories는 "반지"까지만 알려주고
+// 그게 반지 몇 번 칸인지는 매물 자신도 모른다 → 후보를 모두 넘겨 호출부가 비교한다.
+const MULTI_SLOTS: Partial<Record<string, EquipmentSlot[]>> = {
+  반지: ['반지1', '반지2', '반지3', '반지4'],
+  펜던트: ['펜던트', '펜던트2'],
 };
 
-export function getAuctionEquipmentSlots(
-  category: string | undefined
-): EquipmentSlot[] | null {
-  if (!category) return null;
-  const slots = CATEGORY_SLOTS[category];
-  if (slots) return [...slots];
-  if (category.startsWith('WEAPON_')) return ['무기'];
+// 매물이 어느 부위인지는 오직 아이템 JSON으로 판단한다 — 검색 필터를 보면
+// 이름만으로 검색(search_items)했을 때나 상위 카테고리(WEAPON) 검색에서 슬롯을 잃는다.
+//
+// 실측(2026-07-16) toolTip.categories 예:
+//   무기     ["무기","한손","체인"]        보조무기 ["보조무기","블레이드"]
+//   방패     ["보조무기","방패"]           망토     ["방어구","망토"]
+//   어깨장식 ["어깨장식"]                  반지     ["장신구","반지"]
+// 대분류("방어구"·"장신구")와 중분류("한손")는 슬롯명이 아니라 그냥 안 걸린다.
+export function getAuctionEquipmentSlots(item: AuctionRawItem): EquipmentSlot[] | null {
+  for (const name of item.toolTip?.categories ?? []) {
+    const multi = MULTI_SLOTS[name];
+    if (multi) return [...multi];
+    const slot = getEquipmentSlot(name);
+    if (slot) return [slot];
+  }
   return null;
 }
