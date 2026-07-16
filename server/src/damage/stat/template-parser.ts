@@ -137,8 +137,15 @@ export function parseMapleTemplates(
 
     for (let index = 0; index < targets.length; index += 1) {
       const value = Number(match[index + 1].replaceAll(',', ''));
-      for (let count = 0; count < mul; count += 1) {
+      const whole = Math.floor(mul);
+      const fraction = mul - whole;
+
+      for (let count = 0; count < whole; count += 1) {
         for (const stat of targets[index]) applyStat(block, stat, value);
+      }
+      if (fraction > 0) {
+        for (const stat of targets[index])
+          applyStat(block, stat, value * fraction);
       }
     }
   }

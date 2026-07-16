@@ -66,4 +66,26 @@ describe('parseMapleTemplates — 한 문자열에 모든 템플릿 fire 후 누
       ])
     ).toEqual({ block: {} });
   });
+
+  it('소수 mul은 추출한 수치에 배수를 곱한다', () => {
+    expect(
+      parseMapleTemplates('30초 동안 데미지 60% 증가', [
+        {
+          template: '데미지 ${데미지}% 증가',
+          mul: 0.25,
+        },
+      ])
+    ).toEqual({ block: { 데미지: 15 } });
+  });
+
+  it('정수부는 중첩하고 소수부는 남은 배수만큼 적용한다', () => {
+    expect(
+      parseMapleTemplates('중첩당 최종 데미지 10% 증가', [
+        {
+          template: '중첩당 최종 데미지 ${최종뎀}% 증가',
+          mul: 1.5,
+        },
+      ])
+    ).toEqual({ block: { 최종뎀: [10, 5] } });
+  });
 });

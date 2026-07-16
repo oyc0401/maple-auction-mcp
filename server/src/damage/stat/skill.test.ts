@@ -164,4 +164,124 @@ describe('일반 스킬(getSkill) 등급별 변환', () => {
     const result = getSkill(skill1, empty, empty, empty, empty, empty, empty);
     expect(result.스킬_1차).toEqual({});
   });
+
+  it('쓸만한 스킬의 상시 패시브 올스탯도 함께 적용한다', () => {
+    const skill1 = {
+      ...createSkillRes('1', []),
+      character_class: '캡틴',
+    };
+    const skill5 = createSkillRes('5', [
+      {
+        skill_name: '쓸만한 샤프 아이즈',
+        skill_effect:
+          '270초 동안 크리티컬 확률 10%, 크리티컬 데미지 8% 증가\n[패시브 효과 : 올스탯 6 증가]',
+      },
+      {
+        skill_name: '쓸만한 어드밴스드 블레스',
+        skill_effect:
+          '공격력 20, 마력 20 증가\n[패시브 효과 : 올스탯 6 증가]',
+      },
+    ]);
+
+    const result = getSkill(
+      skill1,
+      empty,
+      empty,
+      empty,
+      empty,
+      empty,
+      skill5
+    );
+
+    expect(result.스킬_5차).toEqual({
+      '쓸만한 샤프 아이즈': {
+        크확: 10,
+        크뎀: 8,
+        올스탯: 6,
+      },
+      '쓸만한 어드밴스드 블레스': {
+        공격력: 20,
+        마력: 20,
+        올스탯: 6,
+      },
+    });
+  });
+
+  it('검증 완료된 카데나 DB에는 공통 패시브 보정을 추가하지 않는다', () => {
+    const skill1 = {
+      ...createSkillRes('1', []),
+      character_class: '카데나',
+    };
+    const skill5 = {
+      ...createSkillRes('5', [
+        {
+          skill_name: '쓸만한 샤프 아이즈',
+          skill_effect:
+            '크리티컬 확률 10%, 크리티컬 데미지 8% 증가\n[패시브 효과 : 올스탯 6 증가]',
+        },
+      ]),
+      character_class: '카데나',
+    };
+
+    const result = getSkill(
+      skill1,
+      empty,
+      empty,
+      empty,
+      empty,
+      empty,
+      skill5
+    );
+
+    expect(result.스킬_5차).toEqual({
+      '쓸만한 샤프 아이즈': {
+        크확: 10,
+        크뎀: 8,
+      },
+    });
+  });
+
+  it('상호배타 단계는 하나만 고르고 액티브 수치는 가동률을 적용한다', () => {
+    const skill1 = {
+      ...createSkillRes('1', []),
+      character_class: '나이트로드',
+    };
+    const skill5 = createSkillRes('5', [
+      {
+        skill_name: '레디 투 다이',
+        skill_effect: [
+          '30초 동안 최종 데미지 증가',
+          '1단계 : 최종 데미지 10% 증가',
+          '2단계 : 최종 데미지 24% 증가',
+          '재사용 대기시간 60초',
+          '[패시브 효과 : 공격력 30 증가]',
+        ].join('\n'),
+      },
+      {
+        skill_name: '메이플월드 여신의 축복',
+        skill_effect:
+          '60초 동안 메이플 용사로 증가된 모든 능력치의 400% 추가 증가, 데미지 20% 증가\n재사용 대기시간 120초',
+      },
+    ]);
+
+    const result = getSkill(
+      skill1,
+      empty,
+      empty,
+      empty,
+      empty,
+      empty,
+      skill5
+    );
+
+    expect(result.스킬_5차).toEqual({
+      '레디 투 다이': {
+        공격력: 30,
+        최종뎀: [6],
+      },
+      '메이플월드 여신의 축복': {
+        데미지: 10,
+      },
+    });
+  });
 });
