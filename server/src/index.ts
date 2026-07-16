@@ -1,5 +1,5 @@
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
-import { Bridge } from './auction/bridge.js';
+import { Bridge } from './broker/bridge.js';
 import { AuctionBridge, MapleAuctionApi } from './auction/api.js';
 import { createServer } from './mcp.js';
 import {

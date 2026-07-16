@@ -5,8 +5,8 @@ import {
   type Sort,
   type GetLimit,
 } from './mapping.js';
+import { DISCONNECTED_MSG } from '@maple/shared';
 import {
-  DISCONNECTED_MSG,
   NO_SESSION_MSG,
   WISHLIST_MAX,
   type AuctionReply,

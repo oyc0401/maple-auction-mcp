@@ -44,12 +44,6 @@ export interface AuctionErr {
 
 export type AuctionReply = AuctionOk | AuctionErr;
 
-export const DISCONNECTED_MSG =
-  '크롬 확장이 연결되어 있지 않습니다. ' +
-  '확장이 켜져 있다면 30초 내 자동 재연결되니 잠시 후 1회만 재시도하고, 그래도 실패하면 ' +
-  '사용자에게 "크롬 실행 + Maple Auction Bridge 확장 활성화" 확인을 안내하고 대기하세요. ' +
-  '확장 미설치 시 설치 주소: https://chromewebstore.google.com/detail/maple-auction-mcp/mdjabnokhboicgecmpnggabjfimelfjn';
-
 export const NO_SESSION_MSG =
   '거래소 세션이 없거나 만료되었습니다. 넥슨 로그인만으로는 세션이 생기지 않고, 다른 곳에서 새 세션이 생기면 이전 세션은 무효가 됩니다. ' +
   '사용자에게 크롬에서 https://auction.maplestory.nexon.com 을 열거나 새로고침하라고 안내하고(로그인 페이지가 나오면 로그인), ' +

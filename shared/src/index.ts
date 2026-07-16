@@ -52,6 +52,14 @@ export type BridgeErrorCode =
   | 'NO_IDENTITY'        // 계정 발견 실패 (서버가 생성)
   | 'PROTOCOL_MISMATCH'; // 확장↔서버 프로토콜 버전 불일치 (서버가 생성)
 
+// 확장 미연결 안내문. 에러 텍스트 독자는 AI — 재시도·사용자 안내 절차를 명시한다.
+// (broker와 auction 양쪽이 쓴다 — 서로 의존하지 않도록 여기 둔다)
+export const DISCONNECTED_MSG =
+  '크롬 확장이 연결되어 있지 않습니다. ' +
+  '확장이 켜져 있다면 30초 내 자동 재연결되니 잠시 후 1회만 재시도하고, 그래도 실패하면 ' +
+  '사용자에게 "크롬 실행 + Maple Auction Bridge 확장 활성화" 확인을 안내하고 대기하세요. ' +
+  '확장 미설치 시 설치 주소: https://chromewebstore.google.com/detail/maple-auction-mcp/mdjabnokhboicgecmpnggabjfimelfjn';
+
 // 프로토콜 불일치 안내문. 에러 텍스트 독자는 AI — 어느 쪽을 업데이트할지 명시한다.
 export function protocolMismatchMsg(extVersion: number): string {
   return extVersion < PROTOCOL_VERSION

@@ -5,11 +5,11 @@ import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
 import {
   BRIDGE_PORT,
+  DISCONNECTED_MSG,
   type WireFetchCommand,
   type WireReply,
   type BridgeServerMessage,
 } from '@maple/shared';
-import { DISCONNECTED_MSG } from './api.js';
 
 // 브로커에 붙는 얇은 WS 클라이언트. 확장 선택(fanout)은 브로커가 담당한다.
 // 브로커가 없으면 한 번 자동 스폰하고 재접속한다.
