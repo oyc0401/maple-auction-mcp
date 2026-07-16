@@ -4,7 +4,7 @@ import type {
   AuctionPotential,
   AuctionSearchResponse,
 } from './item.js';
-import { ROYAL_LABEL_BY_VALUE, PET_GRADE_BY_VALUE } from '../constants.js';
+import { ROYAL_LABEL_BY_VALUE, PET_GRADE_BY_VALUE } from './constants.js';
 
 // 요약에 노출하는 스탯 키와 라벨 (user_equip의 stat 줄과 동일 표기·순서). 방어력·MP는 제외, 공격력·HP 포함.
 const ITEM_STAT_LABELS: [key: string, label: string][] = [

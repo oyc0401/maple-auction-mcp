@@ -1,6 +1,6 @@
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
-import { Bridge } from './bridge.js';
-import { NexonBridge } from './nexon.js';
+import { Bridge } from './auction/bridge.js';
+import { AuctionBridge, MapleAuctionApi } from './auction/api.js';
 import { createServer } from './mcp.js';
 import {
   loadCharacterSnapshot,
@@ -16,14 +16,14 @@ for (let i = 2; i < process.argv.length; i++) {
   else if (arg.startsWith('--api-key=')) process.env.NEXON_DEVELOPER_KEY = arg.slice('--api-key='.length);
 }
 
-const bridge = new NexonBridge(new Bridge());
+const auctionApi = new MapleAuctionApi(new AuctionBridge(new Bridge()));
 const server = createServer(
-  bridge,
+  auctionApi,
   loadCharacterSnapshot,
   refreshCharacterSnapshot
 );
 await server.connect(new StdioServerTransport());
 // stdio 종료 시 정리
 process.stdin.on('close', () => {
-  void bridge.close().finally(() => process.exit(0));
+  void auctionApi.close().finally(() => process.exit(0));
 });

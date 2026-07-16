@@ -3,13 +3,13 @@ import { randomUUID } from 'node:crypto';
 import { pathToFileURL } from 'node:url';
 import {
   BRIDGE_PORT,
-  DISCONNECTED_MSG,
   PROTOCOL_VERSION,
   protocolMismatchMsg,
   type WireFetchCommand,
   type WireReply,
   type BridgeStatus,
 } from '@maple/shared';
+import { DISCONNECTED_MSG } from './api.js';
 
 // promises 중 pred를 만족하는 첫 결과로 즉시 resolve, 하나도 없으면 null.
 // (로그인된 확장을 찾는 즉시 반환해 느린/잠든 확장을 기다리지 않기 위함)

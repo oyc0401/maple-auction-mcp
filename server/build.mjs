@@ -11,7 +11,7 @@ const banner = {
 const common = { bundle: true, platform: 'node', target: 'node20', format: 'esm', banner };
 
 await build({ ...common, entryPoints: ['src/index.ts'], outfile: 'dist/index.js' });
-await build({ ...common, entryPoints: ['src/broker.ts'], outfile: 'dist/broker.js' });
+await build({ ...common, entryPoints: ['src/auction/broker.ts'], outfile: 'dist/broker.js' });
 
 // 지식 노트 동봉 — 리포 밖(배포 환경)에서도 maple://knowledge 리소스가 동작하도록
 mkdirSync(new URL('dist/', import.meta.url), { recursive: true });

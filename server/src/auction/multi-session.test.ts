@@ -1,7 +1,7 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import WebSocket from 'ws';
-import { Bridge } from '../src/bridge.js';
-import { Broker } from '../src/broker.js';
+import { Bridge } from './bridge.js';
+import { Broker } from './broker.js';
 
 // 멀티 세션 통합: 브로커 1개에 확장 1개 + MCP 클라이언트(Bridge) 2개가 붙어
 // 동시에 요청해도 각 세션이 자기 응답만 받고 둘 다 connected 되는지 검증한다.

@@ -1,7 +1,7 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import WebSocket from 'ws';
 import { PROTOCOL_VERSION, type WireFetchCommand } from '@maple/shared';
-import { Broker } from '../src/broker.js';
+import { Broker } from './broker.js';
 
 const TEST_PORT = 29972;
 let broker: Broker;

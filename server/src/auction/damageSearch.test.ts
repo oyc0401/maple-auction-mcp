@@ -1,11 +1,11 @@
 import { describe, expect, it, vi } from 'vitest';
 import { AuctionService } from './service.js';
-import type { BridgeLike } from '../nexon.js';
+import { MapleAuctionApi, type AuctionTransport } from './api.js';
 import type { ItemEquipmentRes } from '../nexon/types.js';
 
 describe('AuctionService 장비 검색 최종 데미지 자동 계산', () => {
   it('반지 매물 하나에 네 슬롯의 증감률을 함께 반환하고 0과 음수도 보존한다', async () => {
-    const bridge: BridgeLike = {
+    const bridge: AuctionTransport = {
       connected: true,
       request: vi.fn(async (command) => {
         if (command.url.includes('/daily-limit')) {
@@ -68,7 +68,7 @@ describe('AuctionService 장비 검색 최종 데미지 자동 계산', () => {
       },
       equipment: { item_equipment: [] } as unknown as ItemEquipmentRes,
     }));
-    const service = new AuctionService(bridge, loadCharacterSnapshot);
+    const service = new AuctionService(new MapleAuctionApi(bridge), loadCharacterSnapshot);
     (service as unknown as { identity: unknown }).identity = {
       worldId: 5,
       accountId: 1,
@@ -99,7 +99,7 @@ describe('AuctionService 장비 검색 최종 데미지 자동 계산', () => {
   });
 
   it('소비 아이템 검색은 캐릭터를 조회하지 않고 증감률 필드를 만들지 않는다', async () => {
-    const bridge: BridgeLike = {
+    const bridge: AuctionTransport = {
       connected: true,
       request: vi.fn(async (command) => {
         if (command.url.includes('/daily-limit')) {
@@ -139,7 +139,7 @@ describe('AuctionService 장비 검색 최종 데미지 자동 계산', () => {
       }),
     };
     const loadCharacterSnapshot = vi.fn();
-    const service = new AuctionService(bridge, loadCharacterSnapshot);
+    const service = new AuctionService(new MapleAuctionApi(bridge), loadCharacterSnapshot);
     (service as unknown as { identity: unknown }).identity = {
       worldId: 5,
       accountId: 1,
@@ -158,7 +158,7 @@ describe('AuctionService 장비 검색 최종 데미지 자동 계산', () => {
   // 원래 버그: 이름만으로 검색하면 category가 상위값('WEAPON')이거나 아예 없어서 슬롯을 못 정하고
   // 증감률이 통째로 빠졌다. 부위는 매물 JSON으로만 정하므로 검색 조건과 무관해야 한다.
   it('검색 조건 없이 이름만으로 검색해도 매물 categories로 증감률을 낸다', async () => {
-    const bridge: BridgeLike = {
+    const bridge: AuctionTransport = {
       connected: true,
       request: vi.fn(async (command) => {
         if (command.url.includes('/daily-limit')) {
@@ -223,7 +223,7 @@ describe('AuctionService 장비 검색 최종 데미지 자동 계산', () => {
       },
       equipment: { item_equipment: [] } as unknown as ItemEquipmentRes,
     }));
-    const service = new AuctionService(bridge, loadCharacterSnapshot);
+    const service = new AuctionService(new MapleAuctionApi(bridge), loadCharacterSnapshot);
     (service as unknown as { identity: unknown }).identity = {
       worldId: 5,
       accountId: 1,
@@ -243,7 +243,7 @@ describe('AuctionService 장비 검색 최종 데미지 자동 계산', () => {
 
   // 원래 버그: 카데나에게 마법사 스태프의 증감률(+26%)이 붙었다.
   it('못 입는 장비에는 증감률을 붙이지 않는다', async () => {
-    const bridge: BridgeLike = {
+    const bridge: AuctionTransport = {
       connected: true,
       request: vi.fn(async (command) => {
         if (command.url.includes('/daily-limit')) {
@@ -315,7 +315,7 @@ describe('AuctionService 장비 검색 최종 데미지 자동 계산', () => {
       },
       equipment: { item_equipment: [] } as unknown as ItemEquipmentRes,
     }));
-    const service = new AuctionService(bridge, loadCharacterSnapshot);
+    const service = new AuctionService(new MapleAuctionApi(bridge), loadCharacterSnapshot);
     (service as unknown as { identity: unknown }).identity = {
       worldId: 5,
       accountId: 1,
@@ -332,7 +332,7 @@ describe('AuctionService 장비 검색 최종 데미지 자동 계산', () => {
   });
 
   it('캐릭터 조회에 실패해도 경매장 아이템은 반환하고 실패 이유를 명시한다', async () => {
-    const bridge: BridgeLike = {
+    const bridge: AuctionTransport = {
       connected: true,
       request: vi.fn(async (command) => {
         if (command.url.includes('/daily-limit')) {
@@ -374,7 +374,7 @@ describe('AuctionService 장비 검색 최종 데미지 자동 계산', () => {
     const loadCharacterSnapshot = vi.fn(async () => {
       throw new Error('NEXON_DEVELOPER_KEY 미설정');
     });
-    const service = new AuctionService(bridge, loadCharacterSnapshot);
+    const service = new AuctionService(new MapleAuctionApi(bridge), loadCharacterSnapshot);
     (service as unknown as { identity: unknown }).identity = {
       worldId: 5,
       accountId: 1,
@@ -396,7 +396,7 @@ describe('AuctionService 장비 검색 최종 데미지 자동 계산', () => {
   });
 
   it('get_page로 가져온 장비에도 같은 증감률 필드를 붙인다', async () => {
-    const bridge: BridgeLike = {
+    const bridge: AuctionTransport = {
       connected: true,
       request: vi.fn(async () => ({
         id: 'page',
@@ -439,7 +439,7 @@ describe('AuctionService 장비 검색 최종 데미지 자동 계산', () => {
       },
       equipment: { item_equipment: [] } as unknown as ItemEquipmentRes,
     }));
-    const service = new AuctionService(bridge, loadCharacterSnapshot);
+    const service = new AuctionService(new MapleAuctionApi(bridge), loadCharacterSnapshot);
     (service as unknown as { identity: unknown }).identity = {
       worldId: 5,
       accountId: 1,

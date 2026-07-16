@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildCreateBody, buildPageUrl, SEARCH_URL } from '../src/auction/mapping.js';
+import { buildCreateBody } from './mapping.js';
 
 const id = { worldId: 5, accountId: 99188397, characterId: 25631906 };
 
@@ -162,25 +162,5 @@ describe('buildCreateBody (상세 필터, 2026-07-08 웹 거래소 POST 실측 �
     const body = buildCreateBody({ category: 'WEAPON_ONE_HANDED_CHAIN' }, id) as any;
     expect('keyword' in body.filters).toBe(false);
     expect(body.filters.itemCategory).toEqual({ itemDetailCategory: 'WEAPON_ONE_HANDED_CHAIN' });
-  });
-});
-
-describe('buildPageUrl (GET 페이지 조회)', () => {
-  it('정렬·페이지·크기를 반영한 GET URL을 만든다', () => {
-    const url = buildPageUrl('a6dc000e-5f05-45d2-94e9-e3227d9569a9', { page: 2, limit: 40, sort: 'ATTACK_POWER_DESC' }, id);
-    expect(url).toBe(
-      'https://api.mskr.nexon.com/v1/market/web/items/searches/a6dc000e-5f05-45d2-94e9-e3227d9569a9/tool-tip?accountId=99188397&characterId=25631906&page=2&limit=40&sortType=ATTACK_POWER_DESC'
-    );
-  });
-
-  it('searchKey를 URL 이스케이프해 경로 조작을 막는다', () => {
-    const url = buildPageUrl('../../evil?x', { page: 1, limit: 20, sort: 'PRICE_PER_ITEM_ASC' }, id);
-    expect(url).toContain('/searches/..%2F..%2Fevil%3Fx/tool-tip');
-  });
-});
-
-describe('SEARCH_URL', () => {
-  it('POST 엔드포인트', () => {
-    expect(SEARCH_URL).toBe('https://api.mskr.nexon.com/v1/market/web/items/searches/tool-tip');
   });
 });

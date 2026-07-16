@@ -1,6 +1,6 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
-import { WISHLIST_MAX, SORTS, type SearchParams, type Sort, type GetLimit } from './auction/mapping.js';
+import { SORTS, type SearchParams, type Sort, type GetLimit } from './auction/mapping.js';
 import { loadKnowledge } from './knowledge.js';
 import { AuctionService } from './auction/service.js';
 import {
@@ -18,15 +18,13 @@ import {
   PET_GRADES,
   PET_GRADE_KEYS,
   JOB_CLASSES,
-} from './constants.js';
+} from './auction/constants.js';
 
-// 내부 API 계약은 nexon.ts 소유 (변환 계층과 함께) — 기존 소비처를 위해 re-export.
-import type { BridgeLike } from './nexon.js';
+import { WISHLIST_MAX, type MapleAuctionApi } from './auction/api.js';
 import type {
   LoadCharacterSnapshot,
   RefreshCharacterSnapshot,
 } from './characterSnapshot.js';
-export type { BridgeLike } from './nexon.js';
 
 function text(value: unknown) {
   return { content: [{ type: 'text' as const, text: typeof value === 'string' ? value : JSON.stringify(value, null, 1) }] };
@@ -101,7 +99,7 @@ const seedRingSchema = {
 };
 
 export function createServer(
-  bridge: BridgeLike,
+  api: MapleAuctionApi,
   loadCharacterSnapshot: LoadCharacterSnapshot,
   refreshCharacterSnapshot: RefreshCharacterSnapshot = loadCharacterSnapshot
 ): McpServer {
@@ -125,7 +123,7 @@ export function createServer(
   const server = new McpServer({ name: 'maple-auction', version: '0.8.0' }, { instructions });
 
   const service = new AuctionService(
-    bridge,
+    api,
     loadCharacterSnapshot,
     refreshCharacterSnapshot
   );

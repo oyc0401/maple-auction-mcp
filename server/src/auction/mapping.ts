@@ -1,4 +1,4 @@
-import { API_BASE, type Identity } from '@maple/shared';
+import type { Identity } from './api.js';
 
 // 정렬값 (실측 2026-07-08, 전부 GET에서 동작 확인).
 export const SORTS = [
@@ -65,27 +65,6 @@ export interface SearchParams {
   petGrade?: number; // 펫 등급: 0일반 1원더블랙 4루나스윗 5루나드림 6루나쁘띠
   cashOptions?: OptionRow[]; // 기간제 옵션 (period* 키), filters.cashOption 평면 객체로 직렬화
 }
-
-export const SEARCH_URL = `${API_BASE}/searches/tool-tip`;
-// 판매 완료(시세) 검색 세션 생성. body는 라이브 검색과 동일, URL만 다르다.
-// 실측(2026-07-08): 라이브 검색과 마찬가지로 POST가 검색 횟수 1회를 소진하고 GET 페이지는 무료.
-export const SOLD_SEARCH_URL = `${API_BASE}/searches/sold/tool-tip`;
-// 최근 시세(이미 판매 완료된 매물). 실측(2026-07-08): 검색 횟수를 소진하지 않는다.
-export const RECENT_SOLD_URL = `${API_BASE}/searches/sold/recent`;
-// 검색 잔여 횟수 등: {search:{limit,remaining}, register:{limit,remaining}}
-export const DAILY_LIMIT_URL = API_BASE.replace(/\/items$/, '/daily-limit');
-
-// 계정 잔액(메소·메이플포인트) GET. market/web 하위가 아니라 /v1/accounts 직속.
-// 응답 실측(2026-07-11): { meso: string, maplePoint: number }.
-export function buildBalanceUrl(id: Identity): string {
-  const root = API_BASE.replace(/\/market\/web\/items$/, ''); // https://api.mskr.nexon.com/v1
-  return `${root}/accounts/${id.accountId}/gameWorlds/${id.worldId}/balance`;
-}
-
-// 찜 목록. items의 형제 리소스(/v1/market/web/wishlists). worldId를 gameWorldId로 넘긴다.
-export const WISHLIST_URL = API_BASE.replace(/\/items$/, '/wishlists');
-// 찜 목록 최대 등록 개수 (실측 2026-07-08).
-export const WISHLIST_MAX = 50;
 
 // 옵션 줄들 → 합산 모드: 한 객체에 키별 합산 { physicalAttackPercent: 21 }
 // (같은 키 여러 줄이면 값을 더한다: UI에서 9+12 두 줄 = 합산 21과 동일)
@@ -182,54 +161,9 @@ export function buildCreateBody(p: SearchParams, id: Identity) {
   };
 }
 
-// GET: 발급된 searchKey로 페이지 조회. 정렬·페이지·크기(20/40/60)를 여기서 지정한다.
-// sold=true면 판매 완료(시세) 세션 조회 URL을 쓴다(searchKey는 라이브/시세가 각각 별개).
-export function buildPageUrl(
-  searchKey: string,
-  q: { page: number; limit: GetLimit; sort: Sort },
-  id: Identity,
-  sold = false
-): string {
-  const qs = new URLSearchParams({
-    accountId: String(id.accountId),
-    characterId: String(id.characterId),
-    page: String(q.page),
-    limit: String(q.limit),
-    sortType: q.sort,
-  });
-  const seg = sold ? 'searches/sold' : 'searches';
-  return `${API_BASE}/${seg}/${encodeURIComponent(searchKey)}/tool-tip?${qs}`;
-}
-
 // 매물 id "TRADESN:SUBIDX" → {tradeSn, subIdx}. subIdx는 마지막 콜론 뒤(tradeSn엔 콜론 없음).
 export function parseItemId(itemId: string): { tradeSn: string; subIdx: number } {
   const i = itemId.lastIndexOf(':');
   if (i < 0) return { tradeSn: itemId, subIdx: 0 };
   return { tradeSn: itemId.slice(0, i), subIdx: Number(itemId.slice(i + 1)) || 0 };
-}
-
-// 찜 목록 GET: 조회에는 characterId도 필요하다.
-export function buildWishlistGetUrl(id: Identity): string {
-  const qs = new URLSearchParams({
-    accountId: String(id.accountId),
-    gameWorldId: String(id.worldId),
-    characterId: String(id.characterId),
-  });
-  return `${WISHLIST_URL}?${qs}`;
-}
-
-// 찜 추가 POST body.
-export function buildWishlistBody(id: Identity, tradeSn: string, subIdx: number) {
-  return { accountId: id.accountId, gameWorldId: id.worldId, tradeSn, subIdx };
-}
-
-// 찜 제거 DELETE URL: 파라미터는 쿼리스트링(characterId 불필요).
-export function buildWishlistDeleteUrl(id: Identity, tradeSn: string, subIdx: number): string {
-  const qs = new URLSearchParams({
-    accountId: String(id.accountId),
-    gameWorldId: String(id.worldId),
-    tradeSn,
-    subIdx: String(subIdx),
-  });
-  return `${WISHLIST_URL}?${qs}`;
 }

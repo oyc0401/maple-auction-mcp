@@ -5,15 +5,15 @@ import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
 import {
   BRIDGE_PORT,
-  DISCONNECTED_MSG,
   type WireFetchCommand,
   type WireReply,
   type BridgeServerMessage,
 } from '@maple/shared';
+import { DISCONNECTED_MSG } from './api.js';
 
 // 브로커에 붙는 얇은 WS 클라이언트. 확장 선택(fanout)은 브로커가 담당한다.
 // 브로커가 없으면 한 번 자동 스폰하고 재접속한다.
-// WireTransport 구현체 — 내부 API 변환은 NexonBridge가 한다.
+// WireTransport 구현체 — 내부 API 변환은 AuctionBridge가 한다.
 export class Bridge {
   private port: number;
   private ws: WebSocket | null = null;
@@ -69,7 +69,7 @@ export class Bridge {
       // 번들 실행(dist)에선 형제 broker.js. tsx로 소스(src)를 직접 실행하는 개발 환경엔 .js가 없어
       // 스폰이 조용히 실패하고 포트가 영영 안 열린다 — dist/broker.js로 폴백 (실측 2026-07-11).
       let brokerPath = fileURLToPath(new URL('./broker.js', import.meta.url));
-      if (!existsSync(brokerPath)) brokerPath = fileURLToPath(new URL('../dist/broker.js', import.meta.url));
+      if (!existsSync(brokerPath)) brokerPath = fileURLToPath(new URL('../../dist/broker.js', import.meta.url));
       if (!existsSync(brokerPath)) {
         process.stderr.write('[bridge] broker.js를 찾지 못했습니다 — `node build.mjs`로 빌드하세요\n');
         return;

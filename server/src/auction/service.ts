@@ -1,24 +1,20 @@
-import { DISCONNECTED_MSG, NO_SESSION_MSG, type BridgeReply, type Identity } from '@maple/shared';
 import {
   buildCreateBody,
-  buildPageUrl,
   parseItemId,
-  buildWishlistGetUrl,
-  buildWishlistBody,
-  buildWishlistDeleteUrl,
-  buildBalanceUrl,
-  SEARCH_URL,
-  SOLD_SEARCH_URL,
-  RECENT_SOLD_URL,
-  DAILY_LIMIT_URL,
-  WISHLIST_URL,
-  WISHLIST_MAX,
   type SearchParams,
   type Sort,
   type GetLimit,
 } from './mapping.js';
+import {
+  DISCONNECTED_MSG,
+  NO_SESSION_MSG,
+  WISHLIST_MAX,
+  type AuctionReply,
+  type Identity,
+  type MapleAuctionApi,
+} from './api.js';
 import { summarizeSearch, summarizeItem, summarizeNexonEquip, type SearchSummary } from './summarize.js';
-import { listCharacters as listAccountCharacters, discoverIdentity, type CharacterInfo } from '../characters.js';
+import { listCharacters as listAccountCharacters, discoverIdentity, type CharacterInfo } from './characters.js';
 import { getAuctionEquipmentSlots } from '../damage/auctionEquipmentSlot.js';
 import type { AuctionItem, AuctionSearchResponse } from './item.js';
 import { isAuctionItemWearable } from '../damage/auctionWearable.js';
@@ -26,8 +22,7 @@ import { getStatsAfterEquipmentReplacement } from '../damage/equipmentReplacemen
 import { getFinalDamageChangeRate } from '../damage/finalDamage.js';
 import { getEquipmentSlot, type EquipmentSlot } from '../damage/equipmentSlot.js';
 import { getAuctionItemStats } from '../damage/stat/gear.js';
-import { worldName } from '../constants.js';
-import type { BridgeLike } from '../nexon.js';
+import { worldName } from './constants.js';
 import { nexonApiKey } from '../nexon/index.js';
 import type {
   LoadCharacterSnapshot,
@@ -65,7 +60,7 @@ function nexonOpenApiStatus(): Record<string, unknown> {
   };
 }
 
-function errorText(reply: Extract<BridgeReply, { ok: false }>): string {
+function errorText(reply: Extract<AuctionReply, { ok: false }>): string {
   const apiCode = (reply.data as { code?: number } | null)?.code;
   // 401/403 = 세션 문제. 세션은 옥션 페이지만 만들 수 있으므로(shared의 NO_SESSION_MSG 주석 참고)
   // nxlogin이 아니라 옥션 페이지로 안내한다. 구버전 확장이 보낸 낡은 안내문도 여기서 최신 안내로 덮인다.
@@ -92,7 +87,7 @@ export class AuctionService {
   // (searchKey는 조건만 저장하므로 GET 결과는 항상 실시간 — 재사용해도 낡은 데이터가 아니다)
   private readonly conditionCache = new Map<string, string>();
   constructor(
-    private bridge: BridgeLike,
+    private api: MapleAuctionApi,
     private loadCharacterSnapshot: LoadCharacterSnapshot,
     private refreshCharacterSnapshot: RefreshCharacterSnapshot = loadCharacterSnapshot
   ) {}
@@ -154,7 +149,7 @@ export class AuctionService {
 
   private async ensureIdentity(): Promise<Identity | string> {
     if (this.identity) return this.identity;
-    const found = await discoverIdentity(this.bridge);
+    const found = await discoverIdentity(this.api);
     if (typeof found !== 'string') {
       this.identity = found;
       return this.identity;
@@ -169,14 +164,14 @@ export class AuctionService {
 
   // 남은 일일 검색 생성 횟수 (GET, 무료). 실패하면 null.
   private async searchRemaining(): Promise<number | null> {
-    const dl = await this.bridge.request({ type: 'fetch', url: DAILY_LIMIT_URL, method: 'GET' });
+    const dl = await this.api.getDailyLimit();
     return dl.ok ? ((dl.data as any)?.search?.remaining ?? null) : null;
   }
 
   // 계정 잔액(메소·메이플포인트=메포) 조회. 무료 GET. 실패하면 null.
   // 실측(2026-07-11): 타월드 거래는 메소로 결제하고 메포로 크로스월드 수수료를 뗀다 — 둘 다 노출한다.
   private async fetchBalance(id: Identity): Promise<{ meso: number; maplePoint: number } | null> {
-    const r = await this.bridge.request({ type: 'fetch', url: buildBalanceUrl(id), method: 'GET' });
+    const r = await this.api.getBalance(id);
     if (!r.ok) return null;
     const d = r.data as { meso?: unknown; maplePoint?: unknown } | null;
     const meso = Number(d?.meso);
@@ -216,11 +211,7 @@ export class AuctionService {
     const condKey = `${sold ? 'sold' : 'live'}:${JSON.stringify(body)}`;
     const existingKey = this.conditionCache.get(condKey);
     if (existingKey) {
-      const reused = await this.bridge.request({
-        type: 'fetch',
-        url: buildPageUrl(existingKey, { page: 1, limit: 20, sort: 'PRICE_PER_ITEM_ASC' }, id, sold),
-        method: 'GET',
-      });
+      const reused = await this.api.getSearchPage(existingKey, { page: 1, limit: 20, sort: 'PRICE_PER_ITEM_ASC' }, id, sold);
       if (reused.ok) {
         const data = reused.data as any;
         const note = ['동일 조건의 기존 검색을 재사용 (검색 횟수 소진 없음)', this.searchNote(data?.total, params)].filter(Boolean).join(' / ');
@@ -229,7 +220,7 @@ export class AuctionService {
       this.conditionCache.delete(condKey);
     }
 
-    const created = await this.bridge.request({ type: 'fetch', url: sold ? SOLD_SEARCH_URL : SEARCH_URL, method: 'POST', body });
+    const created = await this.api.createSearch(body, sold);
     if (!created.ok) return errorText(created);
     const data = created.data as any;
     if (data?.searchKey) {
@@ -255,7 +246,7 @@ export class AuctionService {
           : undefined;
       return { ...summary, ...(note ? { note } : {}) };
     };
-    const reply = await this.bridge.request({ type: 'fetch', url: buildPageUrl(searchKey, q, id, sold), method: 'GET' });
+    const reply = await this.api.getSearchPage(searchKey, q, id, sold);
     if (reply.ok) {
       return await pageResult(reply.data);
     }
@@ -264,13 +255,12 @@ export class AuctionService {
     if (reply.code === 'HTTP_ERROR' && reply.status !== 403) {
       const cached = this.bodyCache.get(searchKey);
       if (cached) {
-        const searchUrl = cached.sold ? SOLD_SEARCH_URL : SEARCH_URL;
-        const recreated = await this.bridge.request({ type: 'fetch', url: searchUrl, method: 'POST', body: cached.body });
+        const recreated = await this.api.createSearch(cached.body, cached.sold);
         const newKey: string | undefined = recreated.ok ? (recreated.data as any)?.searchKey : undefined;
         if (newKey) {
           this.bodyCache.set(newKey, cached);
           this.conditionCache.set(`${cached.sold ? 'sold' : 'live'}:${JSON.stringify(cached.body)}`, newKey);
-          const retry = await this.bridge.request({ type: 'fetch', url: buildPageUrl(newKey, q, id, cached.sold), method: 'GET' });
+          const retry = await this.api.getSearchPage(newKey, q, id, cached.sold);
           if (retry.ok) {
             return await pageResult(retry.data);
           }
@@ -318,8 +308,7 @@ export class AuctionService {
   async recentSold(): Promise<unknown> {
     const id = await this.ensureIdentity();
     if (typeof id === 'string') return id;
-    const body = { worldId: id.worldId, accountId: id.accountId, characterId: id.characterId };
-    const reply = await this.bridge.request({ type: 'fetch', url: RECENT_SOLD_URL, method: 'POST', body });
+    const reply = await this.api.getRecentSold(id);
     if (!reply.ok) return errorText(reply);
     try {
       return summarizeSearch(reply.data as AuctionSearchResponse);
@@ -330,7 +319,7 @@ export class AuctionService {
 
   // 찜 목록 개수·남은 슬롯을 조회한다(무료 GET). 실패 시 에러 문자열.
   private async wishlistState(id: Identity): Promise<{ count: number; remaining: number; items: AuctionItem[] } | string> {
-    const reply = await this.bridge.request({ type: 'fetch', url: buildWishlistGetUrl(id), method: 'GET' });
+    const reply = await this.api.getWishlist(id);
     if (!reply.ok) return errorText(reply);
     const items = (reply.data as { items?: AuctionItem[] } | null)?.items ?? [];
     return { count: items.length, remaining: Math.max(0, WISHLIST_MAX - items.length), items };
@@ -348,12 +337,7 @@ export class AuctionService {
     const id = await this.ensureIdentity();
     if (typeof id === 'string') return id;
     const { tradeSn, subIdx } = parseItemId(itemId);
-    const reply = await this.bridge.request({
-      type: 'fetch',
-      url: WISHLIST_URL,
-      method: 'POST',
-      body: buildWishlistBody(id, tradeSn, subIdx),
-    });
+    const reply = await this.api.addWishlist(id, tradeSn, subIdx);
     if (!reply.ok) return errorText(reply);
     const st = await this.wishlistState(id);
     return {
@@ -369,11 +353,7 @@ export class AuctionService {
     const id = await this.ensureIdentity();
     if (typeof id === 'string') return id;
     const { tradeSn, subIdx } = parseItemId(itemId);
-    const reply = await this.bridge.request({
-      type: 'fetch',
-      url: buildWishlistDeleteUrl(id, tradeSn, subIdx),
-      method: 'DELETE',
-    });
+    const reply = await this.api.removeWishlist(id, tradeSn, subIdx);
     if (!reply.ok) return errorText(reply);
     const st = await this.wishlistState(id);
     return {
@@ -386,7 +366,7 @@ export class AuctionService {
   }
 
   async listCharacters(): Promise<unknown> {
-    const result = await listAccountCharacters(this.bridge);
+    const result = await listAccountCharacters(this.api);
     if (typeof result === 'string') return result;
     this.characters = result;
     const current = this.identity?.characterId;
@@ -402,7 +382,7 @@ export class AuctionService {
   async setCharacter(characterName?: string, characterId?: number): Promise<unknown> {
     if (!characterName && !characterId) return 'characterName 또는 characterId를 지정하세요.';
     if (!this.characters) {
-      const result = await listAccountCharacters(this.bridge);
+      const result = await listAccountCharacters(this.api);
       if (typeof result === 'string') return result;
       this.characters = result;
     }
@@ -449,7 +429,7 @@ export class AuctionService {
   }
 
   async status(): Promise<unknown> {
-    if (!this.bridge.connected) {
+    if (!this.api.connected) {
       return { connected: false, state: 'no_extension', nexonOpenApi: nexonOpenApiStatus(), note: DISCONNECTED_MSG };
     }
     const id = await this.ensureIdentity();
@@ -462,7 +442,7 @@ export class AuctionService {
     }
     // identity는 캐시일 수 있으니 무료 GET으로 세션 생존을 실측한다.
     // 옥션 페이지가 다른 곳에서 새 세션을 만들면 이 세션은 소리 없이 죽는다(단일 활성).
-    const dl = await this.bridge.request({ type: 'fetch', url: DAILY_LIMIT_URL, method: 'GET' });
+    const dl = await this.api.getDailyLimit();
     if (!dl.ok) {
       return {
         connected: true,

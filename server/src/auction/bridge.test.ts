@@ -1,7 +1,7 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import WebSocket from 'ws';
-import { Bridge } from '../src/bridge.js';
-import { Broker } from '../src/broker.js';
+import { Bridge } from './bridge.js';
+import { Broker } from './broker.js';
 
 const TEST_PORT = 29973;
 let bridge: Bridge;
