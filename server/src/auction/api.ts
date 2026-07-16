@@ -136,8 +136,23 @@ export class MapleAuctionApi {
     return this.transport.close?.() ?? Promise.resolve();
   }
 
+  // 모든 요청의 단일 관문. 401(세션 죽음)이면 1회 자가복구를 시도한다:
+  // 읽기 전용 /accounts를 fanout으로 전 확장에 뿌려 로그인된 확장을 브로커의
+  // preferred로 재고정한 뒤, 원 요청을 재시도한다. 세션이 다른 크롬 프로필로
+  // 옮겨간 경우(살아있는 preferred가 죽은 세션만 두드리는 갇힘)를 여기서 푼다.
+  // 실패한 요청 자체를 fanout하면 안 된다 — 검색 POST(일일 한도 소진)·위시리스트
+  // 쓰기가 확장 수만큼 복제된다. 프로브까지 실패하면(어느 확장에도 세션 없음)
+  // 원래 에러를 그대로 반환한다 — errorText가 사용자 안내(NO_SESSION_MSG)로 바꾼다.
+  private async send(cmd: AuctionCommandInput): Promise<AuctionReply> {
+    const reply = await this.transport.request(cmd);
+    if (reply.ok || reply.status !== 401 || cmd.fanout) return reply;
+    const probe = await this.transport.request({ type: 'fetch', url: `${AUTH_BASE}/accounts`, method: 'GET', fanout: true });
+    if (!probe.ok) return reply;
+    return this.transport.request(cmd);
+  }
+
   getAccounts(fanout = false): Promise<AuctionReply> {
-    return this.transport.request({
+    return this.send({
       type: 'fetch',
       url: `${AUTH_BASE}/accounts`,
       method: 'GET',
@@ -146,11 +161,11 @@ export class MapleAuctionApi {
   }
 
   createWebSession(): Promise<AuctionReply> {
-    return this.transport.request({ type: 'fetch', url: `${AUTH_BASE}/auth/web-token/session`, method: 'POST' });
+    return this.send({ type: 'fetch', url: `${AUTH_BASE}/auth/web-token/session`, method: 'POST' });
   }
 
   getWorldCharacters(accountId: number, worldId: number): Promise<AuctionReply> {
-    return this.transport.request({
+    return this.send({
       type: 'fetch',
       url: `${AUTH_BASE}/accounts/${accountId}/gameWorlds/${worldId}/characters`,
       method: 'GET',
@@ -158,7 +173,7 @@ export class MapleAuctionApi {
   }
 
   createSearch(body: unknown, sold = false): Promise<AuctionReply> {
-    return this.transport.request({ type: 'fetch', url: sold ? SOLD_SEARCH_URL : SEARCH_URL, method: 'POST', body });
+    return this.send({ type: 'fetch', url: sold ? SOLD_SEARCH_URL : SEARCH_URL, method: 'POST', body });
   }
 
   getSearchPage(searchKey: string, query: SearchPageQuery, id: Identity, sold = false): Promise<AuctionReply> {
@@ -170,7 +185,7 @@ export class MapleAuctionApi {
       characterId: String(id.characterId),
     });
     const segment = sold ? 'searches/sold' : 'searches';
-    return this.transport.request({
+    return this.send({
       type: 'fetch',
       url: `${ITEM_API_BASE}/${segment}/${encodeURIComponent(searchKey)}/tool-tip?${qs}`,
       method: 'GET',
@@ -178,11 +193,11 @@ export class MapleAuctionApi {
   }
 
   getDailyLimit(): Promise<AuctionReply> {
-    return this.transport.request({ type: 'fetch', url: DAILY_LIMIT_URL, method: 'GET' });
+    return this.send({ type: 'fetch', url: DAILY_LIMIT_URL, method: 'GET' });
   }
 
   getBalance(id: Identity): Promise<AuctionReply> {
-    return this.transport.request({
+    return this.send({
       type: 'fetch',
       url: `${AUTH_BASE}/accounts/${id.accountId}/gameWorlds/${id.worldId}/balance`,
       method: 'GET',
@@ -190,7 +205,7 @@ export class MapleAuctionApi {
   }
 
   getRecentSold(id: Identity): Promise<AuctionReply> {
-    return this.transport.request({
+    return this.send({
       type: 'fetch',
       url: RECENT_SOLD_URL,
       method: 'POST',
@@ -204,11 +219,11 @@ export class MapleAuctionApi {
       gameWorldId: String(id.worldId),
       characterId: String(id.characterId),
     });
-    return this.transport.request({ type: 'fetch', url: `${WISHLIST_URL}?${qs}`, method: 'GET' });
+    return this.send({ type: 'fetch', url: `${WISHLIST_URL}?${qs}`, method: 'GET' });
   }
 
   addWishlist(id: Identity, tradeSn: string, subIdx: number): Promise<AuctionReply> {
-    return this.transport.request({
+    return this.send({
       type: 'fetch',
       url: WISHLIST_URL,
       method: 'POST',
@@ -223,7 +238,7 @@ export class MapleAuctionApi {
       tradeSn,
       subIdx: String(subIdx),
     });
-    return this.transport.request({ type: 'fetch', url: `${WISHLIST_URL}?${qs}`, method: 'DELETE' });
+    return this.send({ type: 'fetch', url: `${WISHLIST_URL}?${qs}`, method: 'DELETE' });
   }
 }
 

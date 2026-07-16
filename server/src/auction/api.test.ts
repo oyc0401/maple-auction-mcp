@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import type { WireReply } from '@maple/shared';
-import { AuctionBridge, MapleAuctionApi, auctionHeaders, type AuctionCommandInput, type WireTransport } from './api.js';
+import { AuctionBridge, MapleAuctionApi, auctionHeaders, type AuctionCommandInput, type AuctionReply, type WireTransport } from './api.js';
 
 function transport(reply: WireReply): WireTransport & { last: () => Record<string, unknown> } {
   const calls: unknown[] = [];
@@ -79,6 +79,77 @@ describe('AuctionBridge — 와이어 → 내부 변환', () => {
     const r = await new AuctionBridge(t).request({ type: 'fetch', url: 'https://a.nexon.com/x', method: 'GET' });
     expect(!r.ok && r.code).toBe('DISCONNECTED');
     expect(!r.ok && r.data).toBeUndefined();
+  });
+});
+
+describe('MapleAuctionApi — 세션 오류 자가복구', () => {
+  it('401이면 /accounts fanout 프로브로 확장을 재선정한 뒤 원 요청을 1회 재시도한다', async () => {
+    const calls: AuctionCommandInput[] = [];
+    const replies: AuctionReply[] = [
+      { id: '1', ok: false, code: 'HTTP_ERROR', status: 401, error: 'HTTP 401' },
+      { id: '2', ok: true, status: 200, data: { accounts: [{ accountId: 1 }] } },
+      { id: '3', ok: true, status: 200, data: { search: { remaining: 9 } } },
+    ];
+    const api = new MapleAuctionApi({
+      connected: true,
+      request: async (cmd) => {
+        calls.push(cmd);
+        return replies[calls.length - 1];
+      },
+    });
+
+    const r = await api.getDailyLimit();
+
+    expect(r.ok).toBe(true);
+    expect(calls).toHaveLength(3);
+    expect(calls[1]).toMatchObject({ url: 'https://api.mskr.nexon.com/v1/accounts', method: 'GET', fanout: true });
+    expect(calls[2]).toEqual(calls[0]); // 원 요청 그대로 재전송 (fanout 없이)
+  });
+
+  it('프로브도 실패하면(어느 확장에도 세션 없음) 원래 401을 그대로 반환한다', async () => {
+    const calls: AuctionCommandInput[] = [];
+    const api = new MapleAuctionApi({
+      connected: true,
+      request: async (cmd) => {
+        calls.push(cmd);
+        return { id: 'x', ok: false, code: 'HTTP_ERROR', status: 401, error: 'HTTP 401' };
+      },
+    });
+
+    const r = await api.getDailyLimit();
+
+    expect(!r.ok && r.status).toBe(401);
+    expect(calls).toHaveLength(2); // 원 요청 + 프로브, 재시도 없음
+  });
+
+  it('fanout 요청 자신은 401이어도 재시도하지 않는다', async () => {
+    const calls: AuctionCommandInput[] = [];
+    const api = new MapleAuctionApi({
+      connected: true,
+      request: async (cmd) => {
+        calls.push(cmd);
+        return { id: 'x', ok: false, code: 'HTTP_ERROR', status: 401, error: 'HTTP 401' };
+      },
+    });
+
+    await api.getAccounts(true);
+
+    expect(calls).toHaveLength(1);
+  });
+
+  it('401이 아닌 실패(TIMEOUT 등)는 재시도하지 않는다 — 소진성 POST 중복 방지', async () => {
+    const calls: AuctionCommandInput[] = [];
+    const api = new MapleAuctionApi({
+      connected: true,
+      request: async (cmd) => {
+        calls.push(cmd);
+        return { id: 'x', ok: false, code: 'TIMEOUT', error: '시간 초과' };
+      },
+    });
+
+    await api.createSearch({ keyword: '앱솔랩스' });
+
+    expect(calls).toHaveLength(1);
   });
 });
 
