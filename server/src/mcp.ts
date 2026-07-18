@@ -120,7 +120,7 @@ export function createServer(
     '- 지원되는 장비 검색 결과에는 현재 기준 캐릭터가 착용했을 때의 부위별 finalDamageChangeRate(최종 데미지 증감률 %)가 포함된다.',
   ].join('\n');
 
-  const server = new McpServer({ name: 'maple-auction', version: '0.8.0' }, { instructions });
+  const server = new McpServer({ name: 'maple-auction', version: '0.8.1' }, { instructions });
 
   const service = new AuctionService(
     api,
