@@ -50,13 +50,15 @@ Windows는 `"command": "cmd", "args": ["/c", "npx", "-y", "maple-auction-mcp"]` 
 
 > Gemini CLI는 2026-06-18부로 개인 계정 지원이 종료되어 Antigravity CLI로 대체되었습니다.
 
-## 최종 데미지 증감률 (넥슨 오픈 API 키 필수)
+## 최종 데미지 증감률 (개발 모드)
+
+**개발 모드 기능입니다.** 기본 설치에서는 제공되지 않으며, 최종 데미지 상승률을 보고 싶다면 아래처럼 넥슨 오픈 API 키를 함께 넣어 설치하세요.
 
 지원되는 장비 검색 결과에는 매물을 현재 착용 장비와 교체할 때의 슬롯별 **최종 데미지 증감률(%)** 이 자동으로 포함됩니다 — 주스탯(%적용·미적용 분리)·공격력·보스 데미지·방어율 무시(곱연산)·크리티컬 데미지·최종 데미지·세트 효과 변화까지 반영합니다. `user_equip`으로 착용 장비를 조회하고, `refresh_character`로 특정 캐릭터 정보를 강제 재갱신할 수 있습니다.
 
 캐릭터 정보는 MCP 재시작 후에도 유지되는 영구 로컬 캐시에 저장됩니다. macOS는 `~/Library/Application Support/maple-auction-mcp`, Windows는 `%LOCALAPPDATA%\maple-auction-mcp`, Linux는 `$XDG_DATA_HOME/maple-auction-mcp` 또는 `~/.local/share/maple-auction-mcp`를 사용합니다.
 
-데미지 계산과 캐릭터 조회·재갱신을 쓰려면 [openapi.nexon.com](https://openapi.nexon.com)에서 API 키를 발급받아(무료) 실행 인자에 붙여야 합니다:
+데미지 계산과 캐릭터 조회·재갱신(`user_equip`·`refresh_character`)을 쓰려면 [openapi.nexon.com](https://openapi.nexon.com)에서 API 키를 발급받아(무료) 실행 인자에 붙여야 합니다:
 
 ```bash
 claude mcp add --scope user maple-auction -- npx -y maple-auction-mcp --api-key YOUR_NEXON_API_KEY

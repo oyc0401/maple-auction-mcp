@@ -112,7 +112,7 @@ export function createServer(
   const instructions = [
     '메이플스토리(KMS) 거래소 검색 MCP.',
     '매물 추천·가치 판단·시세 해석·검색 전략 수립 전에 get_knowledge(같은 내용의 maple://knowledge 리소스)를 읽는다 — 게임 지식(추옵·잠재·가위·별칭·타월드)과 경매장 검색 팁이 있다. 읽지 않은 채 도메인 규칙을 임의 추론하지 말 것.',
-    '- 첫 검색 전 get_status로 검색 기준 캐릭터(월드·닉네임)를 확인해 사용자에게 알린다. nexonOpenApi.configured=false면 응답의 setup대로 API 키 설정 방법도 안내한다. 월드 전환은 set_character.',
+    '- 첫 검색 전 get_status로 검색 기준 캐릭터(월드·닉네임)를 확인해 사용자에게 알린다. nexonOpenApi.configured=false면 "최종 데미지 증감률은 개발 모드 기능 — 보고 싶다면 넥슨 API 키를 함께 넣어 설치"라고 응답의 setup대로 안내한다. 월드 전환은 set_character.',
     '- 검색 생성(search_* 도구, sold 포함)만 일일 한도(100회)를 1회 소진 — 한도는 검색 품질을 깎을 만큼 빡빡하지 않다(잔여는 응답의 searchRemaining). 같은 조건 재조회만 재검색 대신 searchKey + get_page(무료). limit 40/60은 조건이 확정된 뒤에.',
     '- 검색 결과를 보여줄 때 사용한 필터 조건을 함께 표기한다.',
     '- 가위(재거래) 잔여 횟수가 낮은 매물은 사용자에게 꼭 명시한다(tradeDesc 참고).',
